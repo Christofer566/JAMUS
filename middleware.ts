@@ -54,6 +54,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // /auth 경로는 미들웨어 체크 건너뛰기
+  if (request.nextUrl.pathname.startsWith('/auth')) {
+    return response
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -63,12 +68,6 @@ export async function middleware(request: NextRequest) {
   const isProtectedPath = protectedPaths.some(path => 
     request.nextUrl.pathname === path || 
     request.nextUrl.pathname.startsWith(path + '/')
-  )
-
-  // 공개 경로들 (로그인 없이 접근 가능)
-  const publicPaths = ['/login', '/auth', '/discover']
-  const isPublicPath = publicPaths.some(path => 
-    request.nextUrl.pathname.startsWith(path)
   )
 
   // 보호된 경로인데 로그인 안 됨 → /login으로
@@ -86,13 +85,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
