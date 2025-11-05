@@ -1,37 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
-import { User } from '@supabase/supabase-js'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function FeedPage() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-  const router = useRouter()
-  const supabase = createClient()
-
-  useEffect(() => {
-    // 로그인 상태 확인
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      
-      setUser(user)
-      setLoading(false)
-    }
-
-    checkUser()
-  }, [router, supabase])
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
+  const { user, loading, signOut } = useAuth()
 
   if (loading) {
     return (
@@ -41,6 +13,11 @@ export default function FeedPage() {
     )
   }
 
+  // 미들웨어에서 처리하므로 여기서는 user가 항상 있음
+  if (!user) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-[#1E1F2B] flex flex-col">
       {/* Header */}
@@ -48,9 +25,9 @@ export default function FeedPage() {
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <h1 className="text-2xl font-bold text-[#F7F8FB]">JAMUS</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-[#D8D8D8]">{user?.email}</span>
+            <span className="text-sm text-[#D8D8D8]">{user.email}</span>
             <button
-              onClick={handleSignOut}
+              onClick={signOut}
               className="text-sm text-[#A0A0A0] hover:text-[#1E6FFB] transition-colors"
             >
               로그아웃
