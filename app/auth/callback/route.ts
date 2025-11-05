@@ -1,6 +1,6 @@
-import { createClient } from '@/lib/supabase'
-import { NextResponse } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
@@ -8,13 +8,45 @@ export async function GET(request: Request) {
 
   if (code) {
     const cookieStore = cookies()
-    const supabase = createClient()
+    
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: CookieOptions) {
+            cookieStore.set({ name, value, ...options })
+          },
+          remove(name: string, options: CookieOptions) {
+            cookieStore.delete({ name, ...options })
+          },
+        },
+      }
+    )
 
-    // Magic Link 코드를 세션으로 교환
     await supabase.auth.exchangeCodeForSession(code)
+
+    // 로그인 성공 후 profile 확인
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user) {
+      // profiles 테이블에서 nickname 확인
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nickname')
+        .eq('id', user.id)
+        .single()
+
+      // nickname이 없으면 설정 페이지로
+      if (profile && !profile.nickname) {
+        return NextResponse.redirect(new URL('/auth/setup-profile', requestUrl.origin))
+      }
+    }
   }
 
-  // 로그인 성공 후 메인 페이지로 리다이렉트
-  // (메인 페이지가 자동으로 /login으로 보내거나, 나중에 Feed로 보낼 예정)
+  // nickname이 있거나 에러 시 메인 페이지로
   return NextResponse.redirect(new URL('/', requestUrl.origin))
 }
