@@ -35,8 +35,19 @@ export function useAuth() {
   }, [supabase])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+    try {
+      console.log('로그아웃 시작...')
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('로그아웃 에러:', error)
+        throw error
+      }
+      console.log('로그아웃 성공, /login으로 이동')
+      router.push('/login')
+      router.refresh()
+    } catch (error) {
+      console.error('로그아웃 실패:', error)
+    }
   }
 
   return {
