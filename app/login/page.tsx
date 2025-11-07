@@ -42,16 +42,15 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
+        console.log('회원가입 시작...')
         // 회원가입
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-          },
         })
         if (error) throw error
         
+        console.log('회원가입 성공, 로그인 시도...')
         // 회원가입 성공 - 바로 로그인 시도
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -59,9 +58,10 @@ export default function LoginPage() {
         })
         if (signInError) throw signInError
         
-        router.push('/')
-        router.refresh()
+        console.log('로그인 성공, / 이동')
+        window.location.href = '/'
       } else {
+        console.log('로그인 시작...')
         // 로그인
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -69,8 +69,8 @@ export default function LoginPage() {
         })
         if (error) throw error
         
-        router.push('/')
-        router.refresh()
+        console.log('로그인 성공, / 이동')
+        window.location.href = '/'
       }
     } catch (error: any) {
       console.error('Auth error:', error)
