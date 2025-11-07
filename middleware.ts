@@ -54,8 +54,9 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // /auth 경로는 미들웨어 체크 건너뛰기
-  if (request.nextUrl.pathname.startsWith('/auth')) {
+  // /auth와 /login 경로는 미들웨어 체크 건너뛰기
+  if (request.nextUrl.pathname.startsWith('/auth') || 
+      request.nextUrl.pathname === '/login') {
     return response
   }
 
@@ -73,11 +74,6 @@ export async function middleware(request: NextRequest) {
   // 보호된 경로인데 로그인 안 됨 → /login으로
   if (isProtectedPath && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  // 로그인 되어 있는데 /login 접근 → /로 리다이렉트
-  if (request.nextUrl.pathname === '/login' && user) {
-    return NextResponse.redirect(new URL('/', request.url))
   }
 
   return response
