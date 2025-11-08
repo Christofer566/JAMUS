@@ -1,86 +1,116 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { createClient } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth'
 
-export default function Home() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any[] | null>(null);
+export default function FeedPage() {
+  const { user, loading, signOut } = useAuth()
 
-  const testSupabaseConnection = async () => {
-    setLoading(true);
-    setError(null);
-    setData(null);
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#1E1F2B]">
+        <div className="text-[#F7F8FB]">로딩 중...</div>
+      </div>
+    )
+  }
 
-    try {
-      const supabase = createClient();
-      const { data: result, error: supabaseError } = await supabase
-        .from('test_ping')
-        .select('*');
-
-      if (supabaseError) {
-        throw supabaseError;
-      }
-
-      setData(result);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to connect to Supabase');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 미들웨어에서 처리하므로 여기서는 user가 항상 있음
+  if (!user) {
+    return null
+  }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm">
-        <h1 className="text-4xl font-bold text-center mb-4">
-          Welcome to Next.js 14
-        </h1>
-        <p className="text-center text-gray-600 mb-8">
-          Get started by editing <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-
-        {/* Supabase Test Section */}
-        <div className="mt-8 p-6 border rounded-lg bg-white shadow-sm">
-          <h2 className="text-2xl font-bold mb-4 text-center">
-            Supabase Connection Test
-          </h2>
-          <div className="flex flex-col items-center gap-4">
+    <div className="min-h-screen bg-[#1E1F2B] flex flex-col">
+      {/* Header */}
+      <header className="bg-[#2A2B3A] border-b border-[#666666]/30 px-6 py-4">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-[#F7F8FB]">JAMUS</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-[#D8D8D8]">{user.email}</span>
             <button
-              onClick={testSupabaseConnection}
-              disabled={loading}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              onClick={signOut}
+              className="text-sm text-[#A0A0A0] hover:text-[#1E6FFB] transition-colors"
             >
-              {loading ? 'Testing...' : 'Test Supabase Connection'}
+              로그아웃
             </button>
-
-            {loading && (
-              <div className="text-gray-500">Loading...</div>
-            )}
-
-            {error && (
-              <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg max-w-md w-full">
-                <p className="font-semibold">Error:</p>
-                <p>{error}</p>
-              </div>
-            )}
-
-            {data && (
-              <div className="mt-4 w-full max-w-2xl">
-                <h3 className="text-lg font-semibold mb-2 text-green-600">
-                  Success! Retrieved {data.length} row(s)
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg border overflow-x-auto">
-                  <pre className="text-xs text-gray-800">
-                    {JSON.stringify(data, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            )}
           </div>
         </div>
-      </div>
-    </main>
-  );
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-8">
+        {/* 임시 Feed 콘텐츠 */}
+        <div className="bg-[#2A2B3A] rounded-3xl p-8 text-center">
+          <div className="mb-6">
+            <div className="w-20 h-20 bg-[#1E6FFB]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg 
+                className="w-10 h-10 text-[#1E6FFB]" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" 
+                />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-semibold text-[#F7F8FB] mb-2">
+              Feed 화면 준비 중
+            </h2>
+            <p className="text-[#D8D8D8]">
+              곧 친구들의 음악 취향을 확인할 수 있어요
+            </p>
+          </div>
+
+          <div className="pt-6 border-t border-[#666666]/30">
+            <p className="text-sm text-[#A0A0A0] mb-4">
+              ✅ 로그인 성공! <br/>
+              ✅ profiles 테이블 작동 확인 완료
+            </p>
+          </div>
+        </div>
+      </main>
+
+      {/* Bottom Navigation */}
+      <nav className="bg-[#2A2B3A] border-t border-[#666666]/30">
+        <div className="max-w-2xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-around">
+            {/* Discover */}
+            <button className="flex flex-col items-center gap-1 text-[#A0A0A0] hover:text-[#1E6FFB] transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <span className="text-xs">Discover</span>
+            </button>
+
+            {/* Feed */}
+            <button className="flex flex-col items-center gap-1 text-[#1E6FFB]">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span className="text-xs font-medium">Feed</span>
+            </button>
+
+            {/* My JAM */}
+            <button className="flex flex-col items-center gap-1 text-[#A0A0A0] hover:text-[#1E6FFB] transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="text-xs">My JAM</span>
+            </button>
+
+            {/* Single */}
+            <button className="flex flex-col items-center gap-1 text-[#A0A0A0] hover:text-[#1E6FFB] transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+              <span className="text-xs">Single</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+    </div>
+  )
 }

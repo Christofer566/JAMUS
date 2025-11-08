@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
-export default function VerifyPage() {
+function VerifyContent() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [countdown, setCountdown] = useState(0)
@@ -184,5 +184,17 @@ export default function VerifyPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#1E1F2B]">
+        <div className="text-[#F7F8FB]">로딩 중...</div>
+      </div>
+    }>
+      <VerifyContent />
+    </Suspense>
   )
 }
