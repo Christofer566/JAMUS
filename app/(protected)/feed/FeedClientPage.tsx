@@ -24,6 +24,20 @@ export default function FeedClientPage() {
     router.refresh();
   }, [router]);
 
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        router.refresh();
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [router]);
+
   const currentSong = mockSongs[currentSongIndex];
   const totalDuration = 160;
 
