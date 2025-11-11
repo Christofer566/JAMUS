@@ -113,33 +113,44 @@ export default function FeedPage() {
   };
 
   return (
-    
-      
-        
-          
-            
-          
+    <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col items-center py-6 px-8">
+        {/* Billboard */}
+        <div className="w-full max-w-7xl flex-shrink-0 mb-4">
+          <Billboard
+            songTitle={currentSong.title}
+            artist={currentSong.artist}
+            chordProgression={chordProgression}
+            performers={performers}
+            currentSectionIndex={sectionIndex}
+            currentMeasure={measure}
+            measureProgress={measureProgress}
+            sectionProgress={sectionProgress}
+          />
+        </div>
 
-          
-            
-          
+        {/* Stage */}
+        <div className="w-full max-w-7xl flex-shrink-0 h-[12vh] mb-6">
+          <Stage currentPerformer="RhythmMasterX" backgroundColor={currentStageColor} />
+        </div>
 
-          
+        {/* Spacer */}
+        <div className="flex-1"></div>
 
-          
-            <PlayerBar
-              songTitle={currentSong.title}
-              artistName={currentSong.artist}
-              isPlaying={isPlaying}
-              onPlayPause={() => setIsPlaying(!isPlaying)}
-              sections={progressSections}
-              currentTime={currentTime}
-              duration={totalDuration}
-              onTimeChange={handleTimeChange}
-            />
-          
-        
-      
-    
+        {/* Player Controls */}
+        <div className="w-full max-w-7xl flex-shrink-0">
+          <PlayerBar
+            songTitle={currentSong.title}
+            artistName={currentSong.artist}
+            isPlaying={isPlaying}
+            onPlayPause={() => setIsPlaying(!isPlaying)}
+            sections={progressSections}
+            currentTime={currentTime}
+            duration={totalDuration}
+            onTimeChange={handleTimeChange}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
