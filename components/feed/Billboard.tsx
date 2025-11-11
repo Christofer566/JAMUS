@@ -1,6 +1,5 @@
 'use client';
 
-import React from "react";
 import SheetMusic from "./SheetMusic";
 
 interface Performer {
@@ -10,14 +9,22 @@ interface Performer {
 }
 
 interface BillboardProps {
+  className?: string;
+  userName: string;
+  userProfile?: string;
+  instrument?: string;
   songTitle: string;
-  artist: string;
+  artistName: string;
   performers: Performer[];
   chordProgression: string[][];
   currentSectionIndex: number;
   currentMeasure: number;
   measureProgress: number;
   sectionProgress: number;
+}
+
+function mergeClassNames(...values: (string | undefined)[]) {
+  return values.filter(Boolean).join(" ");
 }
 
 const createSections = (performers: Performer[], chordProgression: string[][]) => {
@@ -76,8 +83,12 @@ const createSections = (performers: Performer[], chordProgression: string[][]) =
 };
 
 export default function Billboard({
+  className,
+  userName,
+  userProfile,
+  instrument,
   songTitle,
-  artist,
+  artistName,
   performers,
   chordProgression,
   currentSectionIndex,
@@ -88,31 +99,36 @@ export default function Billboard({
   const sections = createSections(performers, chordProgression);
 
   const handleJamJoin = () => {
-    console.log("JAM 참여하기 클릭 - Single 모드로 이동 예정");
+    console.log("JAM 참여하기 - Single 모드로 이동 예정");
   };
 
   return (
-    <div className="flex h-[70vh] w-full flex-col rounded-2xl border border-white/10 bg-[#1B1C26]/60 shadow-2xl backdrop-blur-xl">
-      <div className="flex flex-shrink-0 items-start justify-between p-4 pb-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#7BA7FF]/30 bg-[#7BA7FF]/30">
-            <span className="text-sm font-medium text-white">J</span>
+    <div
+      className={mergeClassNames(
+        "flex h-full w-full flex-col rounded-2xl border border-white/10 bg-[#1B1C26]/60 shadow-2xl backdrop-blur-xl",
+        className,
+      )}
+    >
+      <div className="flex flex-shrink-0 items-center justify-between px-6 pt-5 pb-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-500 shadow-lg">
+            <span className="text-2xl">🎵</span>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">{songTitle}</h2>
-            <p className="text-sm text-[#9B9B9B]">{artist}</p>
+            <p className="text-lg font-bold text-white">{songTitle}</p>
+            <p className="text-sm text-[#9B9B9B]">{artistName}</p>
           </div>
         </div>
 
         <button
           onClick={handleJamJoin}
-          className="rounded-full bg-white px-5 py-2 text-sm font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
+          className="rounded-full bg-white px-6 py-2 text-sm font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
         >
-          <span>이 JAM에 참여하기</span>
+          이 JAM에 참여하기
         </button>
       </div>
 
-      <div className="mx-4 mb-4 flex-1 overflow-hidden rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 p-8 backdrop-blur-sm">
+      <div className="mx-5 mb-5 flex-1 overflow-hidden rounded-2xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 p-8 backdrop-blur-sm">
         <SheetMusic
           sections={sections}
           currentSectionIndex={currentSectionIndex}
@@ -124,3 +140,4 @@ export default function Billboard({
     </div>
   );
 }
+

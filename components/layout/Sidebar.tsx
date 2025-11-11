@@ -4,6 +4,7 @@ import SidebarLogo from "@/components/sidebar/SidebarLogo";
 import SidebarNav from "@/components/sidebar/SidebarNav";
 import SidebarProfile from "@/components/sidebar/SidebarProfile";
 import SidebarFooter from "@/components/sidebar/SidebarFooter";
+import SidebarStage from "@/components/sidebar/SidebarStage";
 
 type SidebarProps = {
   className?: string;
@@ -26,6 +27,8 @@ export default function Sidebar({ className, children }: SidebarProps) {
       <SidebarProfile className="mb-10" />
 
       <SidebarNav className="mt-10" />
+
+      <SidebarStage className="mt-8" />
 
       <SidebarFooter className="mt-auto" />
 
