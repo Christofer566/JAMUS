@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import FeedContainer from '@/components/feed/FeedContainer';
 import Billboard from '@/components/feed/Billboard';
 import Stage from '@/components/feed/Stage';
 import PlayerBar from '@/components/feed/PlayerBar';
@@ -113,10 +114,10 @@ export default function FeedPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden">
-      <div className="flex-1 flex flex-col items-center py-6 px-8">
+    <FeedContainer>
+      <div className="h-full flex flex-col">
         {/* Billboard */}
-        <div className="w-full max-w-7xl flex-shrink-0 mb-4">
+        <div className="w-full flex-shrink-0 mb-4">
           <Billboard
             songTitle={currentSong.title}
             artist={currentSong.artist}
@@ -130,7 +131,7 @@ export default function FeedPage() {
         </div>
 
         {/* Stage */}
-        <div className="w-full max-w-7xl flex-shrink-0 h-[12vh] mb-6">
+        <div className="w-full flex-shrink-0 h-[12vh] mb-6">
           <Stage currentPerformer="RhythmMasterX" backgroundColor={currentStageColor} />
         </div>
 
@@ -138,7 +139,7 @@ export default function FeedPage() {
         <div className="flex-1"></div>
 
         {/* Player Controls */}
-        <div className="w-full max-w-7xl flex-shrink-0">
+        <div className="w-full flex-shrink-0">
           <PlayerBar
             songTitle={currentSong.title}
             artistName={currentSong.artist}
@@ -151,6 +152,6 @@ export default function FeedPage() {
           />
         </div>
       </div>
-    </div>
+    </FeedContainer>
   );
 }

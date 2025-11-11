@@ -77,9 +77,9 @@ export default function SheetMusic({
     const secondRow = hasMultipleRows ? measures.slice(4, 8) : [];
 
     return (
-      <div key={section.id} className="mb-8" ref={isCurrentSection ? currentSectionRef : null}>
+      <div key={section.id} className="mb-6" ref={isCurrentSection ? currentSectionRef : null}>
         <div
-          className="flex items-center transition-all duration-500"
+          className="flex items-stretch transition-all duration-500"
           style={{
             opacity: sectionOpacity,
             height: isCurrentSection ? "4.5rem" : "3.5rem",
@@ -132,7 +132,9 @@ export default function SheetMusic({
                 </div>
               </>
             ) : (
-              <div className="text-center text-[11px] text-[#9B9B9B]">{section.user}</div>
+              <div className="flex h-full items-center justify-center text-center text-[11px] text-[#9B9B9B]">
+                {section.user}
+              </div>
             )}
           </div>
 
@@ -166,7 +168,7 @@ export default function SheetMusic({
             )}
 
             <div
-              className="absolute left-0 right-0 z-10 h-px"
+              className="absolute left-0 right-0 z-10 h-1"
               style={{
                 top: "50%",
                 backgroundColor: `${sectionColor}40`,
@@ -180,15 +182,17 @@ export default function SheetMusic({
                 return (
                   <div key={measureIndex} className="relative flex flex-1 items-center justify-start">
                     <div
-                      className="absolute left-0 top-0 bottom-0 w-px"
+                      className="absolute left-0 top-0 bottom-0 w-1"
                       style={{
                         backgroundColor: `${sectionColor}40`,
                       }}
                     />
 
                     <div
-                      className="px-3 transition-all duration-300"
+                      className="px-6 transition-all duration-300"
                       style={{
+                        position: "relative",
+                        bottom: "1rem",
                         color: isActiveMeasure ? sectionColor : "#E0E0E0",
                         fontSize: isActiveMeasure ? "1rem" : "0.875rem",
                         fontWeight: isActiveMeasure ? 600 : 400,
@@ -202,7 +206,7 @@ export default function SheetMusic({
               })}
 
               <div
-                className="absolute right-0 top-0 bottom-0 w-px"
+                className="absolute right-0 top-0 bottom-0 w-1"
                 style={{
                   backgroundColor: `${sectionColor}40`,
                 }}
@@ -213,13 +217,13 @@ export default function SheetMusic({
 
         {hasMultipleRows && (
           <div
-            className="mt-2 flex items-center transition-all duration-500"
+            className="mt-6 flex items-stretch transition-all duration-500"
             style={{
               opacity: sectionOpacity,
               height: isCurrentSection ? "4.5rem" : "3.5rem",
             }}
           >
-            <div className="mr-2 w-28"></div>
+            <div className="mr-2 w-28 pr-2"></div>
 
             <div className="relative flex flex-1 items-center">
               {isCurrentSection && currentMeasure >= 4 && (
@@ -234,7 +238,7 @@ export default function SheetMusic({
               )}
 
               <div
-                className="absolute left-0 right-0 z-10 h-px"
+                className="absolute left-0 right-0 z-10 h-1"
                 style={{
                   top: "50%",
                   backgroundColor: `${sectionColor}40`,
@@ -249,15 +253,17 @@ export default function SheetMusic({
                   return (
                     <div key={actualMeasureIndex} className="relative flex flex-1 items-center justify-start">
                       <div
-                        className="absolute left-0 top-0 bottom-0 w-px"
+                        className="absolute left-0 top-0 bottom-0 w-1"
                         style={{
                           backgroundColor: `${sectionColor}40`,
                         }}
                       />
 
                       <div
-                        className="px-3 transition-all duration-300"
+                        className="px-6 transition-all duration-300"
                         style={{
+                          position: "relative",
+                          bottom: "1rem",
                           color: isActiveMeasure ? sectionColor : "#E0E0E0",
                           fontSize: isActiveMeasure ? "1rem" : "0.875rem",
                           fontWeight: isActiveMeasure ? 600 : 400,
@@ -271,7 +277,7 @@ export default function SheetMusic({
                 })}
 
                 <div
-                  className="absolute right-0 top-0 bottom-0 w-px"
+                  className="absolute right-0 top-0 bottom-0 w-1"
                   style={{
                     backgroundColor: `${sectionColor}40`,
                   }}
@@ -285,7 +291,7 @@ export default function SheetMusic({
   };
 
   return (
-    <div ref={containerRef} className="h-full space-y-2 overflow-y-auto px-2 pt-5">
+    <div ref={containerRef} className="h-full overflow-y-auto px-2 pt-5 no-scrollbar">
       {sections.map((section, index) => renderSection(section, index))}
     </div>
   );

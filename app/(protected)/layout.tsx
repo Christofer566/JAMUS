@@ -8,9 +8,9 @@ type ProtectedLayoutProps = {
 
 export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   return (
-    <div className="min-h-screen bg-[#1B1C26]">
+    <div className="flex min-h-screen bg-[#1B1C26]">
       <Sidebar />
-      <main className="ml-[240px] min-h-screen">{children}</main>
+      <main className="flex-1">{children}</main>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export default function Sidebar({ className, children }: SidebarProps) {
   return (
     <aside
       className={mergeClassNames(
-        "fixed left-0 top-0 flex h-screen w-[240px] flex-col bg-[#14151C] pt-6 px-5",
+        "flex h-screen w-[240px] flex-col bg-[#14151C] pt-6 px-5",
         className,
       )}
     >

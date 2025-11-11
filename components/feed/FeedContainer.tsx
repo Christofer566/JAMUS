@@ -9,8 +9,8 @@ interface FeedContainerProps {
 
 export default function FeedContainer({ children }: FeedContainerProps) {
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="w-full max-w-[900px] h-full rounded-2xl border border-gray-700/50 bg-[#252736] overflow-y-auto p-6">
+    <div className="w-full p-8">
+      <div className="w-full max-w-5xl mx-auto">
         {children}
       </div>
     </div>
