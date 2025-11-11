@@ -319,7 +319,7 @@ export default function FeedClientPage() {
 
   const performers = getPerformersForJam(currentJamIndex);
 
-  const getCurrentPerformer = () => {
+  const getCurrentPerformer = useCallback(() => {
     const currentSection = progressSections[sectionIndex];
     if (!currentSection) {
       return 'JAMUS';
@@ -333,9 +333,9 @@ export default function FeedClientPage() {
     }
 
     return 'JAMUS';
-  };
+  }, [currentTime, performers, progressSections, sectionIndex]);
 
-  const getCurrentPerformerColor = () => {
+  const getCurrentPerformerColor = useCallback(() => {
     for (const performer of performers) {
       const [startTime, endTime] = performer.playRange;
       if (currentTime >= startTime && currentTime < endTime) {
@@ -344,7 +344,7 @@ export default function FeedClientPage() {
     }
 
     return '#7BA7FF';
-  };
+  }, [currentTime, performers]);
 
   const currentPerformerName = getCurrentPerformer();
 
@@ -358,7 +358,7 @@ export default function FeedClientPage() {
 
   useEffect(() => {
     setStageColor(getCurrentPerformerColor());
-  }, [currentTime, performers, setStageColor]);
+  }, [getCurrentPerformerColor, setStageColor]);
 
   return (
     <FeedContainer>
