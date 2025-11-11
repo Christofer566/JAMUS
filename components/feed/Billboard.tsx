@@ -1,18 +1,78 @@
 'use client';
 
 import React from "react";
+import SheetMusic from "./SheetMusic";
 
-type Performer = {
+interface Performer {
   name: string;
   color: string;
   playRange: [number, number];
-};
+}
 
-type BillboardProps = {
+interface BillboardProps {
   songTitle: string;
   artist: string;
   performers: Performer[];
   chordProgression: string[][];
+  currentSectionIndex: number;
+  currentMeasure: number;
+  measureProgress: number;
+  sectionProgress: number;
+}
+
+const createSections = (performers: Performer[], chordProgression: string[][]) => {
+  const sections: {
+    id: string;
+    label: string;
+    user: string;
+    userImage?: string;
+    color: string;
+    measures: { chord: string }[];
+  }[] = [];
+
+  sections.push({
+    id: "intro",
+    label: "Intro",
+    user: "JAMUS",
+    userImage: undefined,
+    color: "#7BA7FF",
+    measures: chordProgression[0]?.map((chord: string) => ({ chord })) || [],
+  });
+
+  const labels = ["A", "B", "C", "D"];
+  const realPerformers = performers.filter((performer) => performer.name !== "JAMUS");
+
+  realPerformers.forEach((performer, performerIndex) => {
+    if (performerIndex < 4) {
+      const firstLineIndex = 1 + performerIndex * 2;
+      const secondLineIndex = firstLineIndex + 1;
+
+      const firstLineMeasures =
+        chordProgression[firstLineIndex]?.map((chord: string) => ({ chord })) || [];
+      const secondLineMeasures =
+        chordProgression[secondLineIndex]?.map((chord: string) => ({ chord })) || [];
+
+      sections.push({
+        id: `section-${labels[performerIndex]}`,
+        label: labels[performerIndex],
+        user: performer.name,
+        userImage: undefined,
+        color: performer.color,
+        measures: [...firstLineMeasures, ...secondLineMeasures],
+      });
+    }
+  });
+
+  sections.push({
+    id: "outro",
+    label: "Outro",
+    user: "JAMUS",
+    userImage: undefined,
+    color: "#7BA7FF",
+    measures: chordProgression[9]?.map((chord: string) => ({ chord })) || [],
+  });
+
+  return sections;
 };
 
 export default function Billboard({
@@ -20,73 +80,47 @@ export default function Billboard({
   artist,
   performers,
   chordProgression,
+  currentSectionIndex,
+  currentMeasure,
+  measureProgress,
+  sectionProgress,
 }: BillboardProps) {
+  const sections = createSections(performers, chordProgression);
+
+  const handleJamJoin = () => {
+    console.log("JAM 참여하기 클릭 - Single 모드로 이동 예정");
+  };
+
   return (
-    <section className="flex flex-1 items-center justify-center p-8">
-      <div className="flex h-full w-full max-w-[900px] flex-col rounded-2xl border border-gray-700/50 bg-[#252736]">
-        <header className="flex items-center justify-between border-b border-gray-700/50 px-6 py-4">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-lg bg-gray-700/50" />
-            <div>
-              <h2 className="text-xl font-bold text-white">{songTitle}</h2>
-              <p className="text-sm text-gray-400">{artist}</p>
-            </div>
+    <div className="flex h-[70vh] w-full flex-col rounded-2xl border border-white/10 bg-[#1B1C26]/60 shadow-2xl backdrop-blur-xl">
+      <div className="flex flex-shrink-0 items-start justify-between p-4 pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#7BA7FF]/30 bg-[#7BA7FF]/30">
+            <span className="text-sm font-medium text-white">J</span>
           </div>
-          <button className="rounded-full bg-white px-6 py-2.5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-100">
-            이 JAM에 참여하기
-          </button>
-        </header>
-
-        <div className="flex flex-1 gap-6 p-6">
-          <aside className="flex w-48 flex-col gap-4">
-            {performers.map((performer) => (
-              <div key={performer.name} className="flex flex-col items-center gap-3">
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold text-white"
-                  style={{ backgroundColor: performer.color }}
-                >
-                  {performer.name.charAt(0).toUpperCase()}
-                </div>
-                <p className="text-sm text-gray-400">{performer.name}</p>
-                <button className="text-gray-500 transition-colors hover:text-pink-500">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                    />
-                  </svg>
-                </button>
-              </div>
-            ))}
-          </aside>
-
-          <div className="flex flex-1 rounded-lg bg-[#1B1C26] p-6">
-            <div className="flex w-full flex-col gap-3">
-              {chordProgression.map((line, lineIndex) => (
-                <div key={lineIndex} className="flex h-16 items-stretch">
-                  <div className="w-[3px] bg-gray-500" />
-                  {line.map((chord, chordIndex) => (
-                    <React.Fragment key={chordIndex}>
-                      <div className="flex min-w-[100px] flex-1 items-center pl-4">
-                        <span className="text-base text-white">{chord}</span>
-                      </div>
-                      <div
-                        className={
-                          chordIndex === line.length - 1
-                            ? "w-[3px] bg-gray-500"
-                            : "w-[1px] bg-gray-600"
-                        }
-                      />
-                    </React.Fragment>
-                  ))}
-                </div>
-              ))}
-            </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">{songTitle}</h2>
+            <p className="text-sm text-[#9B9B9B]">{artist}</p>
           </div>
         </div>
+
+        <button
+          onClick={handleJamJoin}
+          className="rounded-full bg-white px-5 py-2 text-sm font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
+        >
+          <span>이 JAM에 참여하기</span>
+        </button>
       </div>
-    </section>
+
+      <div className="mx-4 mb-4 flex-1 overflow-hidden rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 p-8 backdrop-blur-sm">
+        <SheetMusic
+          sections={sections}
+          currentSectionIndex={currentSectionIndex}
+          currentMeasure={currentMeasure}
+          measureProgress={measureProgress}
+          sectionProgress={sectionProgress}
+        />
+      </div>
+    </div>
   );
 }
