@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import FeedContainer from '@/components/feed/FeedContainer';
 import Billboard from '@/components/feed/Billboard';
 import Stage from '@/components/feed/Stage';
@@ -14,9 +15,14 @@ const mockSongs = [
 const COLOR_PALETTE = ['#FF7B7B', '#FFD166', '#3DDF85', '#B794F6'];
 
 export default function FeedPage() {
+  const router = useRouter();
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    router.refresh();
+  }, [router]);
 
   const currentSong = mockSongs[currentSongIndex];
   const totalDuration = 160;
