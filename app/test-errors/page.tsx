@@ -1,8 +1,9 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useMemo, useState } from "react";
 
-import Sidebar from "@/components/layout/Sidebar";
 import LoadingError from "@/components/errors/LoadingError";
 import NetworkError from "@/components/errors/NetworkError";
 import ServerError from "@/components/errors/ServerError";
@@ -25,8 +26,8 @@ export default function TestErrorsPage() {
   }, [errorType]);
 
   return (
-    <>
-      <div className="fixed left-[240px] right-0 top-0 z-40 border-b border-gray-700/80 bg-[#1E1F2B]/90 px-8 py-4 backdrop-blur">
+    <div className="min-h-screen bg-[#1B1C26]">
+      <div className="fixed left-0 right-0 top-0 z-40 border-b border-gray-700/80 bg-[#1E1F2B]/90 px-8 py-4 backdrop-blur">
         <h1 className="mb-4 text-xl font-semibold text-white">오류 화면 테스트</h1>
         <div className="flex gap-4">
           <button
@@ -63,7 +64,6 @@ export default function TestErrorsPage() {
       </div>
 
       <div className="pt-28">{errorComponent}</div>
-    </>
+    </div>
   );
 }
-
