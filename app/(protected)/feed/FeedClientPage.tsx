@@ -362,40 +362,44 @@ export default function FeedClientPage() {
 
   return (
     <FeedContainer>
-      <div className="flex h-full flex-col">
-        <Billboard
-          key={`jam-${currentJamIndex}-song-${currentSongIndex}`}
-          className="flex-1"
-          userName={currentJam.name}
-          userProfile={currentJam.profileImage}
-          instrument={currentJam.instrument}
-          songTitle={currentSong.title}
-          artistName={currentSong.artist}
-          chordProgression={chordProgression}
-          performers={performers}
-          currentSectionIndex={sectionIndex}
-          currentMeasure={measure}
-          measureProgress={measureProgress}
-          sectionProgress={sectionProgress}
-        />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex flex-1 min-h-0 flex-col">
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
+            <Billboard
+              key={`jam-${currentJamIndex}-song-${currentSongIndex}`}
+              className="h-full"
+              userName={currentJam.name}
+              userProfile={currentJam.profileImage}
+              instrument={currentJam.instrument}
+              songTitle={currentSong.title}
+              artistName={currentSong.artist}
+              chordProgression={chordProgression}
+              performers={performers}
+              currentSectionIndex={sectionIndex}
+              currentMeasure={measure}
+              measureProgress={measureProgress}
+              sectionProgress={sectionProgress}
+            />
+          </div>
+        </div>
 
-        <div className="h-6 flex-shrink-0" />
-
-        <PlayerBar
-          className="flex-shrink-0"
-          songTitle={currentSong.title}
-          artistName={currentSong.artist}
-          isPlaying={isPlaying}
-          onPlayPause={togglePlayPause}
-          sections={progressSections}
-          currentTime={currentTime}
-          duration={totalDuration}
-          onTimeChange={handleTimeChange}
-          onNextJam={() => handleJamChange('next')}
-          onPrevJam={() => handleJamChange('prev')}
-          jamOnlyMode={jamOnlyMode}
-          onToggleJamOnly={setJamOnlyMode}
-        />
+        <div className="mt-6 flex-shrink-0">
+          <PlayerBar
+            className="flex-shrink-0"
+            songTitle={currentSong.title}
+            artistName={currentSong.artist}
+            isPlaying={isPlaying}
+            onPlayPause={togglePlayPause}
+            sections={progressSections}
+            currentTime={currentTime}
+            duration={totalDuration}
+            onTimeChange={handleTimeChange}
+            onNextJam={() => handleJamChange('next')}
+            onPrevJam={() => handleJamChange('prev')}
+            jamOnlyMode={jamOnlyMode}
+            onToggleJamOnly={setJamOnlyMode}
+          />
+        </div>
       </div>
     </FeedContainer>
   );

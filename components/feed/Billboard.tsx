@@ -1,5 +1,7 @@
 'use client';
 
+import { useRouter } from "next/navigation";
+
 import SheetMusic from "./SheetMusic";
 
 interface Performer {
@@ -96,10 +98,11 @@ export default function Billboard({
   measureProgress,
   sectionProgress,
 }: BillboardProps) {
+  const router = useRouter();
   const sections = createSections(performers, chordProgression);
 
-  const handleJamJoin = () => {
-    console.log("JAM 참여하기 - Single 모드로 이동 예정");
+  const handleJoinJam = () => {
+    router.push("/single");
   };
 
   return (
@@ -121,7 +124,7 @@ export default function Billboard({
         </div>
 
         <button
-          onClick={handleJamJoin}
+          onClick={handleJoinJam}
           className="rounded-full bg-white px-6 py-2 text-sm font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
         >
           이 JAM에 참여하기
