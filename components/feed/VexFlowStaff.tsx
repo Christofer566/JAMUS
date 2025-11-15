@@ -18,18 +18,19 @@ const VexFlowStaffComponent = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const currentContainer = containerRef.current;
+    if (!currentContainer) return;
 
     // Get actual dimensions of the container
-    const actualWidth = containerRef.current.offsetWidth;
+    const actualWidth = currentContainer.offsetWidth;
 
     // Clear previous render
-    containerRef.current.innerHTML = '';
+    currentContainer.innerHTML = '';
 
     try {
       // Create SVG renderer
       const renderer = new Renderer(
-        containerRef.current,
+        currentContainer,
         Renderer.Backends.SVG
       );
 
@@ -61,7 +62,7 @@ const VexFlowStaffComponent = ({
       );
 
       // Create voice and add notes
-      const voice = new Voice({ num_beats: 4, beat_value: 4 });
+      const voice = new Voice({ numBeats: 4, beat_value: 4 });
       voice.addTickables(notes);
 
       // Format and draw
@@ -76,8 +77,8 @@ const VexFlowStaffComponent = ({
     }
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+      if (currentContainer) {
+        currentContainer.innerHTML = '';
       }
     };
   }, [chord, height, color]); // Remove width and height from dependencies

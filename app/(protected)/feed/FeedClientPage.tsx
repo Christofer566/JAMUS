@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import FeedContainer from '@/components/feed/FeedContainer';
 import Billboard from '@/components/feed/Billboard';
@@ -88,21 +88,21 @@ export default function FeedClientPage() {
   const currentSong = mockSongs[currentSongIndex];
   // const totalDuration = currentSong.duration; // This will now come from the audio element
 
-  const sectionColors = {
+  const sectionColors = useMemo(() => ({
     A: COLOR_PALETTE[0],
     B: COLOR_PALETTE[1],
     C: COLOR_PALETTE[2],
     D: COLOR_PALETTE[3],
-  };
+  }), []);
 
-  const progressSections = [
+  const progressSections = useMemo(() => [
     { id: 'intro', label: 'In', color: '#7BA7FF', startTime: 0, duration: 16, measures: 4 },
     { id: 'a1', label: 'A', color: sectionColors.A, startTime: 16, duration: 32, measures: 8 },
     { id: 'b1', label: 'B', color: sectionColors.B, startTime: 48, duration: 32, measures: 8 },
     { id: 'c1', label: 'C', color: sectionColors.C, startTime: 80, duration: 32, measures: 8 },
     { id: 'd1', label: 'D', color: sectionColors.D, startTime: 112, duration: 32, measures: 8 },
     { id: 'outro', label: 'Out', color: '#7BA7FF', startTime: 144, duration: 16, measures: 4 },
-  ];
+  ], [sectionColors]);
 
   const introEndTime = progressSections[0].startTime + progressSections[0].duration;
   const outroStartTime = progressSections[progressSections.length - 1].startTime;
