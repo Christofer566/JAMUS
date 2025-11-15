@@ -1,8 +1,7 @@
-'use client';
-
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-
 import SheetMusic from "./SheetMusic";
+import { useOnClickOutside } from "@/hooks/useOnClickOutside";
 
 interface Performer {
   name: string;
@@ -62,7 +61,7 @@ const createSections = (performers: Performer[], chordProgression: string[][]) =
         chordProgression[secondLineIndex]?.map((chord: string) => ({ chord })) || [];
 
       sections.push({
-        id: `section-${labels[performerIndex]}`,
+        id: `section-${labels[performerIndex]} `,
         label: labels[performerIndex],
         user: performer.name,
         userImage: undefined,
@@ -100,6 +99,10 @@ export default function Billboard({
 }: BillboardProps) {
   const router = useRouter();
   const sections = createSections(performers, chordProgression);
+  const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
+  const billboardRef = useRef<HTMLDivElement>(null);
+
+  useOnClickOutside(billboardRef, () => setSelectedMeasures(null));
 
   const handleJoinJam = () => {
     router.push("/single");
@@ -107,6 +110,7 @@ export default function Billboard({
 
   return (
     <div
+      ref={billboardRef}
       className={mergeClassNames(
         "flex h-full w-full flex-col rounded-2xl border border-white/10 bg-[#1B1C26]/60 shadow-2xl backdrop-blur-xl",
         className,
@@ -138,6 +142,8 @@ export default function Billboard({
           currentMeasure={currentMeasure}
           measureProgress={measureProgress}
           sectionProgress={sectionProgress}
+          selectedMeasures={selectedMeasures}
+          onSelectionChange={setSelectedMeasures}
         />
       </div>
     </div>

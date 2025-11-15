@@ -297,14 +297,10 @@ export default function FeedClientPage() {
     }
   }, [isPlaying]);
 
-  // This useEffect will handle time updates and duration
+  // This useEffect will handle duration and ended state
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
@@ -320,16 +316,34 @@ export default function FeedClientPage() {
       // Optionally, auto-play next jam/song here
     };
 
-    audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
 
     return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
     };
   }, []); // Empty dependency array means this runs once on mount
+
+  // This useEffect will smoothly update the currentTime for the UI
+  useEffect(() => {
+    let animationFrameId: number;
+
+    const animate = () => {
+      if (audioRef.current) {
+        setCurrentTime(audioRef.current.currentTime);
+      }
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    if (isPlaying) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isPlaying]);
 
   const chordProgression = [
     ['C', 'G', 'Am', 'F'],
