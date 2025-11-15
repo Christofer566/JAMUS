@@ -286,7 +286,11 @@ export default function FeedClientPage() {
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying) {
-        audioRef.current.play();
+        audioRef.current.play().catch(() => {
+          // Auto-play blocked by browser
+          setIsPlaying(false);
+          console.log('⚠️ Auto-play blocked - user must click Play');
+        });
       } else {
         audioRef.current.pause();
       }
