@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import FeedContainer from '@/components/feed/FeedContainer';
 import Billboard from '@/components/feed/Billboard';
@@ -58,10 +58,13 @@ export default function FeedClientPage() {
   const router = useRouter();
   const [currentJamIndex, setCurrentJamIndex] = useState(0);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true); // Set to true for auto-play
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0); // Add duration state
   const [jamOnlyMode, setJamOnlyMode] = useState(false);
   const { setCurrentPerformer, setStageColor } = useStageContext();
+
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     router.refresh();
@@ -83,7 +86,7 @@ export default function FeedClientPage() {
 
   const currentJam = mockJams[currentJamIndex];
   const currentSong = mockSongs[currentSongIndex];
-  const totalDuration = currentSong.duration;
+  // const totalDuration = currentSong.duration; // This will now come from the audio element
 
   const sectionColors = {
     A: COLOR_PALETTE[0],
@@ -114,10 +117,10 @@ export default function FeedClientPage() {
       }
 
       const lowerBound = 0;
-      const upperBound = totalDuration;
+      const upperBound = duration; // Use dynamic duration
       return Math.min(Math.max(time, lowerBound), upperBound);
     },
-    [introEndTime, jamOnlyMode, outroStartTime, totalDuration]
+    [duration, introEndTime, jamOnlyMode, outroStartTime]
   );
 
   const getRandomStageColor = useCallback(() => {
@@ -279,30 +282,50 @@ export default function FeedClientPage() {
       ? progressSections[sectionIndex].color
       : '#7BA7FF';
 
+  // This useEffect will now control the actual audio element
   useEffect(() => {
-    if (!isPlaying) return;
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.play();
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [isPlaying]);
 
-    const interval = setInterval(() => {
-      setCurrentTime((prev) => {
-        const nextTime = prev + 0.05;
+  // This useEffect will handle time updates and duration
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
 
-        if (jamOnlyMode) {
-          if (nextTime >= outroStartTime) {
-            return introEndTime;
-          }
-          return clampTime(nextTime);
-        }
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
 
-        if (nextTime >= totalDuration) {
-          return 0;
-        }
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration);
+      // Optionally, start playing immediately if auto-play is desired on load
+      // if (isPlaying) {
+      //   audio.play();
+      // }
+    };
 
-        return nextTime;
-      });
-    }, 50);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+      // Optionally, auto-play next jam/song here
+    };
 
-    return () => clearInterval(interval);
-  }, [clampTime, introEndTime, isPlaying, jamOnlyMode, outroStartTime, totalDuration]);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, []); // Empty dependency array means this runs once on mount
 
   const chordProgression = [
     ['C', 'G', 'Am', 'F'],
@@ -349,7 +372,9 @@ export default function FeedClientPage() {
   const currentPerformerName = getCurrentPerformer();
 
   const handleTimeChange = (newTime: number) => {
-    setCurrentTime(clampTime(newTime));
+    if (audioRef.current) {
+      audioRef.current.currentTime = clampTime(newTime);
+    }
   };
 
   useEffect(() => {
@@ -362,6 +387,11 @@ export default function FeedClientPage() {
 
   return (
     <FeedContainer>
+      <audio
+        ref={audioRef}
+        src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        preload="auto"
+      />
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex flex-1 min-h-0 flex-col">
           <div className="flex-1 overflow-y-auto scrollbar-hide">
@@ -392,7 +422,7 @@ export default function FeedClientPage() {
             onPlayPause={togglePlayPause}
             sections={progressSections}
             currentTime={currentTime}
-            duration={totalDuration}
+            duration={duration}
             onTimeChange={handleTimeChange}
             onNextJam={() => handleJamChange('next')}
             onPrevJam={() => handleJamChange('prev')}
