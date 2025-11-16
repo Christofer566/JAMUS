@@ -4,12 +4,16 @@
 # Language: PowerShell
 # Purpose: Monitors the 'triggers/' folder in GitHub and automatically sends commands to Gemini CLI.
 # Author: Gemini CLI
-# Version: 3.1 (Final Logic Reorder)
+# Version: 3.2 (Startup Delay)
 # Last Modified: 2025-11-17
 # Key Changes:
-#   - Writes an initial log message BEFORE attempting any other logic (like finding git.exe).
-#   - Wraps command discovery in its own try/catch to log success or failure.
+#   - Added a 30-second delay at the very beginning to solve potential race conditions during system startup.
 # =================================================================================================
+
+# --- PRE-STARTUP DELAY ---
+# Wait for 30 seconds to ensure all system services, especially networking, are fully initialized.
+# This is a common strategy to improve the reliability of tasks that run 'AtStartup'.
+Start-Sleep -Seconds 30
 
 # --- Script Configuration ---
 $RepoPath = $PSScriptRoot | Split-Path
@@ -20,7 +24,6 @@ $CheckIntervalSeconds = 60
 $EventLogSource = "GeminiAutomation"
 
 # --- Logging and Slack Notification Functions ---
-# NOTE: These functions are defined first, but not used until after the initial log write test.
 function Write-Log {
     param ([string]$Message, [string]$Level = "INFO")
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -33,14 +36,14 @@ function Write-Log {
         Add-Content -Path $LogFile -Value $LogMessage -Encoding UTF8 -ErrorAction Stop
         Write-Host $LogMessage
     } catch {
-        $FatalLogMessage = "FATAL: Failed to write to log file '$LogFile'. Error: $($_.Exception.Message)"
-        # Try to write to event log as a last resort.
+        # Cannot write to log file, so we can't log this error there. Last resort is Event Viewer.
         try {
             if (-Not (Get-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction SilentlyContinue)) {
                 New-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction Stop
             }
+            $FatalLogMessage = "FATAL: Failed to write to log file '$LogFile'. Error: $($_.Exception.Message)"
             Write-EventLog -LogName "Application" -Source $EventLogSource -EventId 1001 -EntryType Error -Message $FatalLogMessage
-        } catch {} # Suppress errors from the logger's last resort.
+        } catch {}
         exit 1
     }
 }
@@ -61,11 +64,9 @@ function Send-SlackNotification {
 }
 
 # --- Main Logic ---
+Write-Log "🚀 Starting Gemini Automation Script. Version 3.2 (Startup Delay). Waited 30s."
 
-# Step 1: The VERY FIRST action is to write a log. If this fails, something is fundamentally wrong.
-Write-Log "🚀 Starting Gemini Automation Script. Version 3.1 (Final Logic Reorder)."
-
-# Step 2: Now, find required executables. This is the most likely point of failure.
+# Find required executables.
 $gitPath = $null
 $geminiPath = $null
 try {
@@ -76,7 +77,6 @@ try {
     Write-Log "Attempting to find 'gemini.exe'வுகளை..."
     $geminiPath = (Get-Command gemini -ErrorAction Stop).Source
     Write-Log "Successfully found gemini.exe at: $geminiPath"
-
 } catch {
     $ErrorMessage = "FATAL: Could not find a required command. The script will now exit. Error: $($_.Exception.ToString())"
     Write-Log $ErrorMessage "ERROR"
@@ -84,16 +84,14 @@ try {
     exit 1
 }
 
-# Step 3: If we got this far, send the startup notification.
 Send-SlackNotification "🟢 Gemini Automation Script has started successfully. ($((Get-Date).ToString('F')))"
 
-# Step 4: Start the main loop.
 while ($true) {
     try {
         Write-Log "Setting working directory to '$RepoPath'."
         Set-Location -Path $RepoPath
 
-        # Git Synchronization (using full path to git.exe)
+        # Git Synchronization
         Write-Log "🔄 Starting Git synchronization..."
         & $gitPath fetch origin main
         $gitStatus = & $gitPath status --porcelain
@@ -121,7 +119,7 @@ while ($true) {
                     default                   { Write-Log "Unknown trigger file '$fileName'. Skipping." "WARN"; continue }
                 }
 
-                # Execute Gemini CLI Directly
+                # Execute Gemini CLI
                 Write-Log "Executing Gemini CLI with command: '$command'"
                 Send-SlackNotification "🚀 Executing Gemini CLI: `$command`"
                 & $geminiPath "Automation Command: $command"
