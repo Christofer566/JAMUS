@@ -34,7 +34,10 @@ async function reviewTask() {
     for (const file of files) {
       console.log(`\n📝 Processing file: ${file}`);
       const taskPath = path.join(triggerDir, file);
-      const task = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+      
+      const taskContent = fs.readFileSync(taskPath, 'utf8');
+      const cleanContent = taskContent.replace(/^\uFEFF/, ''); // BOM 제거
+      const task = JSON.parse(cleanContent);
       
       console.log(`✅ Reviewing task: ${task.task_id}`);
 
