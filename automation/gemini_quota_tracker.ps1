@@ -100,7 +100,18 @@ while ($true) {
         Write-Log "Git pull completed"
         
         # Process Trigger Files
-        $triggerFiles = Get-ChildItem -Path $TriggersPath -Filter "*.json" -ErrorAction SilentlyContinue
+        # 디버그: 현재 경로와 검색 결과 로깅
+        Write-Log "Current directory: $(Get-Location)"
+        Write-Log "Searching in: $TriggersPath"
+
+        $triggerFiles = Get-ChildItem -Path $TriggersPath -Filter "*.json" -Recurse -ErrorAction SilentlyContinue
+
+        Write-Log "Found $($triggerFiles.Count) file(s)"
+        if ($triggerFiles) {
+            foreach ($f in $triggerFiles) {
+                Write-Log "  - $($f.FullName)"
+            }
+        }
         
         if ($triggerFiles) {
             Write-Log "Found $($triggerFiles.Count) trigger file(s)"
