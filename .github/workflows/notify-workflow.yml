@@ -14,14 +14,28 @@ jobs:
       - name: Check workflow stage
         id: check
         run: |
-          if grep -q "📊 종합 의견:" DEV_MEMO.md && \
-             ! grep -q "Claude 최종 판단:" DEV_MEMO.md; then
+          # Claude 판단 섹션 존재 확인
+          HAS_CLAUDE=$(grep -c "### ✅ Claude 최종 판단" DEV_MEMO.md || true)
+          
+          # 승인 상태 확인
+          HAS_APPROVAL=$(grep -c "**상태:** 승인" DEV_MEMO.md || true)
+          
+          # 반려 상태 확인
+          HAS_REJECTION=$(grep -c "**상태:** 반려" DEV_MEMO.md || true)
+          
+          # 성민님 결정 확인
+          HAS_DECISION=$(grep -c "### 🎯 성민님 최종 결정" DEV_MEMO.md || true)
+          
+          # Gemini 검토 확인
+          HAS_GEMINI=$(grep -c "📊 종합 의견:" DEV_MEMO.md || true)
+          
+          echo "Debug: HAS_CLAUDE=$HAS_CLAUDE HAS_APPROVAL=$HAS_APPROVAL HAS_DECISION=$HAS_DECISION HAS_GEMINI=$HAS_GEMINI"
+          
+          if [ "$HAS_GEMINI" -gt 0 ] && [ "$HAS_CLAUDE" -eq 0 ]; then
             echo "stage=gemini_done" >> $GITHUB_OUTPUT
-          elif grep -q "### ✅ Claude 최종 판단" DEV_MEMO.md && \
-               grep -q "**상태:** 승인" DEV_MEMO.md && \
-               ! grep -q "🎯 성민님 최종 결정:" DEV_MEMO.md; then
+          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_APPROVAL" -gt 0 ] && [ "$HAS_DECISION" -eq 0 ]; then
             echo "stage=approval_needed" >> $GITHUB_OUTPUT
-          elif grep -q "❌ Claude 최종 판단: 반려" DEV_MEMO.md; then
+          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_REJECTION" -gt 0 ]; then
             echo "stage=rejected" >> $GITHUB_OUTPUT
           fi
 
@@ -37,7 +51,7 @@ jobs:
         run: |
           curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
           -H 'Content-Type: application/json' \
-          -d '{"text": "✅ Claude ↔ Gemini 합의 완료!\n\n최종 구현 승인이 필요합니다."}'
+          -d '{"text": "✅ Claude ↔ Gemini 합의 완료!\n\n최종 구현 승인이 필요합니다.\n\nhttps://github.com/Christofer566/JAMUS/blob/main/DEV_MEMO.md"}'
 
       - name: Auto - Create Re-review Trigger
         if: steps.check.outputs.stage == 'rejected'
@@ -48,4 +62,3 @@ jobs:
           git add triggers/gemini-rereview.json
           git commit -m "🔄 Trigger Gemini re-review"
           git push
-
