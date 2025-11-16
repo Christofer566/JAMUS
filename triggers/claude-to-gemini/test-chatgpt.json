@@ -1,0 +1,7 @@
+{
+    "estimated_time":  "30분",
+    "title":  "ChatGPT 리뷰 시스템 테스트",
+    "task_id":  "CHATGPT-TEST-001",
+    "dev_memo":  "ChatGPT API를 통한 자동 리뷰 시스템이 정상 작동하는지 확인합니다. Gemini quota를 절약하기 위해 검토는 ChatGPT가, 구현은 Gemini CLI가 담당합니다.",
+    "complexity":  5
+}
