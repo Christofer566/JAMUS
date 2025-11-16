@@ -1,7 +1,0 @@
-{
-    "estimated_time":  "25분",
-    "title":  "ChatGPT 리뷰 권한 수정 후 최종 테스트",
-    "task_id":  "CHATGPT-TEST-003",
-    "dev_memo":  "GitHub Actions 권한 설정 후 ChatGPT가 리뷰 결과를 자동으로 커밋하고 푸시할 수 있는지 확인합니다.",
-    "complexity":  4
-}
