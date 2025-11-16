@@ -4,7 +4,7 @@
 # Language: PowerShell
 # Purpose: Registers the gemini-automation.ps1 script with Windows Task Scheduler to run automatically on system startup.
 # Author: Gemini CLI (Updated)
-# Version: 2.3 (Added Process Output Redirection for Debugging)
+# Version: 2.4 (Final Basic Action Test)
 # =================================================================================================
 
 # --- Script Settings ---
@@ -24,25 +24,21 @@ if (-Not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Write-Host "✅ Administrator privileges confirmed."
 
 # --- Check and Remove Existing Task ---
+# This step is critical to ensure any potentially corrupted task definition is deleted.
 $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($existingTask) {
-    Write-Warning "Found an existing task named '$TaskName'. Removing it to re-register."
+    Write-Warning "Found an existing task named '$TaskName'. Deleting it completely to ensure a clean registration."
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     Write-Host "✅ Existing task removed."
 }
 
 # --- Task Scheduler Setup ---
-Write-Host "⚙️ Registering a new task in Windows Task Scheduler..."
+Write-Host "⚙️ Registering a new, simplified task in Windows Task Scheduler..."
 
-# 1. Define the Action with Output Redirection for Debugging
-# This uses cmd.exe to launch PowerShell and redirect all output (stdout and stderr) to a log file.
-# This is the ultimate 'black box recorder' to see what powershell.exe itself is doing.
-$OutputLog = Join-Path -Path $env:SystemRoot -ChildPath "Temp\GeminiDiagnostics\powershell-output.log"
-$PowerShellCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
-$Argument = "/c `"$PowerShellCommand > `"$OutputLog`" 2>&1`""
-
-Write-Host "Task action will be: cmd.exe $Argument"
-$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $Argument
+# 1. Define the Action (Simplest possible version)
+# We are removing all complexity like -WindowStyle Hidden or cmd.exe redirection for this test.
+$Argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $Argument
 
 # 2. Define the Trigger (At system startup)
 $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -52,21 +48,18 @@ $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -RunLevel 
 
 # 4. Define Additional Settings
 $settings = New-ScheduledTaskSettingsSet `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 1)
+    -StartWhenAvailable
 
 # 5. Register the Task
 try {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $TaskDescription
-    Write-Host "✅ Success! The task '$TaskName' has been registered."
-    Write-Host "   - The PowerShell process output will now be logged to: $OutputLog"
+    Write-Host "✅ Success! The task '$TaskName' has been registered with the simplest possible action."
+    Write-Host "   - This is the final test to see if the Task Scheduler service can execute the task at all."
 } catch {
     Write-Error "❌ Failed to register the task: $($_.Exception.Message)"
     exit
 }
 
-Read-Host "Setup is complete. Press Enter to continue..."
+Read-Host "Setup is complete. Please proceed with the next testing step. Press Enter to continue..."
