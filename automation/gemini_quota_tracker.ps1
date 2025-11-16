@@ -118,17 +118,20 @@ while ($true) {
             
             foreach ($file in $triggerFiles) {
                 $fileName = $file.Name
-                Write-Log "Processing trigger: $fileName"
-                
-                $command = switch ($fileName) {
-                    "gemini-review.json"    { "review" }
-                    "gemini-rereview.json"  { "rereview" }
-                    "gemini-implement.json" { "implement" }
-                    default { 
-                        Write-Log "Unknown trigger: $fileName" "WARN"
-                        continue
-                    }
-                }
+$folderName = $file.Directory.Name
+
+Write-Log "Processing trigger: $fileName (folder: $folderName)"
+
+$command = switch ($folderName) {
+    "review-request"     { "review DEV_MEMO" }
+    "pending-approval"   { "implement code" }
+    "claude-code"        { "execute task" }
+    "consensus-failed"   { "review failed" }
+    default { 
+        Write-Log "Unknown trigger folder: $folderName (file: $fileName)" "WARN"
+        continue
+    }
+}
                 
                 # Execute Gemini CLI
                 Write-Log "Executing Gemini CLI: $command"
