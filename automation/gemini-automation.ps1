@@ -4,13 +4,14 @@
 # Language: PowerShell
 # Purpose: Monitors the 'triggers/' folder in GitHub and automatically sends commands to Gemini CLI.
 # Author: Gemini CLI
-# Version: 2.1 (Robust Pre-flight Checks)
+# Version: 2.2 (Log to Temp Directory)
 # Last Modified: 2025-11-17
 # =================================================================================================
 
 # --- Script Configuration ---
 $RepoPath = $PSScriptRoot | Split-Path
-$LogDirectory = "C:\Logs"
+# Switched to a guaranteed-writable location to avoid C:\ permissions issues.
+$LogDirectory = Join-Path -Path $env:TEMP -ChildPath "GeminiAutomationLogs"
 $LogFile = "$LogDirectory\gemini-automation.log"
 $TriggersPath = "$RepoPath\triggers"
 $CheckIntervalSeconds = 60
@@ -76,7 +77,7 @@ function Send-SlackNotification {
 }
 
 # --- Main Logic ---
-Write-Log "🚀 Starting Gemini Automation Script. Version 2.1. Repository: $RepoPath"
+Write-Log "🚀 Starting Gemini Automation Script. Version 2.2. Repository: $RepoPath"
 Send-SlackNotification "🟢 Gemini Automation Script has started. ($((Get-Date).ToString('F')))"
 
 while ($true) {
