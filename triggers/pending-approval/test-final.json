@@ -1,0 +1,8 @@
+﻿{
+  "task_id": "test-final",
+  "title": "최종 버튼 테스트",
+  "complexity": 8,
+  "estimated_time": "4시간",
+  "recommended_executor": "gemini_cli",
+  "quota_estimate": 200
+}
