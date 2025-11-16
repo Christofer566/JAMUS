@@ -1,0 +1,6 @@
+﻿{
+    "description":  "Review this simple console.log statement",
+    "code":  "console.log(\u0027Hello JAMUS\u0027);",
+    "language":  "javascript",
+    "action":  "code_review"
+}
