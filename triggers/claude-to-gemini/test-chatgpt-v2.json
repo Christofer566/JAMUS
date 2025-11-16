@@ -1,7 +1,0 @@
-{
-    "estimated_time":  "20분",
-    "title":  "ChatGPT 리뷰 크레딧 충전 후 테스트",
-    "task_id":  "CHATGPT-TEST-002",
-    "dev_memo":  "OpenAI API 크레딧 충전 후 ChatGPT 리뷰 시스템이 정상 작동하는지 확인합니다.",
-    "complexity":  3
-}
