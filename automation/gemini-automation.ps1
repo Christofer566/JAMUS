@@ -4,7 +4,7 @@
 # Language: PowerShell
 # Purpose: Monitors the 'triggers/' folder in GitHub and automatically sends commands to Gemini CLI.
 # Author: Gemini CLI
-# Version: 1.1
+# Version: 2.0 (Enhanced Logging & Error Handling)
 # Last Modified: 2025-11-17
 # =================================================================================================
 
@@ -14,6 +14,19 @@ $LogDirectory = "C:\Logs"
 $LogFile = "$LogDirectory\gemini-automation.log"
 $TriggersPath = "$RepoPath\triggers"
 $CheckIntervalSeconds = 60
+$EventLogSource = "GeminiAutomation"
+
+# --- Pre-flight Checks and Setup ---
+
+# Ensure Event Log Source exists (requires elevation, which the scheduled task has)
+try {
+    if (-Not (Get-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction SilentlyContinue)) {
+        New-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction Stop
+    }
+} catch {
+    Write-Host "FATAL: Could not create Event Log source '$EventLogSource'. Please run this script as Administrator once to create it. Error: $($_.Exception.Message)"
+    exit 1
+}
 
 # --- Logging and Slack Notification Functions ---
 function Write-Log {
@@ -21,12 +34,19 @@ function Write-Log {
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $LogMessage = "$Timestamp - $Level - $Message"
     
-    if (-not (Test-Path $LogDirectory)) {
-        New-Item -Path $LogDirectory -ItemType Directory | Out-Null
+    try {
+        # Ensure the directory exists before writing
+        if (-not (Test-Path $LogDirectory)) {
+            New-Item -Path $LogDirectory -ItemType Directory -ErrorAction Stop | Out-Null
+        }
+        Add-Content -Path $LogFile -Value $LogMessage -Encoding UTF8 -ErrorAction Stop
+        Write-Host $LogMessage
+    } catch {
+        $FatalMessage = "FATAL: Failed to write to log file '$LogFile'. Error: $($_.Exception.Message)"
+        Write-EventLog -LogName "Application" -Source $EventLogSource -EventId 1001 -EntryType Error -Message $FatalMessage
+        # If logging fails, we can't do much else. Exit to prevent loops.
+        exit 1
     }
-    
-    Add-Content -Path $LogFile -Value $LogMessage
-    Write-Host $LogMessage
 }
 
 function Send-SlackNotification {
@@ -42,19 +62,20 @@ function Send-SlackNotification {
     } | ConvertTo-Json
     
     try {
-        Invoke-RestMethod -Uri $env:SLACK_WEBHOOK -Method Post -Body $payload -ContentType 'application/json'
-        Write-Log "Slack notification sent successfully: $Message"
+        Invoke-RestMethod -Uri $env:SLACK_WEBHOOK -Method Post -Body $payload -ContentType 'application/json' -ErrorAction Stop
+        Write-Log "Slack notification sent successfully."
     } catch {
         Write-Log "Failed to send Slack notification: $($_.Exception.Message)" "ERROR"
     }
 }
 
 # --- Main Logic ---
-Write-Log "🚀 Starting Gemini Automation Script. Repository: $RepoPath"
+Write-Log "🚀 Starting Gemini Automation Script. Version 2.0. Repository: $RepoPath"
 Send-SlackNotification "🟢 Gemini Automation Script has started. ($((Get-Date).ToString('F')))"
 
 while ($true) {
     try {
+        Write-Log "Setting working directory to '$RepoPath'."
         Set-Location -Path $RepoPath
 
         # 1. Git Synchronization
@@ -63,87 +84,86 @@ while ($true) {
         
         $gitStatus = git status --porcelain
         if ($gitStatus) {
-            Write-Log "⚠️ Detected local changes. Stashing them."
+            Write-Log "Local changes detected. Stashing them." "WARN"
             git stash | Out-Null
         }
 
         git pull origin main
-        Write-Log "✅ Git pull completed."
+        Write-Log "Git pull completed successfully."
 
         # 2. Process Trigger Files
         $triggerFiles = Get-ChildItem -Path $TriggersPath -Filter "*.json"
         
         if ($triggerFiles) {
             $processed = $false
+            Write-Log "Found $($triggerFiles.Count) trigger file(s)."
             foreach ($file in $triggerFiles) {
                 $filePath = $file.FullName
                 $fileName = $file.Name
                 
-                # Ignore files older than 5 minutes
                 $fileAgeMinutes = ((Get-Date) - $file.CreationTime).TotalMinutes
                 if ($fileAgeMinutes -gt 5) {
-                    Write-Log "Skipping old trigger file ($fileName). ($([int]$fileAgeMinutes) minutes old)" "WARN"
+                    Write-Log "Skipping old trigger file '$fileName' ($([int]$fileAgeMinutes) minutes old)." "WARN"
                     git rm $filePath | Out-Null
                     $processed = $true
                     continue
                 }
 
-                Write-Log "🎯 Trigger file found: $fileName"
+                Write-Log "🎯 Processing trigger file: $fileName"
                 
                 $command = ""
                 switch ($fileName) {
                     "gemini-review.json"      { $command = "review" }
                     "gemini-rereview.json"    { $command = "rereview" }
                     "gemini-implement.json"   { $command = "implement" }
-                    default                   { Write-Log "Unknown trigger file: $fileName" "WARN"; continue }
+                    default                   { Write-Log "Unknown trigger file '$fileName'. Skipping." "WARN"; continue }
                 }
 
                 # 3. Execute Gemini CLI Directly
-                Write-Log "🚀 Executing Gemini CLI directly. Command: '$command'"
-                Send-SlackNotification "🚀 Executing Gemini CLI directly: `$command`"
+                Write-Log "Executing Gemini CLI with command: '$command'"
+                Send-SlackNotification "🚀 Executing Gemini CLI: `$command`"
 
-                # Assumes 'gemini' executable is in the system PATH.
-                # It calls me with a special prompt "Automation Command:".
-                gemini "자동화 명령: $command"
+                # Calls Gemini with a special prompt "Automation Command:".
+                gemini "Automation Command: $command"
 
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -eq 0) {
                     Write-Log "✅ Gemini CLI task completed successfully. Exit Code: $exitCode"
+                    Send-SlackNotification "✅ Gemini CLI task finished successfully. Command: `$command`"
                 } else {
                     Write-Log "❌ Gemini CLI task failed. Exit Code: $exitCode" "ERROR"
                     Send-SlackNotification "🔴 Gemini CLI task failed! Exit Code: `$exitCode`, Command: `$command`"
                 }
 
-                # Delete the processed file
+                Write-Log "Removing processed trigger file from Git: $fileName"
                 git rm $filePath | Out-Null
-                Write-Log "🗑️ Deleted processed trigger file: $fileName"
                 $processed = $true
             }
 
-            # If files were processed, commit and push
             if ($processed) {
-                git commit -m "chore: Process and clean up trigger files" | Out-Null
+                Write-Log "Committing and pushing trigger file cleanup..."
+                git commit -m "chore(triggers): Process and clean up trigger files" | Out-Null
                 git push origin main | Out-Null
                 Write-Log "✅ Pushed trigger processing results to GitHub."
             }
         } else {
-            Write-Log "No triggers found. Waiting..."
+            # This is a normal state, so no need to log every time.
+            # Write-Log "No triggers found. Waiting..."
         }
     }
     catch {
-        $errorMessage = $_.Exception.Message
-        Write-Log "🔴 A critical error occurred: $errorMessage" "ERROR"
+        $ErrorDetails = $_ | Format-List -Force | Out-String
+        $ErrorMessage = "🔴 A critical error occurred in the main loop.`n`n$ErrorDetails"
+        Write-Log $ErrorMessage "ERROR"
         
-        if ($errorMessage -like '*conflict*') {
-            Send-SlackNotification "🔴 Git conflict detected! Manual intervention required. Automation is paused."
-            # Wait for 10 minutes on conflict to avoid loop spam
+        if ($_.Exception.Message -like '*conflict*') {
+            Send-SlackNotification "🔴 GIT CONFLICT DETECTED! Manual intervention required. Automation is paused for 10 minutes."
             Start-Sleep -Seconds 600 
         } else {
-            Send-SlackNotification "🔴 An error occurred in the automation script: $errorMessage"
+            Send-SlackNotification "🔴 An unexpected error occurred in the automation script. See logs for details. `n`n*Error Message*: $($_.Exception.Message)"
         }
     }
     
-    # Wait for the specified interval
     Write-Log "--- Loop finished, sleeping for $CheckIntervalSeconds seconds. ---"
     Start-Sleep -Seconds $CheckIntervalSeconds
 }
