@@ -4,7 +4,7 @@
 # Language: PowerShell
 # Purpose: Monitors the 'triggers/' folder in GitHub and automatically sends commands to Gemini CLI.
 # Author: Gemini CLI
-# Version: 2.0 (Enhanced Logging & Error Handling)
+# Version: 2.1 (Robust Pre-flight Checks)
 # Last Modified: 2025-11-17
 # =================================================================================================
 
@@ -17,15 +17,21 @@ $CheckIntervalSeconds = 60
 $EventLogSource = "GeminiAutomation"
 
 # --- Pre-flight Checks and Setup ---
-
-# Ensure Event Log Source exists (requires elevation, which the scheduled task has)
 try {
+    # Ensure Event Log Source exists (requires elevation, which the scheduled task has)
     if (-Not (Get-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction SilentlyContinue)) {
         New-EventLog -LogName "Application" -Source $EventLogSource -ErrorAction Stop
     }
 } catch {
-    Write-Host "FATAL: Could not create Event Log source '$EventLogSource'. Please run this script as Administrator once to create it. Error: $($_.Exception.Message)"
-    exit 1
+    # This is a critical failure. We can't use our custom log source if it failed to create.
+    # We will write to the event log using a generic, always-available source.
+    $FatalMessage = "FATAL PRE-FLIGHT CHECK FAILED: The script could not create its own Event Log source ('$EventLogSource').`nThis usually happens due to permissions issues, even when running as SYSTEM.`nPlease try running 'setup-autostart.ps1' again as an Administrator to pre-register the source.`n`nOriginal Error: $($_.Exception.Message)"
+    
+    # Use a default, always-available source like 'Application Error' to report the failure.
+    Write-EventLog -LogName "Application" -Source "Application Error" -EventId 1000 -EntryType Error -Message $FatalMessage
+    
+    # Exit with a specific error code to indicate this type of pre-flight failure.
+    exit 2
 }
 
 # --- Logging and Slack Notification Functions ---
@@ -42,8 +48,8 @@ function Write-Log {
         Add-Content -Path $LogFile -Value $LogMessage -Encoding UTF8 -ErrorAction Stop
         Write-Host $LogMessage
     } catch {
-        $FatalMessage = "FATAL: Failed to write to log file '$LogFile'. Error: $($_.Exception.Message)"
-        Write-EventLog -LogName "Application" -Source $EventLogSource -EventId 1001 -EntryType Error -Message $FatalMessage
+        $FatalLogMessage = "FATAL: Failed to write to log file '$LogFile'. The script cannot continue.`nError: $($_.Exception.Message)"
+        Write-EventLog -LogName "Application" -Source $EventLogSource -EventId 1001 -EntryType Error -Message $FatalLogMessage
         # If logging fails, we can't do much else. Exit to prevent loops.
         exit 1
     }
@@ -70,7 +76,7 @@ function Send-SlackNotification {
 }
 
 # --- Main Logic ---
-Write-Log "🚀 Starting Gemini Automation Script. Version 2.0. Repository: $RepoPath"
+Write-Log "🚀 Starting Gemini Automation Script. Version 2.1. Repository: $RepoPath"
 Send-SlackNotification "🟢 Gemini Automation Script has started. ($((Get-Date).ToString('F')))"
 
 while ($true) {
