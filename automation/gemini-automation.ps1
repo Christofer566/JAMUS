@@ -126,12 +126,11 @@ while ($true) {
                 git push origin main | Out-Null
                 Write-Log "✅ Pushed trigger processing results to GitHub."
             }
-
         } else {
             Write-Log "No triggers found. Waiting..."
         }
-
-    } catch {
+    }
+    catch {
         $errorMessage = $_.Exception.Message
         Write-Log "🔴 A critical error occurred: $errorMessage" "ERROR"
         
@@ -145,5 +144,6 @@ while ($true) {
     }
     
     # Wait for the specified interval
+    Write-Log "--- Loop finished, sleeping for $CheckIntervalSeconds seconds. ---"
     Start-Sleep -Seconds $CheckIntervalSeconds
 }
