@@ -1,14 +1,14 @@
-﻿# =================================================================================================
+# =================================================================================================
 # Gemini Automation Script
 #
-# ?몄뼱: PowerShell
-# 紐⑹쟻: GitHub 'triggers/' ?대뜑瑜?媛먯떆?섏뿬 Gemini CLI???먮룞?쇰줈 紐낅졊???꾨떖?⑸땲??
-# ??? Gemini CLI
-# 踰꾩쟾: 1.0
-# 理쒖쥌 ?섏젙: 2025-11-17
+# Language: PowerShell
+# Purpose: Monitors the 'triggers/' folder in GitHub and automatically sends commands to Gemini CLI.
+# Author: Gemini CLI
+# Version: 1.1
+# Last Modified: 2025-11-17
 # =================================================================================================
 
-# --- ?ㅽ겕由쏀듃 ?ㅼ젙 ---
+# --- Script Configuration ---
 $RepoPath = $PSScriptRoot | Split-Path
 $LogDirectory = "C:\Logs"
 $LogFile = "$LogDirectory\gemini-automation.log"
@@ -16,7 +16,7 @@ $TriggersPath = "$RepoPath\triggers"
 $CommandFile = "$RepoPath\gemini-command.txt"
 $CheckIntervalSeconds = 60
 
-# --- 濡쒓퉭 諛?Slack ?뚮┝ ?⑥닔 ---
+# --- Logging and Slack Notification Functions ---
 function Write-Log {
     param ([string]$Message, [string]$Level = "INFO")
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -27,14 +27,14 @@ function Write-Log {
     }
     
     Add-Content -Path $LogFile -Value $LogMessage
-    # 肄섏넄?먮룄 異쒕젰?섏뿬 ?ㅼ떆媛??뺤씤 媛??    Write-Host $LogMessage
+    Write-Host $LogMessage
 }
 
 function Send-SlackNotification {
     param ([string]$Message)
     
     if (-not $env:SLACK_WEBHOOK) {
-        Write-Log "Slack Webhook URL???ㅼ젙?섏? ?딆븘 ?뚮┝??蹂대궪 ???놁뒿?덈떎." "WARN"
+        Write-Log "Slack Webhook URL is not configured. Cannot send notification." "WARN"
         return
     }
     
@@ -44,33 +44,34 @@ function Send-SlackNotification {
     
     try {
         Invoke-RestMethod -Uri $env:SLACK_WEBHOOK -Method Post -Body $payload -ContentType 'application/json'
-        Write-Log "Slack ?뚮┝ ?꾩넚 ?깃났: $Message"
+        Write-Log "Slack notification sent successfully: $Message"
     } catch {
-        Write-Log "Slack ?뚮┝ ?꾩넚 ?ㅽ뙣: $($_.Exception.Message)" "ERROR"
+        Write-Log "Failed to send Slack notification: $($_.Exception.Message)" "ERROR"
     }
 }
 
-# --- 硫붿씤 濡쒖쭅 ---
-Write-Log "?? Gemini ?먮룞???ㅽ겕由쏀듃瑜??쒖옉?⑸땲?? 由ы룷吏?좊━: $RepoPath"
-Send-SlackNotification "?윟 Gemini ?먮룞???ㅽ겕由쏀듃媛 ?쒖옉?섏뿀?듬땲?? ($((Get-Date).ToString('F')))"
+# --- Main Logic ---
+Write-Log "🚀 Starting Gemini Automation Script. Repository: $RepoPath"
+Send-SlackNotification "🟢 Gemini Automation Script has started. ($((Get-Date).ToString('F')))"
 
 while ($true) {
     try {
         Set-Location -Path $RepoPath
 
-        # 1. Git ?숆린??        Write-Log "?봽 Git ?숆린?붾? ?쒖옉?⑸땲??.."
+        # 1. Git Synchronization
+        Write-Log "🔄 Starting Git synchronization..."
         git fetch origin main
         
         $gitStatus = git status --porcelain
         if ($gitStatus) {
-            Write-Log "?좑툘 濡쒖뺄 蹂寃쎌궗??쓣 媛먯??섏뿬 stash?⑸땲??"
+            Write-Log "⚠️ Detected local changes. Stashing them."
             git stash | Out-Null
         }
 
         git pull origin main
-        Write-Log "??Git pull ?꾨즺."
+        Write-Log "✅ Git pull completed."
 
-        # 2. Trigger ?뚯씪 泥섎━
+        # 2. Process Trigger Files
         $triggerFiles = Get-ChildItem -Path $TriggersPath -Filter "*.json"
         
         if ($triggerFiles) {
@@ -79,60 +80,60 @@ while ($true) {
                 $filePath = $file.FullName
                 $fileName = $file.Name
                 
-                # 5遺??댁긽???뚯씪? 臾댁떆
+                # Ignore files older than 5 minutes
                 $fileAgeMinutes = ((Get-Date) - $file.CreationTime).TotalMinutes
                 if ($fileAgeMinutes -gt 5) {
-                    Write-Log " ?ㅻ옒???몃━嫄??뚯씪($fileName)??嫄대꼫?곷땲?? ($([int]$fileAgeMinutes)遺?寃쎄낵)" "WARN"
+                    Write-Log "Skipping old trigger file ($fileName). ($([int]$fileAgeMinutes) minutes old)" "WARN"
                     git rm $filePath | Out-Null
                     $processed = $true
                     continue
                 }
 
-                Write-Log "?렞 ?몃━嫄??뚯씪 諛쒓껄: $fileName"
+                Write-Log "🎯 Trigger file found: $fileName"
                 
                 $command = ""
                 switch ($fileName) {
-                    "gemini-review.json"      { $command = "DEV_MEMO 寃?좏빐以? }
-                    "gemini-rereview.json"    { $command = "?ш??좏빐以? }
-                    "gemini-implement.json"   { $command = "援ы쁽 ?쒖옉?댁쨾" }
-                    default                   { Write-Log "?????녿뒗 ?몃━嫄??뚯씪: $fileName" "WARN"; continue }
+                    "gemini-review.json"      { $command = "review" }
+                    "gemini-rereview.json"    { $command = "rereview" }
+                    "gemini-implement.json"   { $command = "implement" }
+                    default                   { Write-Log "Unknown trigger file: $fileName" "WARN"; continue }
                 }
 
-                # 3. Gemini ?듭떊 (?뚯씪 湲곕컲)
-                Write-Log "?뱾 Gemini?먭쾶 紐낅졊 ?꾨떖: `"$command`""
+                # 3. Communicate with Gemini (File-based)
+                Write-Log "📤 Sending command to Gemini: `"$command`""
                 Set-Content -Path $CommandFile -Value $command
-                Send-SlackNotification "?숋툘 Gemini?먭쾶 紐낅졊???꾨떖?덉뒿?덈떎: `"$command`""
+                Send-SlackNotification "⚙️ Command sent to Gemini: `"$command`""
 
-                # 泥섎━???뚯씪 ??젣
+                # Delete the processed file
                 git rm $filePath | Out-Null
-                Write-Log "?뿊截?泥섎━???몃━嫄??뚯씪 ??젣: $fileName"
+                Write-Log "🗑️ Deleted processed trigger file: $fileName"
                 $processed = $true
             }
 
-            # 泥섎━???뚯씪???덉쑝硫?commit & push
+            # If files were processed, commit and push
             if ($processed) {
                 git commit -m "chore: Process and clean up trigger files" | Out-Null
                 git push origin main | Out-Null
-                Write-Log "???몃━嫄?泥섎━ ?댁뿭??GitHub??push?덉뒿?덈떎."
+                Write-Log "✅ Pushed trigger processing results to GitHub."
             }
 
         } else {
-            Write-Log "諛쒓껄???몃━嫄??놁쓬. ?湲고빀?덈떎..."
+            Write-Log "No triggers found. Waiting..."
         }
 
     } catch {
         $errorMessage = $_.Exception.Message
-        Write-Log "?뵶 移섎챸???ㅻ쪟 諛쒖깮: $errorMessage" "ERROR"
+        Write-Log "🔴 A critical error occurred: $errorMessage" "ERROR"
         
         if ($errorMessage -like '*conflict*') {
-            Send-SlackNotification "?뵶 Git 異⑸룎 諛쒖깮! ?섎룞 ?닿껐???꾩슂?⑸땲?? ?먮룞?붽? ?쇱떆 以묒??⑸땲??"
-            # 異⑸룎 ?쒖뿉??臾댄븳 猷⑦봽瑜??쇳븯湲??꾪빐 ?좎떆 湲멸쾶 ?湲고븯嫄곕굹 ?ㅽ겕由쏀듃 醫낅즺 寃곗젙 媛??            # ?ш린?쒕뒗 10遺??湲곕줈 ?ㅼ젙
+            Send-SlackNotification "🔴 Git conflict detected! Manual intervention required. Automation is paused."
+            # Wait for 10 minutes on conflict to avoid loop spam
             Start-Sleep -Seconds 600 
         } else {
-            Send-SlackNotification "?뵶 ?먮룞???ㅽ겕由쏀듃???ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: $errorMessage"
+            Send-SlackNotification "🔴 An error occurred in the automation script: $errorMessage"
         }
     }
     
-    # 吏?뺣맂 ?쒓컙留뚰겮 ?湲?    Start-Sleep -Seconds $CheckIntervalSeconds
+    # Wait for the specified interval
+    Start-Sleep -Seconds $CheckIntervalSeconds
 }
-
