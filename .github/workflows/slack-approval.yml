@@ -1,0 +1,158 @@
+name: Slack Approval Notification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'triggers/pending-approval/**'
+
+jobs:
+  notify-slack:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Get pending approval files
+        id: get_files
+        run: |
+          FILES=$(ls triggers/pending-approval/*.json 2>/dev/null || echo "")
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+      
+      - name: Send Slack notification
+        if: steps.get_files.outputs.files != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          for file in triggers/pending-approval/*.json; do
+            if [ -f "$file" ]; then
+              TASK_ID=$(basename "$file" .json)
+              CONTENT=$(cat "$file")
+              
+              # JSON 파싱 (jq 사용)
+              TITLE=$(echo "$CONTENT" | jq -r '.title // "Unknown Task"')
+              COMPLEXITY=$(echo "$CONTENT" | jq -r '.complexity // 5')
+              ESTIMATED_TIME=$(echo "$CONTENT" | jq -r '.estimated_time // "Unknown"')
+              EXECUTOR=$(echo "$CONTENT" | jq -r '.recommended_executor // "gemini_cli"')
+              QUOTA_ESTIMATE=$(echo "$CONTENT" | jq -r '.quota_estimate // 100')
+              
+              # Slack 메시지 생성
+              MESSAGE=$(cat <<EOF
+          {
+            "text": "🤝 AI 협의 완료 - $TASK_ID",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "✅ $TITLE",
+                  "emoji": true
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Task ID:*\n$TASK_ID"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*복잡도:*\n$COMPLEXITY/10"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*예상 시간:*\n$ESTIMATED_TIME"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*예상 요청:*\n~$QUOTA_ESTIMATE회"
+                  }
+                ]
+              },
+              {
+                "type": "divider"
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*권장 실행자:* $EXECUTOR"
+                }
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "✅ Gemini CLI로 실행",
+                      "emoji": true
+                    },
+                    "style": "primary",
+                    "value": "$TASK_ID|gemini_cli",
+                    "action_id": "approve_gemini"
+                  },
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "🤖 Claude Code로 실행",
+                      "emoji": true
+                    },
+                    "value": "$TASK_ID|claude_code",
+                    "action_id": "approve_claude_code"
+                  },
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "❌ 거부",
+                      "emoji": true
+                    },
+                    "style": "danger",
+                    "value": "$TASK_ID|reject",
+                    "action_id": "reject"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+              )
+              
+              # Slack Webhook 호출
+              curl -X POST "$SLACK_WEBHOOK_URL" \
+                -H "Content-Type: application/json" \
+                -d "$MESSAGE"
+            fi
+          done
+```
+
+---
+
+## 🔐 **Step 10: GitHub Secrets 추가**
+
+**GitHub에서:**
+
+1. https://github.com/Christofer566/JAMUS 접속
+2. **"Settings"** 탭
+3. 좌측 **"Secrets and variables"** → **"Actions"**
+4. **"New repository secret"** 클릭
+5. **Name:** `SLACK_WEBHOOK_URL`
+6. **Value:** (아까 받은 Webhook URL)
+7. **"Add secret"** 클릭
+
+---
+
+## 📊 **현재 진행 상황**
+```
+✅ Slack App 생성
+✅ Webhook URL 받음
+✅ Vercel Function 생성 & 배포
+✅ GitHub Token 설정
+⏳ Slack Interactive Components URL 입력
+⏳ GitHub Actions 워크플로우 생성
+⏳ GitHub Secrets 설정
