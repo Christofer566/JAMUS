@@ -3,14 +3,12 @@
 #
 # Language: PowerShell
 # Purpose: Registers the gemini-automation.ps1 script with Windows Task Scheduler to run automatically on system startup.
-# Key Changes (v2.0):
-#   - Changed execution user to 'SYSTEM' for reliable auto-start.
-#   - Set to run with highest privileges.
-#   - Prevents the task from stopping on battery power.
-#   - Set unlimited execution time.
+# Key Changes (v2.2):
+#   - Corrected New-ScheduledTaskSettingsSet parameters for better PowerShell compatibility.
+#   - Added reliability settings: task restart on failure and start-when-available.
 # Execution: Must be run with Administrator privileges.
 # Author: Gemini CLI (Updated)
-# Version: 2.1 (Translated to English)
+# Version: 2.2
 # =================================================================================================
 
 # --- Script Settings ---
@@ -58,8 +56,16 @@ $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -RunLevel 
 
 # 4. Define Additional Settings
 #   - ExecutionTimeLimit ([TimeSpan]::Zero): Unlimited execution time.
-#   - DisallowStartIfOnBatteries $false / StopIfGoingOnBatteries $false: Allows the task to run on battery power.
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -DisallowStartIfOnBatteries $false -StopIfGoingOnBatteries $false
+#   - AllowStartIfOnBatteries / DontStopIfGoingOnBatteries: Allows the task to start and run on battery power.
+#   - StartWhenAvailable: Runs the task as soon as possible after a scheduled start is missed.
+#   - RestartCount/RestartInterval: Attempts to restart the task up to 3 times every 1 minute if it fails.
+$settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1)
 
 # 5. Register the Task
 try {
@@ -67,7 +73,7 @@ try {
     Write-Host "✅ Success! The task '$TaskName' has been registered to run automatically at system startup."
     Write-Host "   - Run As: SYSTEM"
     Write-Host "   - Privileges: Highest"
-    Write-Host "   - Execution Time: Unlimited"
+    Write-Host "   - Reliability: Restarts on failure, runs if missed."
     Write-Host "   - On Battery: Allowed to run"
     Write-Host "   - Target Script: $ScriptPath"
 } catch {
