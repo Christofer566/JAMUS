@@ -13,7 +13,6 @@ $RepoPath = $PSScriptRoot | Split-Path
 $LogDirectory = "C:\Logs"
 $LogFile = "$LogDirectory\gemini-automation.log"
 $TriggersPath = "$RepoPath\triggers"
-$CommandFile = "$RepoPath\gemini-command.txt"
 $CheckIntervalSeconds = 60
 
 # --- Logging and Slack Notification Functions ---
@@ -99,10 +98,21 @@ while ($true) {
                     default                   { Write-Log "Unknown trigger file: $fileName" "WARN"; continue }
                 }
 
-                # 3. Communicate with Gemini (File-based)
-                Write-Log "📤 Sending command to Gemini: `"$command`""
-                Set-Content -Path $CommandFile -Value $command
-                Send-SlackNotification "⚙️ Command sent to Gemini: `"$command`""
+                # 3. Execute Gemini CLI Directly
+                Write-Log "🚀 Executing Gemini CLI directly. Command: '$command'"
+                Send-SlackNotification "🚀 Executing Gemini CLI directly: `$command`"
+
+                # Assumes 'gemini' executable is in the system PATH.
+                # It calls me with a special prompt "Automation Command:".
+                gemini "자동화 명령: $command"
+
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -eq 0) {
+                    Write-Log "✅ Gemini CLI task completed successfully. Exit Code: $exitCode"
+                } else {
+                    Write-Log "❌ Gemini CLI task failed. Exit Code: $exitCode" "ERROR"
+                    Send-SlackNotification "🔴 Gemini CLI task failed! Exit Code: `$exitCode`, Command: `$command`"
+                }
 
                 # Delete the processed file
                 git rm $filePath | Out-Null
