@@ -6,6 +6,9 @@ on:
     paths:
       - 'triggers/claude-to-gemini/**'
 
+permissions:
+  contents: write 
+
 jobs:
   chatgpt-review:
     runs-on: ubuntu-latest
