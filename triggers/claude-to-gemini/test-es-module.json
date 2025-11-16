@@ -1,7 +1,0 @@
-{
-    "estimated_time":  "30분",
-    "title":  "ES Module 변환 테스트",
-    "task_id":  "TEST-001",
-    "dev_memo":  "gemini-review.js가 ES Module로 제대로 작동하는지 확인하는 테스트입니다.",
-    "complexity":  5
-}
