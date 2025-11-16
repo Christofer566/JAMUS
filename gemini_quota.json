@@ -1,6 +1,16 @@
-{
-  "date": "",
-  "requests": 0,
-  "limit": 1500
+﻿{
+  "date": "2025-11-16",
+  "used": 0,
+  "remaining": 1500,
+  "last_updated": "2025-11-16T09:00:00Z",
+  "weekly_accuracy": {
+    "average": 0,
+    "samples": 0,
+    "last_updated": "2025-11-16"
+  },
+  "dynamic_threshold": {
+    "low_risk": 300,
+    "medium_risk": 100,
+    "last_adjusted": "2025-11-16"
+  }
 }
-
