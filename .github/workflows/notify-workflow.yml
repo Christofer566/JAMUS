@@ -17,7 +17,8 @@ jobs:
           if grep -q "📊 종합 의견:" DEV_MEMO.md && \
              ! grep -q "Claude 최종 판단:" DEV_MEMO.md; then
             echo "stage=gemini_done" >> $GITHUB_OUTPUT
-          elif grep -q "✅ Claude 최종 판단: 승인" DEV_MEMO.md && \
+          elif grep -q "### ✅ Claude 최종 판단" DEV_MEMO.md && \
+               grep -q "**상태:** 승인" DEV_MEMO.md && \
                ! grep -q "🎯 성민님 최종 결정:" DEV_MEMO.md; then
             echo "stage=approval_needed" >> $GITHUB_OUTPUT
           elif grep -q "❌ Claude 최종 판단: 반려" DEV_MEMO.md; then
@@ -47,3 +48,4 @@ jobs:
           git add triggers/gemini-rereview.json
           git commit -m "🔄 Trigger Gemini re-review"
           git push
+
