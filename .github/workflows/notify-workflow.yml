@@ -14,28 +14,32 @@ jobs:
       - name: Check workflow stage
         id: check
         run: |
-          # Claude 판단 섹션 존재 확인
           HAS_CLAUDE=$(grep -c "Claude 최종 판단" DEV_MEMO.md || true)
-          
-          # 승인 상태 확인 (간단하게)
-          HAS_APPROVAL=$(grep -c "상태: 승인" DEV_MEMO.md || true)
-          
-          # 반려 상태 확인
-          HAS_REJECTION=$(grep -c "상태: 반려" DEV_MEMO.md || true)
-          
-          # 성민님 결정 확인
+          HAS_GEMINI=$(grep -c "종합 의견" DEV_MEMO.md || true)
           HAS_DECISION=$(grep -c "성민님 최종 결정" DEV_MEMO.md || true)
           
-          # Gemini 검토 확인
-          HAS_GEMINI=$(grep -c "종합 의견:" DEV_MEMO.md || true)
+          # Claude 섹션 추출 후 "승인" 검색
+          CLAUDE_SECTION=$(sed -n '/Claude 최종 판단/,/###/p' DEV_MEMO.md)
           
-          echo "Debug: HAS_CLAUDE=$HAS_CLAUDE HAS_APPROVAL=$HAS_APPROVAL HAS_DECISION=$HAS_DECISION HAS_GEMINI=$HAS_GEMINI"
+          if echo "$CLAUDE_SECTION" | grep -q "승인"; then
+            HAS_APPROVAL=1
+          else
+            HAS_APPROVAL=0
+          fi
+          
+          if echo "$CLAUDE_SECTION" | grep -q "반려"; then
+            HAS_REJECTION=1
+          else
+            HAS_REJECTION=0
+          fi
+          
+          echo "Debug: HAS_CLAUDE=$HAS_CLAUDE HAS_APPROVAL=$HAS_APPROVAL HAS_REJECTION=$HAS_REJECTION HAS_DECISION=$HAS_DECISION HAS_GEMINI=$HAS_GEMINI"
           
           if [ "$HAS_GEMINI" -gt 0 ] && [ "$HAS_CLAUDE" -eq 0 ]; then
             echo "stage=gemini_done" >> $GITHUB_OUTPUT
-          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_APPROVAL" -gt 0 ] && [ "$HAS_DECISION" -eq 0 ]; then
+          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_APPROVAL" -eq 1 ] && [ "$HAS_DECISION" -eq 0 ]; then
             echo "stage=approval_needed" >> $GITHUB_OUTPUT
-          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_REJECTION" -gt 0 ]; then
+          elif [ "$HAS_CLAUDE" -gt 0 ] && [ "$HAS_REJECTION" -eq 1 ]; then
             echo "stage=rejected" >> $GITHUB_OUTPUT
           fi
 
