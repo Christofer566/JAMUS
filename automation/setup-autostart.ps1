@@ -4,7 +4,7 @@
 # Language: PowerShell
 # Purpose: Registers the gemini-automation.ps1 script with Windows Task Scheduler to run automatically on system startup.
 # Author: Gemini CLI (Updated)
-# Version: 2.4 (Final Basic Action Test)
+# Version: 2.5 (Restored Full Action)
 # =================================================================================================
 
 # --- Script Settings ---
@@ -33,11 +33,10 @@ if ($existingTask) {
 }
 
 # --- Task Scheduler Setup ---
-Write-Host "⚙️ Registering a new, simplified task in Windows Task Scheduler..."
+Write-Host "⚙️ Registering the full automation task in Windows Task Scheduler..."
 
-# 1. Define the Action (Simplest possible version)
-# We are removing all complexity like -WindowStyle Hidden or cmd.exe redirection for this test.
-$Argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+# 1. Define the Action (Full PowerShell call with hidden window)
+$Argument = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $Argument
 
 # 2. Define the Trigger (At system startup)
@@ -48,18 +47,20 @@ $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -RunLevel 
 
 # 4. Define Additional Settings
 $settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1)
 
 # 5. Register the Task
 try {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $TaskDescription
-    Write-Host "✅ Success! The task '$TaskName' has been registered with the simplest possible action."
-    Write-Host "   - This is the final test to see if the Task Scheduler service can execute the task at all."
+    Write-Host "✅ Success! The full automation task '$TaskName' has been registered."
 } catch {
     Write-Error "❌ Failed to register the task: $($_.Exception.Message)"
     exit
 }
 
-Read-Host "Setup is complete. Please proceed with the next testing step. Press Enter to continue..."
+Read-Host "Setup is complete. Please proceed with the final testing step. Press Enter to continue..."
