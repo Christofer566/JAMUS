@@ -44,3 +44,5 @@ app/feed/page.tsx (수정)
 - 버튼 클릭 시 아이콘 변경 확인
 - 재렌더링 성능 확인"
 }
+
+// trigger update
