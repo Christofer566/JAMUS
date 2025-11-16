@@ -1,8 +1,0 @@
-﻿{
-  "task_id": "test-final-ui",
-  "title": "최종 UI 테스트",
-  "complexity": 6,
-  "estimated_time": "3시간",
-  "recommended_executor": "claude_code",
-  "quota_estimate": 150
-}
