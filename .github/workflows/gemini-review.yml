@@ -1,0 +1,31 @@
+﻿name: Gemini Review Round 1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'triggers/claude-to-gemini/**'
+
+jobs:
+  gemini-review:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: |
+          npm install @google/generative-ai
+      
+      - name: Run Gemini Review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/scripts/gemini-review.js
