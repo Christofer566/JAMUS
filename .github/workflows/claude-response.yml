@@ -1,0 +1,32 @@
+name: Claude Response (v3.1 - Single Round)
+
+on:
+  push:
+    branches: 
+      - main
+    paths:
+      - 'triggers/chatgpt-review/**'
+
+permissions:
+  contents: write
+
+jobs:
+  claude-response:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Install Anthropic SDK
+        run: npm install @anthropic-ai/sdk
+        
+      - name: Run Claude Response
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node .github/scripts/claude-response.js
