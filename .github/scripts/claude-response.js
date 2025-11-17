@@ -3,7 +3,6 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-// ⬇️ import 문 바로 아래에 디버그 코드 추가
 console.log('========================================');
 console.log('🚀 SCRIPT START - Claude Response v3.1');
 console.log('========================================');
@@ -12,20 +11,11 @@ console.log('Files in triggers/chatgpt-review:');
 try {
   const files = fs.readdirSync('triggers/chatgpt-review');
   console.log(files);
+  console.log('Total files:', files.length);
 } catch (e) {
-  console.log('Error reading directory:', e.message);
+  console.log('❌ Error reading directory:', e.message);
 }
 console.log('========================================\n');
-// ⬆️ 여기까지
-
-console.log('🚀 Claude Response v3.1 - Single Round Review');
-// ... 나머지 코드는 그대로
-import Anthropic from '@anthropic-ai/sdk';
-import fs from 'fs';
-import path from 'path';
-import { execSync } from 'child_process';
-
-console.log('🚀 Claude Response v3.1 - Single Round Review');
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
