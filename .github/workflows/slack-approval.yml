@@ -6,24 +6,28 @@ on:
     paths:
       - 'triggers/pending-approval/**'
 
+permissions:
+  contents: read
+
 jobs:
   notify-slack:
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
-      - name: Send Slack notification
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: |
+          npm install typescript ts-node @types/node @slack/webhook
+      
+      - name: Run Slack Handler
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          for file in triggers/pending-approval/*.json; do
-            if [ -f "$file" ]; then
-              TASK_ID=$(basename "$file" .json)
-              
-              curl -X POST "$SLACK_WEBHOOK_URL" \
-                -H "Content-Type: application/json" \
-                -d "{\"text\": \"🤝 테스트 알림 - Task: $TASK_ID\"}"
-            fi
-          done
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: npx ts-node .github/scripts/slack-handler.ts
