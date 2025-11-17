@@ -1,0 +1,6 @@
+{
+  "status": "consensus_failed",
+  "chatgpt_review": {},
+  "failed_at": "2025-11-17T18:51:30.130Z",
+  "next_action": "성민님이 수동으로 DEV_MEMO를 수정하고 pending-approval/로 이동"
+}
