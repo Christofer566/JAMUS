@@ -1,5 +1,3 @@
-# .vercelignore 수정
-cat > .vercelignore << 'EOF'
 .github/
 triggers/
 DEV_MEMO.md
@@ -7,4 +5,3 @@ README.md
 automation/README.md
 gemini_quota.json
 quota_prediction_feedback.json
-EOF
