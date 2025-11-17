@@ -62,7 +62,7 @@ const VexFlowStaffComponent = ({
       );
 
       // Create voice and add notes
-      const voice = new Voice({ numBeats: 4, beatValue: 4 });
+      const voice = new Voice({ num_beats: 4, beat_value: 4 });
       voice.addTickables(notes);
 
       // Format and draw
