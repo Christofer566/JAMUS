@@ -100,9 +100,9 @@ export default function Billboard({
   const router = useRouter();
   const sections = createSections(performers, chordProgression);
   const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
-  const billboardRef = useRef<HTMLDivElement>(null);
+  const billboardRef = useRef<HTMLDivElement | null>(null);
 
-  useOnClickOutside(billboardRef, () => setSelectedMeasures(null));
+  useOnClickOutside(billboardRef as React.RefObject<HTMLElement>, () => setSelectedMeasures(null));
 
   const handleJoinJam = () => {
     router.push("/single");
@@ -149,4 +149,3 @@ export default function Billboard({
     </div>
   );
 }
-
