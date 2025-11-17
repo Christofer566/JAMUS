@@ -1,7 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { Octokit } from '@octokit/rest';
 
-// GitHub API 클라이언트
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN
 });
@@ -29,14 +28,37 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  // Slack verification
+  // CORS 및 메서드 체크
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // Slack은 payload를 form-encoded로 보냄
-    const payload: SlackPayload = JSON.parse(req.body.payload);
+    // Slack URL verification challenge
+    if (req.body.challenge) {
+      return res.status(200).json({ challenge: req.body.challenge });
+    }
+
+    // Slack은 form-encoded로 보냄
+    let payload: SlackPayload;
+    
+    if (typeof req.body === 'string') {
+      // Form-encoded 문자열인 경우
+      const params = new URLSearchParams(req.body);
+      payload = JSON.parse(params.get('payload') || '{}');
+    } else if (req.body.payload) {
+      // payload 필드가 있는 경우
+      if (typeof req.body.payload === 'string') {
+        payload = JSON.parse(req.body.payload);
+      } else {
+        payload = req.body.payload;
+      }
+    } else {
+      // 이미 파싱된 경우
+      payload = req.body;
+    }
+
+    console.log('Parsed payload:', JSON.stringify(payload, null, 2));
 
     // 버튼 클릭 이벤트만 처리
     if (payload.type !== 'block_actions') {
@@ -44,9 +66,9 @@ export default async function handler(
     }
 
     const action = payload.actions[0];
-    const [taskId, executor] = action.value.split('|'); // "task-022|gemini_cli"
+    const [taskId, executor] = action.value.split('|');
 
-    console.log(`Processing approval: ${taskId}, executor: ${executor}`);
+    console.log(`Processing: ${taskId}, executor: ${executor}`);
 
     // 1. pending-approval에서 파일 읽기
     const sourceFile = await octokit.repos.getContent({
@@ -64,7 +86,7 @@ export default async function handler(
     const sha = sourceFile.data.sha;
 
     // 2. 목적지 폴더 결정
-    let destFolder = 'triggers/consensus-failed'; // 기본값 (거부)
+    let destFolder = 'triggers/consensus-failed';
 
     if (action.action_id === 'approve_gemini') {
       destFolder = 'triggers/claude-to-gemini';
@@ -77,7 +99,7 @@ export default async function handler(
       owner: GITHUB_OWNER,
       repo: GITHUB_REPO,
       path: `${destFolder}/${taskId}.json`,
-      message: `✅ Task ${taskId} approved by ${payload.user.name} - executor: ${executor}`,
+      message: `✅ ${taskId} approved by ${payload.user.name} - ${executor}`,
       content: content,
       branch: GITHUB_BRANCH
     });
@@ -92,29 +114,38 @@ export default async function handler(
       branch: GITHUB_BRANCH
     });
 
-    // 5. Slack 응답 업데이트
-    const responseMessage = action.action_id.startsWith('approve')
-      ? `✅ Task ${taskId} approved! Executor: ${executor}`
-      : `❌ Task ${taskId} rejected by ${payload.user.name}`;
+    // 5. Slack 응답 - 처리됨 상태로 최소화
+    const icon = action.action_id.startsWith('approve') ? '✅' : '❌';
+    const action_text = action.action_id === 'approve_gemini' ? 'Gemini CLI' :
+                        action.action_id === 'approve_claude_code' ? 'Claude Code' : 'Rejected';
 
-    // Slack response_url로 메시지 업데이트
     await fetch(payload.response_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         replace_original: true,
-        text: responseMessage
+        text: `${icon} ${taskId} - ${action_text} (${payload.user.name})`,
+        blocks: [
+          {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: `${icon} *${taskId}* processed as *${action_text}* by ${payload.user.name}`
+              }
+            ]
+          }
+        ]
       })
     });
 
     return res.status(200).json({ ok: true });
 
   } catch (error) {
-    console.error('Error handling Slack interaction:', error);
+    console.error('Error:', error);
     return res.status(500).json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-}
-// Force update for Vercel deployment
+};

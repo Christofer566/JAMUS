@@ -1,4 +1,4 @@
-﻿name: Slack Approval Notification
+name: Slack Approval Notification
 
 on:
   push:
@@ -21,67 +21,9 @@ jobs:
           for file in triggers/pending-approval/*.json; do
             if [ -f "$file" ]; then
               TASK_ID=$(basename "$file" .json)
-              CONTENT=$(cat "$file")
-              
-              TITLE=$(echo "$CONTENT" | jq -r '.title // "Unknown Task"')
-              COMPLEXITY=$(echo "$CONTENT" | jq -r '.complexity // 5')
-              ESTIMATED_TIME=$(echo "$CONTENT" | jq -r '.estimated_time // "Unknown"')
-              EXECUTOR=$(echo "$CONTENT" | jq -r '.recommended_executor // "gemini_cli"')
-              QUOTA=$(echo "$CONTENT" | jq -r '.quota_estimate // 100')
               
               curl -X POST "$SLACK_WEBHOOK_URL" \
                 -H "Content-Type: application/json" \
-                -d '{
-                  "text": "🤝 AI 협의 완료 - '"$TASK_ID"'",
-                  "blocks": [
-                    {
-                      "type": "header",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "✅ '"$TITLE"'",
-                        "emoji": true
-                      }
-                    },
-                    {
-                      "type": "section",
-                      "fields": [
-                        {"type": "mrkdwn", "text": "*Task ID:*\n'"$TASK_ID"'"},
-                        {"type": "mrkdwn", "text": "*복잡도:*\n'"$COMPLEXITY"'/10"},
-                        {"type": "mrkdwn", "text": "*예상 시간:*\n'"$ESTIMATED_TIME"'"},
-                        {"type": "mrkdwn", "text": "*예상 요청:*\n~'"$QUOTA"'회"}
-                      ]
-                    },
-                    {"type": "divider"},
-                    {
-                      "type": "section",
-                      "text": {"type": "mrkdwn", "text": "*권장 실행자:* '"$EXECUTOR"'"}
-                    },
-                    {
-                      "type": "actions",
-                      "elements": [
-                        {
-                          "type": "button",
-                          "text": {"type": "plain_text", "text": "✅ Gemini CLI로 실행", "emoji": true},
-                          "style": "primary",
-                          "value": "'"$TASK_ID"'|gemini_cli",
-                          "action_id": "approve_gemini"
-                        },
-                        {
-                          "type": "button",
-                          "text": {"type": "plain_text", "text": "🤖 Claude Code로 실행", "emoji": true},
-                          "value": "'"$TASK_ID"'|claude_code",
-                          "action_id": "approve_claude_code"
-                        },
-                        {
-                          "type": "button",
-                          "text": {"type": "plain_text", "text": "❌ 거부", "emoji": true},
-                          "style": "danger",
-                          "value": "'"$TASK_ID"'|reject",
-                          "action_id": "reject"
-                        }
-                      ]
-                    }
-                  ]
-                }'
+                -d "{\"text\": \"🤝 테스트 알림 - Task: $TASK_ID\"}"
             fi
           done
