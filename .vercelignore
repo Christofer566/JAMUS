@@ -1,4 +1,5 @@
-﻿DEV_MEMO.md
-*.memo.md
-.gemini/
+.github/
 triggers/
+*.md
+gemini_quota.json
+quota_prediction_feedback.json
