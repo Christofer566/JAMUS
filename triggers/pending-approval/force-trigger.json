@@ -1,0 +1,8 @@
+{
+  "task_id": "force-trigger",
+  "dev_memo": "test",
+  "approval_status": "approved",
+  "chatgpt_review": {},
+  "claude_final_review": null,
+  "approved_at": "2025-11-17T18:50:42.916Z"
+}
