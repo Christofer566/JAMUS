@@ -1,0 +1,9 @@
+{
+  "task_id": "SLACK-TEST-002",
+  "title": "Slack Block Kit 알림 테스트 (ESM 수정 후)",
+  "complexity": 4,
+  "estimated_time": "1-2시간",
+  "dev_memo": "ts-node ESM 플래그 추가 후 재테스트",
+  "approval_status": "approved",
+  "approved_at": "2025-11-17T19:43:38.605Z"
+}
