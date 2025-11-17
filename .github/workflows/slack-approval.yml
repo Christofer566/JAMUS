@@ -30,4 +30,4 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: npx ts-node --esm .github/scripts/slack-handler.ts
+        run: node --loader ts-node/esm .github/scripts/slack-handler.ts
