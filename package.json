@@ -21,7 +21,7 @@
     "react-dom": "^19.2.0",
     "tailwind-merge": "^3.4.0",
     "typescript": "^5.9.3",
-    "vexflow": "^5.0.0"
+    "vexflow": "^4.2.5"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.22",
