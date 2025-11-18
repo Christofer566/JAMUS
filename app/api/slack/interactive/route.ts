@@ -50,12 +50,12 @@ export async function POST(request: NextRequest) {
     let emoji = '';
     
     switch (actionId) {
-      case 'approve_gemini':
+      case 'execute_gemini_cli':
         destPath = `triggers/gemini-cli/${taskId}.json`;
         message = '✅ Gemini CLI로 실행 승인!';
         emoji = '💎';
         break;
-      case 'approve_claude':
+      case 'execute_claude_code':
         destPath = `triggers/claude-code/${taskId}.json`;
         message = '✅ Claude Code로 실행 승인!';
         emoji = '🤖';
