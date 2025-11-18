@@ -1,9 +1,0 @@
-﻿{
-  "task_id": "test-001",
-  "title": "Slack 버튼 테스트",
-  "complexity": 5,
-  "estimated_time": "2시간",
-  "recommended_executor": "gemini_cli",
-  "quota_estimate": 100,
-  "dev_memo": "Slack 승인 버튼 테스트용 더미 태스크"
-}
