@@ -1,0 +1,8 @@
+{
+  "task_id": "Task-Final-Test",
+  "title": "최종 Slack 알림 테스트",
+  "complexity": 3,
+  "estimated_time": "1h",
+  "dev_memo": "BOM 제거 후 최종 테스트",
+  "approval_status": "pending"
+}
