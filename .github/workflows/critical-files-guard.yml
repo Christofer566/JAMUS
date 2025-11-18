@@ -1,0 +1,49 @@
+name: Critical Files Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Validate package.json
+        run: |
+          echo "🔍 Checking critical dependencies..."
+          
+          # 필수 패키지 체크
+          REQUIRED_PACKAGES=("next" "react" "react-dom" "@supabase/supabase-js")
+          
+          for package in "${REQUIRED_PACKAGES[@]}"; do
+            if ! grep -q "\"$package\"" package.json; then
+              echo "❌ CRITICAL: $package is missing!"
+              echo "🚨 EMERGENCY SHUTDOWN TRIGGERED"
+              
+              # Slack 긴급 알림
+              curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+                -H 'Content-Type: application/json' \
+                -d "{\"text\":\"🚨 EMERGENCY: $package removed from package.json! System halted.\"}"
+              
+              exit 1
+            fi
+          done
+          
+          echo "✅ All critical dependencies present"
+      
+      - name: Count total dependencies
+        run: |
+          DEPS_COUNT=$(cat package.json | jq '.dependencies | length')
+          echo "📦 Total dependencies: $DEPS_COUNT"
+          
+          # 의존성이 10개 미만이면 뭔가 잘못됨
+          if [ "$DEPS_COUNT" -lt 10 ]; then
+            echo "❌ CRITICAL: Too few dependencies ($DEPS_COUNT)"
+            echo "Expected: 20+ dependencies"
+            exit 1
+          fi

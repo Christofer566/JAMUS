@@ -1,0 +1,40 @@
+name: Emergency Restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: 'Restore from Task ID'
+        required: true
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Restore files
+        run: |
+          TASK_ID="${{ github.event.inputs.task_id }}"
+          BACKUP_DIR="backups/$TASK_ID"
+          
+          if [ -d "$BACKUP_DIR" ]; then
+            cp $BACKUP_DIR/package.json ./
+            cp $BACKUP_DIR/package-lock.json ./
+            
+            echo "✅ Files restored from $TASK_ID"
+          else
+            echo "❌ Backup not found: $TASK_ID"
+            exit 1
+          fi
+      
+      - name: Reinstall dependencies
+        run: npm install
+      
+      - name: Commit restoration
+        run: |
+          git config user.name "JAMUS Restore Bot"
+          git config user.email "restore@jamus.dev"
+          git add package.json package-lock.json
+          git commit -m "🔧 Restore: from ${{ github.event.inputs.task_id }}"
+          git push
