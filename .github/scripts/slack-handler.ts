@@ -113,7 +113,8 @@ function getGeminiQuota(): GeminiQuota | null {
   
   try {
     const content = fs.readFileSync(quotaPath, 'utf-8');
-    const quota = JSON.parse(content) as GeminiQuota;
+    const cleanContent = content.replace(/^\uFEFF/, ''); // BOM 제거 추가!
+    const quota = JSON.parse(cleanContent) as GeminiQuota;
     console.log(`✅ Quota 읽기 완료: ${quota.remaining}/1500 (${Math.round(quota.remaining / 15)}%)`);
     return quota;
   } catch (error) {
