@@ -313,6 +313,35 @@ function buildSlackMessage(task: TaskInfo, prediction: UsagePrediction) {
           type: 'mrkdwn',
           text: `<${githubUrl}|📎 GitHub에서 전체 내용 보기>`
         }
+      },
+      
+      // 🆕 Interactive Buttons 추가!
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '🤖 Claude Code로 실행',
+              emoji: true
+            },
+            style: 'primary',
+            action_id: 'execute_claude_code',
+            value: task.task_id
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '💎 Gemini CLI로 실행',
+              emoji: true
+            },
+            style: 'primary',
+            action_id: 'execute_gemini_cli',
+            value: task.task_id
+          }
+        ]
       }
     ]
   };
