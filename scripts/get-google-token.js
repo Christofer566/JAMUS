@@ -18,8 +18,8 @@
  * - Keep your CLIENT_SECRET private
  */
 
-const readline = require('readline');
-const { google } = require('googleapis');
+import readline from 'readline';
+import { google } from 'googleapis';
 
 // ⚠️ REPLACE THESE WITH YOUR ACTUAL CREDENTIALS
 const CLIENT_ID = 'YOUR_CLIENT_ID_HERE';
