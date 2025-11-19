@@ -24,7 +24,7 @@ import { google } from 'googleapis';
 // ⚠️ REPLACE THESE WITH YOUR ACTUAL CREDENTIALS
 const CLIENT_ID = 'YOUR_CLIENT_ID_HERE';
 const CLIENT_SECRET = 'YOUR_CLIENT_SECRET_HERE';
-const REDIRECT_URI = 'http://localhost:3000/oauth/callback';
+const REDIRECT_URI = 'http://localhost';  // ✅ Fixed: Matches Google Cloud Console setting
 
 // Scopes for Google Calendar and Gmail
 const SCOPES = [
