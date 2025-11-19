@@ -39,3 +39,6 @@ yarn-error.log*
 
 
 automation/.env
+
+# Security: Contains sensitive Google OAuth credentials
+scripts/get-google-token.js
