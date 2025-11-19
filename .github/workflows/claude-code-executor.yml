@@ -1,0 +1,33 @@
+name: Claude Code Executor
+
+on:
+  push:
+    paths:
+      - 'triggers/claude-code/**'
+    branches:
+      - main
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install project dependencies
+        run: npm install
+      
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      
+      - name: Execute Task with Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node .github/scripts/claude-code-executor.js

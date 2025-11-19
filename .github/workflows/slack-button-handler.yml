@@ -1,0 +1,69 @@
+name: Slack Button Handler
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action (execute_claude_code or execute_gemini_cli)'
+        required: true
+        type: string
+      task_id:
+        description: 'Task ID'
+        required: true
+        type: string
+      user:
+        description: 'User who clicked the button'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  route-task:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Move file based on selection
+        run: |
+          TASK_ID="${{ github.event.inputs.task_id }}"
+          ACTION="${{ github.event.inputs.action }}"
+          USER="${{ github.event.inputs.user }}"
+          
+          echo "📋 Task ID: $TASK_ID"
+          echo "🎯 Action: $ACTION"
+          echo "👤 User: $USER"
+          
+          SOURCE="triggers/pending-approval/task-${TASK_ID}.json"
+          
+          if [ "$ACTION" == "execute_claude_code" ]; then
+            DEST="triggers/claude-code/task-${TASK_ID}.json"
+            echo "📂 Moving to Claude Code executor"
+          elif [ "$ACTION" == "execute_gemini_cli" ]; then
+            DEST="triggers/gemini-cli/task-${TASK_ID}.json"
+            echo "📂 Moving to Gemini CLI executor"
+          else
+            echo "❌ Unknown action: $ACTION"
+            exit 1
+          fi
+          
+          mkdir -p $(dirname "$DEST")
+          
+          if [ -f "$SOURCE" ]; then
+            mv "$SOURCE" "$DEST"
+            echo "✅ Moved: $SOURCE → $DEST"
+          else
+            echo "❌ Source file not found: $SOURCE"
+            exit 1
+          fi
+
+      - name: Commit and Push
+        run: |
+          git config user.name "Slack Button Handler"
+          git config user.email "slack-button@jamus.dev"
+          git add triggers/
+          git commit -m "🔀 Route task to executor" || echo "No changes"
+          git push origin main
