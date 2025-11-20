@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Octokit } from '@octokit/rest';
 
+// Slack 메시지 전송 함수
+async function sendSlackMessage(channel: string, text: string) {
+  await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      channel,
+      text
+    })
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 1. Slack Payload 파싱
@@ -26,11 +41,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No action found' }, { status: 400 });
     }
 
-    const taskId = action.value;
     const actionId = action.action_id;
     
-    console.log(`📋 Task ID: ${taskId}`);
     console.log(`🎯 Action: ${actionId}`);
+
+    // ========================================
+    // 🆕 문서화 시작 버튼 처리
+    // ========================================
+    if (actionId === 'start_documentation') {
+      const value = action.value; // "task_number|deploy_url"
+      const [taskNumber, deployUrl] = value.split('|');
+      const channel = payload.channel.id;
+      
+      console.log('Starting documentation for Task', taskNumber);
+      console.log('Deploy URL:', deployUrl);
+
+      // 즉시 응답 (메시지 업데이트)
+      const response = NextResponse.json({
+        response_type: 'in_channel',
+        replace_original: false,
+        text: `📝 Task ${taskNumber} 문서화를 시작합니다...\n승인자: <@${payload.user.id}>`
+      });
+
+      // 백그라운드에서 처리
+      (async () => {
+        try {
+          // TODO: Phase 3-5에서 실제 문서화 로직 구현
+          await sendSlackMessage(
+            channel,
+            `✅ Task ${taskNumber} 문서화 준비 완료!\n` +
+            `- 배포 URL: ${deployUrl}\n` +
+            `- Phase 3-5에서 실제 문서화 구현 예정`
+          );
+        } catch (error) {
+          console.error('Error in documentation:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          await sendSlackMessage(
+            channel,
+            `❌ 문서화 실패: ${errorMessage}`
+          );
+        }
+      })();
+
+      return response;
+    }
+
+    // ========================================
+    // 기존 Task 승인 처리
+    // ========================================
+    const taskId = action.value;
+    console.log(`📋 Task ID: ${taskId}`);
 
     // 4. GitHub API 초기화
     const octokit = new Octokit({ 
