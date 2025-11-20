@@ -3,7 +3,7 @@ import { Octokit } from '@octokit/rest';
 
 // Slack 메시지 전송 함수
 async function sendSlackMessage(channel: string, text: string) {
-  await fetch('https://slack.com/api/chat.postMessage', {
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
@@ -12,8 +12,11 @@ async function sendSlackMessage(channel: string, text: string) {
     body: JSON.stringify({
       channel,
       text
-    })
+    })    
   });
+  const data = await response.json();
+  console.log('Slack API response:', data);
+  return data;  
 }
 
 export async function POST(request: NextRequest) {
