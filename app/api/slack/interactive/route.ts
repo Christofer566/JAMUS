@@ -3,6 +3,8 @@ import { Octokit } from '@octokit/rest';
 
 // Slack 메시지 전송 함수
 async function sendSlackMessage(channel: string, text: string) {
+  console.log('SLACK_BOT_TOKEN exists:', !!process.env.SLACK_BOT_TOKEN);
+  console.log('SLACK_BOT_TOKEN prefix:', process.env.SLACK_BOT_TOKEN?.substring(0, 10));
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
@@ -12,11 +14,11 @@ async function sendSlackMessage(channel: string, text: string) {
     body: JSON.stringify({
       channel,
       text
-    })    
+    })
   });
   const data = await response.json();
   console.log('Slack API response:', data);
-  return data;  
+  return data;
 }
 
 export async function POST(request: NextRequest) {
@@ -24,13 +26,13 @@ export async function POST(request: NextRequest) {
     // 1. Slack Payload 파싱
     const formData = await request.formData();
     const payloadString = formData.get('payload') as string;
-    
+
     if (!payloadString) {
       return NextResponse.json({ error: 'No payload' }, { status: 400 });
     }
-    
+
     const payload = JSON.parse(payloadString);
-    
+
     // 2. Slack Verification Token 확인
     const verificationToken = process.env.SLACK_VERIFICATION_TOKEN;
     if (payload.token !== verificationToken) {
@@ -45,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actionId = action.action_id;
-    
+
     console.log(`🎯 Action: ${actionId}`);
 
     // ========================================
@@ -55,7 +57,7 @@ export async function POST(request: NextRequest) {
       const value = action.value; // "task_number|deploy_url"
       const [taskNumber, deployUrl] = value.split('|');
       const channel = payload.channel.id;
-      
+
       console.log('Starting documentation for Task', taskNumber);
       console.log('Deploy URL:', deployUrl);
 
@@ -96,22 +98,22 @@ export async function POST(request: NextRequest) {
     console.log(`📋 Task ID: ${taskId}`);
 
     // 4. GitHub API 초기화
-    const octokit = new Octokit({ 
-      auth: process.env.GITHUB_TOKEN 
+    const octokit = new Octokit({
+      auth: process.env.GITHUB_TOKEN
     });
-    
+
     const owner = 'Christofer566';
     const repo = 'JAMUS';
     const branch = 'main';
-    
+
     // 5. 소스 파일 경로
     const sourcePath = `triggers/pending-approval/${taskId}.json`;
-    
+
     // 6. 목적지 결정
     let destPath = '';
     let message = '';
     let emoji = '';
-    
+
     switch (actionId) {
       case 'execute_gemini_cli':
         destPath = `triggers/gemini-cli/${taskId}.json`;
@@ -141,9 +143,9 @@ export async function POST(request: NextRequest) {
         path: sourcePath,
         ref: branch
       });
-      
+
       fileData = response.data;
-      
+
       if (!('content' in fileData)) {
         throw new Error('File not found or is a directory');
       }
@@ -190,9 +192,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Error:', error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       response_type: 'ephemeral',
-      text: `❌ 오류 발생: ${error.message}` 
+      text: `❌ 오류 발생: ${error.message}`
     }, { status: 500 });
   }
 }
@@ -201,10 +203,10 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const challenge = searchParams.get('challenge');
-  
+
   if (challenge) {
     return NextResponse.json({ challenge });
   }
-  
+
   return NextResponse.json({ status: 'ok' });
 }

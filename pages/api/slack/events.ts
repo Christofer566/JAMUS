@@ -4,7 +4,7 @@ import crypto from 'crypto';
 // Slack 서명 검증
 function verifySlackRequest(req: VercelRequest): boolean {
   const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
-  
+
   // 임시로 SIGNING_SECRET이 없어도 통과 (테스트용)
   if (!slackSigningSecret) {
     console.warn('SLACK_SIGNING_SECRET is not set - allowing request for testing');
@@ -73,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('=== Slack Event Received ===');
   console.log('Method:', req.method);
   console.log('Body:', JSON.stringify(req.body, null, 2));
-  
+
   // POST 요청만 허용
   if (req.method !== 'POST') {
     console.log('Method not allowed:', req.method);
@@ -101,7 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 👍 이모지 반응 감지
     if (event.type === 'reaction_added' && event.reaction === '+1') {
       console.log('👍 Reaction detected!');
-      
+
       // 즉시 응답 (Slack 3초 제한)
       res.status(200).json({ ok: true });
 
@@ -113,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           // 메시지 내용 조회
           const message = await getSlackMessage(event.item.channel, event.item.ts);
-          
+
           if (!message) {
             console.error('Message not found');
             return;
@@ -134,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // 배포 URL 추출
           const blocks = message.blocks || [];
           let deployUrl = 'https://jamus.vercel.app';
-          
+
           for (const block of blocks) {
             if (block.type === 'section' && block.fields) {
               for (const field of block.fields) {
