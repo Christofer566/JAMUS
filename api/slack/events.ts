@@ -158,9 +158,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         } catch (error) {
           console.error('Error processing reaction:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           await sendSlackMessage(
             event.item.channel,
-            `❌ 문서화 실패: ${error.message}`
+            `❌ 문서화 실패: ${errorMessage}`
           );
         }
       })();
