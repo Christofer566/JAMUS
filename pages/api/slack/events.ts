@@ -56,6 +56,11 @@ async function getSlackMessage(channel: string, timestamp: string) {
 
 // Slack 메시지 전송
 async function sendSlackMessage(channel: string, text: string) {
+  console.log('=== ENV CHECK ===');
+  console.log('SLACK_BOT_TOKEN exists:', !!process.env.SLACK_BOT_TOKEN);
+  console.log('SLACK_BOT_TOKEN first 10 chars:', process.env.SLACK_BOT_TOKEN?.substring(0, 10));
+  console.log('Channel:', channel);
+  console.log('Text:', text);
   await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
