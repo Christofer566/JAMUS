@@ -29,7 +29,7 @@ jobs:
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
           echo "time=$COMMIT_TIME" >> $GITHUB_OUTPUT
           
-      - name: Send Slack Notification
+      - name: Send Slack Notification with Button
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
@@ -44,61 +44,73 @@ jobs:
             TASK_TITLE="배포"
           fi
           
-          curl -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-Type: application/json' \
-            -d @- << EOFSLACK
-          {
-            "text": "🚀 배포 완료: ${TASK_TITLE}",
-            "blocks": [
-              {
-                "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": "🚀 배포 완료: ${TASK_TITLE}",
-                  "emoji": true
-                }
-              },
+          # Task 번호가 있으면 버튼 포함, 없으면 버튼 제외
+          if [ "$TASK_NUMBER" != "0" ]; then
+            BUTTON_SECTION=',
               {
                 "type": "divider"
               },
               {
-                "type": "section",
-                "fields": [
-                  {
-                    "type": "mrkdwn",
-                    "text": "📦 *커밋*\n\`${COMMIT_SHA}\`"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "⏰ *시각*\n${COMMIT_TIME}"
-                  }
-                ]
-              },
-              {
-                "type": "section",
-                "fields": [
-                  {
-                    "type": "mrkdwn",
-                    "text": "🌐 *URL*\n<${DEPLOYMENT_URL}|배포 확인>"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "💬 *메시지*\n${COMMIT_MESSAGE}"
-                  }
-                ]
-              },
-              {
-                "type": "divider"
-              },
-              {
-                "type": "context",
+                "type": "actions",
                 "elements": [
                   {
-                    "type": "mrkdwn",
-                    "text": "✅ Task 완료 시 👍 를 눌러주세요"
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "📝 문서화 시작",
+                      "emoji": true
+                    },
+                    "style": "primary",
+                    "value": "'"${TASK_NUMBER}|${DEPLOYMENT_URL}"'",
+                    "action_id": "start_documentation"
                   }
                 ]
-              }
-            ]
-          }
-          EOFSLACK
+              }'
+          else
+            BUTTON_SECTION=""
+          fi
+          
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🚀 배포 완료: '"${TASK_TITLE}"'",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 배포 완료: '"${TASK_TITLE}"'",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "📦 *커밋*\n`'"${COMMIT_SHA}"'`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "⏰ *시각*\n'"${COMMIT_TIME}"'"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "🌐 *URL*\n<'"${DEPLOYMENT_URL}"'|배포 확인>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "💬 *메시지*\n'"${COMMIT_MESSAGE}"'"
+                    }
+                  ]
+                }'"${BUTTON_SECTION}"'
+              ]
+            }'
