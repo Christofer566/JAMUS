@@ -1,0 +1,104 @@
+name: Deploy and Notify
+
+on:
+  deployment_status:
+
+jobs:
+  notify-deployment:
+    runs-on: ubuntu-latest
+    if: github.event.deployment_status.state == 'success'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Extract Task Number
+        id: task
+        run: |
+          # Extract task number from commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          TASK_NUM=$(echo "$COMMIT_MSG" | grep -oP 'Task \K\d+' || echo "0")
+          echo "task_number=$TASK_NUM" >> $GITHUB_OUTPUT
+          echo "commit_message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          
+      - name: Get Commit Info
+        id: commit
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_TIME=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "time=$COMMIT_TIME" >> $GITHUB_OUTPUT
+          
+      - name: Send Slack Notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
+          TASK_NUMBER: ${{ steps.task.outputs.task_number }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+          COMMIT_TIME: ${{ steps.commit.outputs.time }}
+          COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
+        run: |
+          if [ "$TASK_NUMBER" != "0" ]; then
+            TASK_TITLE="Task ${TASK_NUMBER}"
+          else
+            TASK_TITLE="배포"
+          fi
+          
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d @- << EOFSLACK
+          {
+            "text": "🚀 배포 완료: ${TASK_TITLE}",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "🚀 배포 완료: ${TASK_TITLE}",
+                  "emoji": true
+                }
+              },
+              {
+                "type": "divider"
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "📦 *커밋*\n\`${COMMIT_SHA}\`"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "⏰ *시각*\n${COMMIT_TIME}"
+                  }
+                ]
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "🌐 *URL*\n<${DEPLOYMENT_URL}|배포 확인>"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "💬 *메시지*\n${COMMIT_MESSAGE}"
+                  }
+                ]
+              },
+              {
+                "type": "divider"
+              },
+              {
+                "type": "context",
+                "elements": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "✅ Task 완료 시 👍 를 눌러주세요"
+                  }
+                ]
+              }
+            ]
+          }
+          EOFSLACK
