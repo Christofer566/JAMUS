@@ -16,7 +16,7 @@ function VerifyContent() {
 
   // URL 파라미터에서 이메일 가져오기
   useEffect(() => {
-    const emailParam = searchParams.get('email')
+    const emailParam = searchParams?.get('email')
     if (emailParam) {
       setEmail(emailParam)
     } else {
