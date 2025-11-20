@@ -33,7 +33,7 @@ export default function SidebarNav({ className }: SidebarNavProps) {
     <nav className={mergeClassNames("space-y-3", className)}>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
-        const active = isActivePath(pathname, item.href);
+        const active = isActivePath(pathname || '', item.href);
 
         return (
           <Link
