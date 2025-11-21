@@ -29,7 +29,7 @@ jobs:
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
           echo "time=$COMMIT_TIME" >> $GITHUB_OUTPUT
           
-      - name: Send Slack Notification with Button
+      - name: Send Slack Notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
@@ -42,32 +42,6 @@ jobs:
             TASK_TITLE="Task ${TASK_NUMBER}"
           else
             TASK_TITLE="배포"
-          fi
-          
-          # Task 번호가 있으면 버튼 포함, 없으면 버튼 제외
-          if [ "$TASK_NUMBER" != "0" ]; then
-            BUTTON_SECTION=',
-              {
-                "type": "divider"
-              },
-              {
-                "type": "actions",
-                "elements": [
-                  {
-                    "type": "button",
-                    "text": {
-                      "type": "plain_text",
-                      "text": "📝 문서화 시작",
-                      "emoji": true
-                    },
-                    "style": "primary",
-                    "value": "'"${TASK_NUMBER}|${DEPLOYMENT_URL}"'",
-                    "action_id": "start_documentation"
-                  }
-                ]
-              }'
-          else
-            BUTTON_SECTION=""
           fi
           
           curl -X POST "$SLACK_WEBHOOK_URL" \
@@ -111,6 +85,18 @@ jobs:
                       "text": "💬 *메시지*\n'"${COMMIT_MESSAGE}"'"
                     }
                   ]
-                }'"${BUTTON_SECTION}"'
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "✅ Task 완료 시 👍 를 눌러주세요"
+                    }
+                  ]
+                }
               ]
             }'
