@@ -201,7 +201,7 @@ class GitHubAnalyzer:
 def main():
     """테스트 실행"""
     # JAMUS 레포지토리 분석
-    analyzer = GitHubAnalyzer(owner="sung-min-hwang", repo="JAMUS")
+    analyzer = GitHubAnalyzer(owner="Christofer566", repo="JAMUS")
     
     # 오늘의 활동 분석
     print("오늘의 개발 활동 분석 중...\n")
