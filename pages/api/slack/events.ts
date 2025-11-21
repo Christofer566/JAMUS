@@ -1,1 +1,252 @@
-aW1wb3J0IHsgVmVyY2VsUmVxdWVzdCwgVmVyY2VsUmVzcG9uc2UgfSBmcm9tICdAdmVyY2VsL25vZGUnOwppbXBvcnQgY3J5cHRvIGZyb20gJ2NyeXB0byc7CgovLyBTbGFjayDshJzrqoUg6rKA7KadCmZ1bmN0aW9uIHZlcmlmeVNsYWNrUmVxdWVzdChyZXE6IFZlcmNlbFJlcXVlc3QpOiBib29sZWFuIHsKICBjb25zdCBzbGFja1NpZ25pbmdTZWNyZXQgPSBwcm9jZXNzLmVudi5TTEFDS19TSUdOSU5HX1NFQ1JFVDsKICAKICBpZiAoIXNsYWNrU2lnbmluZ1NlY3JldCkgewogICAgY29uc29sZS53YXJuKCdTTEFDS19TSUdOSU5HX1NFQ1JFVCBpcyBub3Qgc2V0IC0gYWxsb3dpbmcgcmVxdWVzdCBmb3IgdGVzdGluZycpOwogICAgcmV0dXJuIHRydWU7CiAgfQoKICBjb25zdCB0aW1lc3RhbXAgPSByZXEuaGVhZGVyc1sneC1zbGFjay1yZXF1ZXN0LXRpbWVzdGFtcCddIGFzIHN0cmluZzsKICBjb25zdCBzbGFja1NpZ25hdHVyZSA9IHJlcS5oZWFkZXJzWyd4LXNsYWNrLXNpZ25hdHVyZSddIGFzIHN0cmluZzsKCiAgaWYgKCF0aW1lc3RhbXAgfHwgIXNsYWNrU2lnbmF0dXJlKSB7CiAgICByZXR1cm4gZmFsc2U7CiAgfQoKICBjb25zdCBub3cgPSBNYXRoLmZsb29yKERhdGUubm93KCkgLyAxMDAwKTsKICBpZiAoTWF0aC5hYnMobm93IC0gcGFyc2VJbnQodGltZXN0YW1wKSkgPiAzMDApIHsKICAgIGNvbnNvbGUuZXJyb3IoJ1JlcXVlc3QgdGltZXN0YW1wIGlzIHRvbyBvbGQnKTsKICAgIHJldHVybiBmYWxzZTsKICB9CgogIGNvbnN0IHNpZ0Jhc2VzdHJpbmcgPSBgdjA6JHt0aW1lc3RhbXB9OiR7SlNPTi5zdHJpbmdpZnkocmVxLmJvZHkpfWA7CiAgY29uc3QgbXlTaWduYXR1cmUgPSAndjA9JyArIGNyeXB0bwogICAgLmNyZWF0ZUhtYWMoJ3NoYTI1NicsIHNsYWNrU2lnbmluZ1NlY3JldCkKICAgIC51cGRhdGUoc2lnQmFzZXN0cmluZykKICAgIC5kaWdlc3QoJ2hleCcpOwoKICByZXR1cm4gY3J5cHRvLnRpbWluZ1NhZmVFcXVhbCgKICAgIEJ1ZmZlci5mcm9tKG15U2lnbmF0dXJlKSwKICAgIEJ1ZmZlci5mcm9tKHNsYWNrU2lnbmF0dXJlKQogICk7Cn0KCi8vIFNsYWNrIOuplOyLnOyngCDsoLrtmoQKYXN5bmMgZnVuY3Rpb24gZ2V0U2xhY2tNZXNzYWdlKGNoYW5uZWw6IHN0cmluZywgdGltZXN0YW1wOiBzdHJpbmcpIHsKICBjb25zb2xlLmxvZygnZ2V0U2xhY2tNZXNzYWdlIC0gQ2hhbm5lbDonLCBjaGFubmVsLCAnVFM6JywgdGltZXN0YW1wKTsKICAKICBjb25zdCByZXNwb25zZSA9IGF3YWl0IGZldGNoKAogICAgYGh0dHBzOi8vc2xhY2suY29tL2FwaS9jb252ZXJzYXRpb25zLmhpc3Rvcnk/Y2hhbm5lbD0ke2NoYW5uZWx9JmxhdGVzdD0ke3RpbWVzdGFtcH0maW5jbHVzaXZlPXRydWUmbGltaXQ9MWAsCiAgICB7CiAgICAgIGhlYWRlcnM6IHsKICAgICAgICAnQXV0aG9yaXphdGlvbic6IGBCZWFyZXIgJHtwcm9jZXNzLmVudi5TTEFDS19CT1RfVE9LRU59YCwKICAgICAgICAnQ29udGVudC1UeXBlJzogJ2FwcGxpY2F0aW9uL2pzb24nCiAgICAgIH0KICAgIH0KICApOwoKICBjb25zdCBkYXRhID0gYXdhaXQgcmVzcG9uc2UuanNvbigpOwogIGNvbnNvbGUubG9nKCdnZXRTbGFja01lc3NhZ2UgcmVzcG9uc2U6JywgSlNPTi5zdHJpbmdpZnkoZGF0YSwgbnVsbCwgMikpOwogIHJldHVybiBkYXRhLm1lc3NhZ2VzPy5bMF07Cn0KCi8vIFNsYWNrIOuplOyLnOyngCDsoITshqEKYXN5bmMgZnVuY3Rpb24gc2VuZFNsYWNrTWVzc2FnZShjaGFubmVsOiBzdHJpbmcsIHRleHQ6IHN0cmluZykgewogIGNvbnNvbGUubG9nKCc9PT0gc2VuZFNsYWNrTWVzc2FnZSBTVEFSVCA9PT0nKTsKICBjb25zb2xlLmxvZygnU0xBQ0tfQk9UX1RPS0VOIGV4aXN0czonLCAhIXByb2Nlc3MuZW52LlNMQUNLX0JPVF9UT0tFTik7CiAgY29uc29sZS5sb2coJ1NMQUNLX0JPVF9UT0tFTiBwcmVmaXg6JywgcHJvY2Vzcy5lbnYuU0xBQ0tfQk9UX1RPS0VOPy5zdWJzdHJpbmcoMCwgMTApKTsKICBjb25zb2xlLmxvZygnQ2hhbm5lbDonLCBjaGFubmVsKTsKICBjb25zb2xlLmxvZygnVGV4dDonLCB0ZXh0KTsKICAKICBjb25zdCByZXNwb25zZSA9IGF3YWl0IGZldGNoKCdodHRwczovL3NsYWNrLmNvbS9hcGkvY2hhdC5wb3N0TWVzc2FnZScsIHsKICAgIG1ldGhvZDogJ1BPU1QnLAogICAgaGVhZGVyczogewogICAgICAnQXV0aG9yaXphdGlvbic6IGBCZWFyZXIgJHtwcm9jZXNzLmVudi5TTEFDS19CT1RfVE9LRU59YCwKICAgICAgJ0NvbnRlbnQtVHlwZSc6ICdhcHBsaWNhdGlvbi9qc29uJwogICAgfSwKICAgIGJvZHk6IEpTT04uc3RyaW5naWZ5KHsKICAgICAgY2hhbm5lbCwKICAgICAgdGV4dAogICAgfSkKICB9KTsKICAKICBjb25zdCBkYXRhID0gYXdhaXQgcmVzcG9uc2UuanNvbigpOwogIGNvbnNvbGUubG9nKCc9PT0gU2xhY2sgQVBJIFJlc3BvbnNlID09PScpOwogIGNvbnNvbGUubG9nKEpTT04uc3RyaW5naWZ5KGRhdGEsIG51bGwsIDIpKTsKICBjb25zb2xlLmxvZygnPT09IHNlbmRTbGFja01lc3NhZ2UgRU5EID09PScpOwogIHJldHVybiBkYXRhOwp9CgpleHBvcnQgZGVmYXVsdCBhc3luYyBmdW5jdGlvbiBoYW5kbGVyKHJlcTogVmVyY2VsUmVxdWVzdCwgcmVzOiBWZXJjZWxSZXNwb25zZSkgewogIGNvbnNvbGUubG9nKCc9PT0gU2xhY2sgRXZlbnQgUmVjZWl2ZWQgPT09Jyk7CiAgY29uc29sZS5sb2coJ01ldGhvZDonLCByZXEubWV0aG9kKTsKICBjb25zb2xlLmxvZygnQm9keTonLCBKU09OLnN0cmluZ2lmeShyZXEuYm9keSwgbnVsbCwgMikpOwogIAogIGlmIChyZXEubWV0aG9kICE9PSAnUE9TVCcpIHsKICAgIGNvbnNvbGUubG9nKCdNZXRob2Qgbm90IGFsbG93ZWQ6JywgcmVxLm1ldGhvZCk7CiAgICByZXR1cm4gcmVzLnN0YXR1cyg0MDUpLmpzb24oeyBlcnJvcjogJ01ldGhvZCBub3QgYWxsb3dlZCcgfSk7CiAgfQoKICBpZiAoIXZlcmlmeVNsYWNrUmVxdWVzdChyZXEpKSB7CiAgICBjb25zb2xlLmVycm9yKCdJbnZhbGlkIFNsYWNrIHNpZ25hdHVyZScpOwogICAgcmV0dXJuIHJlcy5zdGF0dXMoNDAxKS5qc29uKHsgZXJyb3I6ICdVbmF1dGhvcml6ZWQnIH0pOwogIH0KCiAgY29uc3QgYm9keSA9IHJlcS5ib2R5OwoKICBpZiAoYm9keS50eXBlID09PSAndXJsX3ZlcmlmaWNhdGlvbicpIHsKICAgIGNvbnNvbGUubG9nKCdVUkwgdmVyaWZpY2F0aW9uIHJlcXVlc3QgLSBjaGFsbGVuZ2U6JywgYm9keS5jaGFsbGVuZ2UpOwogICAgcmV0dXJuIHJlcy5zdGF0dXMoMjAwKS5qc29uKHsgY2hhbGxlbmdlOiBib2R5LmNoYWxsZW5nZSB9KTsKICB9CgogIGlmIChib2R5LnR5cGUgPT09ICdldmVudF9jYWxsYmFjaycpIHsKICAgIGNvbnN0IGV2ZW50ID0gYm9keS5ldmVudDsKCiAgICBpZiAoZXZlbnQudHlwZSA9PT0gJ3JlYWN0aW9uX2FkZGVkJyAmJiBldmVudC5yZWFjdGlvbiA9PT0gJysxJykgewogICAgICBjb25zb2xlLmxvZygn8J+RjSBSZWFjdGlvbiBkZXRlY3RlZCEnKTsKICAgICAgY29uc29sZS5sb2coJ0NoYW5uZWw6JywgZXZlbnQuaXRlbS5jaGFubmVsKTsKICAgICAgY29uc29sZS5sb2coJ1RpbWVzdGFtcDonLCBldmVudC5pdGVtLnRzKTsKICAgICAgCiAgICAgIHRyeSB7CiAgICAgICAgY29uc29sZS5sb2coJ1N0YXJ0aW5nIG1lc3NhZ2UgcHJvY2Vzc2luZy4uLicpOwogICAgICAgIAogICAgICAgIGNvbnN0IG1lc3NhZ2UgPSBhd2FpdCBnZXRTbGFja01lc3NhZ2UoZXZlbnQuaXRlbS5jaGFubmVsLCBldmVudC5pdGVtLnRzKTsKICAgICAgICAKICAgICAgICBpZiAoIW1lc3NhZ2UpIHsKICAgICAgICAgIGNvbnNvbGUuZXJyb3IoJ01lc3NhZ2Ugbm90IGZvdW5kJyk7CiAgICAgICAgICBhd2FpdCBzZW5kU2xhY2tNZXNzYWdlKGV2ZW50Lml0ZW0uY2hhbm5lbCwgJ+KdjCDrqZTsi5zsp4Drpbwg7LC+7J2EIOyImCDsl4bsirXri4jri6QnKTsKICAgICAgICAgIHJldHVybiByZXMuc3RhdHVzKDIwMCkuanNvbih7IG9rOiB0cnVlIH0pOwogICAgICAgIH0KCiAgICAgICAgY29uc29sZS5sb2coJ01lc3NhZ2UgdGV4dDonLCBtZXNzYWdlLnRleHQpOwoKICAgICAgICAvLyBUYXNrIOuyiO2YuCDstpTstpwKICAgICAgICBjb25zdCB0YXNrTWF0Y2ggPSBtZXNzYWdlLnRleHQubWF0Y2goL1Rhc2sgKFxcZCspLyk7CiAgICAgICAgY29uc3QgdGFza051bWJlciA9IHRhc2tNYXRjaCA/IHBhcnNlSW50KHRhc2tNYXRjaFsxXSkgOiBudWxsOwogICAgICAgIAogICAgICAgIGNvbnNvbGUubG9nKCdUYXNrIG51bWJlcjonLCB0YXNrTnVtYmVyIHx8ICdOb25lJyk7CgogICAgICAgIC8vIOuwsO2PrCBVUkwg7Lac7LacCiAgICAgICAgY29uc3QgYmxvY2tzID0gbWVzc2FnZS5ibG9ja3MgfHwgW107CiAgICAgICAgbGV0IGRlcGxveVVybCA9ICdodHRwczovL2phbXVzLnZlcmNlbC5hcHAnOwogICAgICAgIAogICAgICAgIGZvciAoY29uc3QgYmxvY2sgb2YgYmxvY2tzKSB7CiAgICAgICAgICBpZiAoYmxvY2sudHlwZSA9PT0gJ3NlY3Rpb24nICYmIGJsb2NrLmZpZWxkcykgewogICAgICAgICAgICBmb3IgKGNvbnN0IGZpZWxkIG9mIGJsb2NrLmZpZWxkcykgewogICAgICAgICAgICAgIGlmIChmaWVsZC50ZXh0ICYmIGZpZWxkLnRleHQuaW5jbHVkZXMoJ+uwsO2PrCDtmZTsnbgnKSkgewogICAgICAgICAgICAgICAgY29uc3QgdXJsTWF0Y2ggPSBmaWVsZC50ZXh0Lm1hdGNoKC88KFtefD5dKykvKTsKICAgICAgICAgICAgICAgIGlmICh1cmxNYXRjaCkgewogICAgICAgICAgICAgICAgICBkZXBsb3lVcmwgPSB1cmxNYXRjaFsxXTsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgIH0KICAgICAgICB9CgogICAgICAgIGNvbnNvbGUubG9nKCdEZXBsb3kgVVJMOicsIGRlcGxveVVybCk7CgogICAgICAgIC8vIOusuOyEnO2ZlCDsi5zsnpEg7JWM66a8CiAgICAgICAgY29uc3QgdGFza0luZm8gPSB0YXNrTnVtYmVyID8gYFRhc2sgJHt0YXNrTnVtYmVyfWAgOiAn7J20IO uwsO2PrCc7CiAgICAgICAgY29uc29sZS5sb2coJ1NlbmRpbmcgc3RhcnQgbWVzc2FnZS4uLicpOwogICAgICAgIGNvbnN0IHJlc3VsdDEgPSBhd2FpdCBzZW5kU2xhY2tNZXNzYWdlKAogICAgICAgICAgZXZlbnQuaXRlbS5jaGFubmVsLAogICAgICAgICAgYPCfk50gJHt0YXNrSW5mb30g66y47ISc7ZmU66W8IOyLnOyeke2VqeuLiOuLpC4uLmAKICAgICAgICApOwoKICAgICAgICBpZiAoIXJlc3VsdDEub2spIHsKICAgICAgICAgIGNvbnNvbGUuZXJyb3IoJ0ZhaWxlZCB0byBzZW5kIHN0YXJ0IG1lc3NhZ2U6JywgcmVzdWx0MS5lcnJvcik7CiAgICAgICAgICByZXR1cm4gcmVzLnN0YXR1cygyMDApLmpzb24oeyBvazogdHJ1ZSB9KTsKICAgICAgICB9CgogICAgICAgIC8vIOyLpOygnCDrrLjshJztmZQg66Gc7KeEIOyLpO2WiQogICAgICAgIGlmICh0YXNrTnVtYmVyKSB7CiAgICAgICAgICBjb25zb2xlLmxvZyhgU3RhcnRpbmcgZG9jdW1lbnRhdGlvbiBmb3IgVGFzayAke3Rhc2tOdW1iZXJ9Li4uYCk7CiAgICAgICAgICAKICAgICAgICAgIHRyeSB7CiAgICAgICAgICAgIC8vIHRhc2stZG9jdW1lbnRlciDrj5nsoIEgaW1wb3J0IChFUyBNb2R1bGUpCiAgICAgICAgICAgIGNvbnN0IHsgZG9jdW1lbnRUYXNrIH0gPSBhd2FpdCBpbXBvcnQoJy4uLy4uLy4uL2xpYi90YXNrLWRvY3VtZW50ZXIuanMnKTsKICAgICAgICAgICAgCiAgICAgICAgICAgIGNvbnN0IGRvY1Jlc3VsdCA9IGF3YWl0IGRvY3VtZW50VGFzayh0YXNrTnVtYmVyKSBhcyB7CiAgICAgICAgICAgICAgc3VjY2VzczogYm9vbGVhbjsKICAgICAgICAgICAgICB0YXNrTnVtYmVyOiBudW1iZXI7CiAgICAgICAgICAgICAgc3VtbWFyeTogewogICAgICAgICAgICAgICAgY29tbWl0czogbnVtYmVyOwogICAgICAgICAgICAgICAgYnVnczogbnVtYmVyOwogICAgICAgICAgICAgICAgdG90YWxUaW1lOiBzdHJpbmc7CiAgICAgICAgICAgICAgICBhaVRpbWU6IHN0cmluZzsKICAgICAgICAgICAgICAgIGh1bWFuVGltZTogc3RyaW5nOwogICAgICAgICAgICAgIH07CiAgICAgICAgICAgIH07CiAgICAgICAgICAgIAogICAgICAgICAgICBjb25zb2xlLmxvZygnRG9jdW1lbnRhdGlvbiByZXN1bHQ6JywgZG9jUmVzdWx0KTsKICAgICAgICAgICAgCiAgICAgICAgICAgIC8vIOusuOyEnO2ZlCDsmbTro4wg7JWM66a8CiAgICAgICAgICAgIGNvbnN0IHJlc3VsdDIgPSBhd2FpdCBzZW5kU2xhY2tNZXNzYWdlKAogICAgICAgICAgICAgIGV2ZW50Lml0ZW0uY2hhbm5lbCwKICAgICAgICAgICAgICBg4pyFIFRhc2sgJHt0YXNrTnVtYmVyfSDrrLjshJztmZQg7Jm066OMIVxuYCArCiAgICAgICAgICAgICAgYC0g7LSdIOy7pOuwizogJHtkb2NSZXN1bHQuc3VtbWFyeS5jb21taXRzfeqwnFxuYCArCiAgICAgICAgICAgICAgYC0g67KE6re4IOyImOyglTogJHtkb2NSZXN1bHQuc3VtbWFyeS5idWdzfeqwnFxuYCArCiAgICAgICAgICAgICAgYC0g7LSdIOqwnOuwnCDsi5zqsIQ6ICR7ZG9jUmVzdWx0LnN1bW1hcnkudG90YWxUaW1lfVxuYCArCiAgICAgICAgICAgICAgYC0gQUkg6rWs7ZiEOiAke2RvY1Jlc3VsdC5zdW1tYXJ5LmFpVGltZX1cbmAgKwogICAgICAgICAgICAgIGAtIOumrOu3sC/siJjsoJU6ICR7ZG9jUmVzdWx0LnN1bW1hcnkuaHVtYW5UaW1lfVxuYCArCiAgICAgICAgICAgICAgYC0g67Cw7Y+sIFVSTDogJHtkZXBsb3lVcmx9YAogICAgICAgICAgICApOwogICAgICAgICAgICAKICAgICAgICAgICAgaWYgKCFyZXN1bHQyLm9rKSB7CiAgICAgICAgICAgICAgY29uc29sZS5lcnJvcignRmFpbGVkIHRvIHNlbmQgY29tcGxldGlvbiBtZXNzYWdlOicsIHJlc3VsdDIuZXJyb3IpOwogICAgICAgICAgICB9CiAgICAgICAgICAgIAogICAgICAgICAgfSBjYXRjaCAoZG9jRXJyb3IpIHsKICAgICAgICAgICAgY29uc29sZS5lcnJvcignRG9jdW1lbnRhdGlvbiBlcnJvcjonLCBkb2NFcnJvcik7CiAgICAgICAgICAgIGNvbnN0IGVycm9yTWVzc2FnZSA9IGRvY0Vycm9yIGluc3RhbmNlb2YgRXJyb3IgPyBkb2NFcnJvci5tZXNzYWdlIDogJ1Vua25vd24gZXJyb3InOwogICAgICAgICAgICAKICAgICAgICAgICAgYXdhaXQgc2VuZFNsYWNrTWVzc2FnZSgKICAgICAgICAgICAgICBldmVudC5pdGVtLmNoYW5uZWwsCiAgICAgICAgICAgICAgYOKaoO+4jyBUYXNrICR7dGFza051bWJlcn0g66y47ISc7ZmUIOykkSDsmKTrpZgg67Cc7IOdOlxuJHtlcnJvck1lc3NhZ2V9YAogICAgICAgICAgICApOwogICAgICAgICAgfQogICAgICAgICAgCiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgIC8vIFRhc2sg67KI7Zi466CAIOyXhuuKlCDqsr3smrAgKOydvOuwmCDrsLDtj6wpCiAgICAgICAgICBjb25zb2xlLmxvZygnTm8gdGFzayBudW1iZXIgZm91bmQgLSBza2lwcGluZyBkb2N1bWVudGF0aW9uJyk7CiAgICAgICAgICBjb25zdCByZXN1bHQyID0gYXdhaXQgc2VuZFNsYWNrTWVzc2FnZSgKICAgICAgICAgICAgZXZlbnQuaXRlbS5jaGFubmVsLAogICAgICAgICAgICBg4pyFIOuwsO2PrCDtmZXsnbgg7JmE66OMIVxuYCArCiAgICAgICAgICAgIGAtIOuwsO2PrCBVUkw6ICR7ZGVwbG95VXJsfVxuYCArCiAgICAgICAgICAgIGAtIFRhc2sg67KI7Zi46rCAIOyXhuyWtCDrrLjshJztmZTrpbwg6rG064SI65yB64uI64ukYAogICAgICAgICAgKTsKICAgICAgICAgIAogICAgICAgICAgaWYgKCFyZXN1bHQyLm9rKSB7CiAgICAgICAgICAgIGNvbnNvbGUuZXJyb3IoJ0ZhaWxlZCB0byBzZW5kIGNvbXBsZXRpb24gbWVzc2FnZTonLCByZXN1bHQyLmVycm9yKTsKICAgICAgICAgIH0KICAgICAgICB9CgogICAgICAgIGNvbnNvbGUubG9nKCdQcm9jZXNzaW5nIGNvbXBsZXRlZCBzdWNjZXNzZnVsbHkhJyk7CiAgICAgICAgcmV0dXJuIHJlcy5zdGF0dXMoMjAwKS5qc29uKHsgb2s6IHRydWUgfSk7CgogICAgICB9IGNhdGNoIChlcnJvcikgewogICAgICAgIGNvbnNvbGUuZXJyb3IoJ0Vycm9yIHByb2Nlc3NpbmcgcmVhY3Rpb246JywgZXJyb3IpOwogICAgICAgIGNvbnNvbGUuZXJyb3IoJ0Vycm9yIHN0YWNrOicsIGVycm9yIGluc3RhbmNlb2YgRXJyb3IgPyBlcnJvci5zdGFjayA6ICdOL0EnKTsKICAgICAgICAKICAgICAgICB0cnkgewogICAgICAgICAgY29uc3QgZXJyb3JNZXNzYWdlID0gZXJyb3IgaW5zdGFuY2VvZiBFcnJvciA/IGVycm9yLm1lc3NhZ2UgOiAnVW5rbm93biBlcnJvcic7CiAgICAgICAgICBhd2FpdCBzZW5kU2xhY2tNZXNzYWdlKAogICAgICAgICAgICBldmVudC5pdGVtLmNoYW5uZWwsCiAgICAgICAgICAgIGDinYwg66y47ISc7ZmUIHyLpO2MqDogJHtlcnJvck1lc3NhZ2V9YAogICAgICAgICAgKTsKICAgICAgICB9IGNhdGNoIChzZW5kRXJyb3IpIHsKICAgICAgICAgIGNvbnNvbGUuZXJyb3IoJ0ZhaWxlZCB0byBzZW5kIGVycm9yIG1lc3NhZ2U6Jywgc2VuZEVycm9yKTsKICAgICAgICB9CiAgICAgICAgCiAgICAgICAgcmV0dXJuIHJlcy5zdGF0dXMoMjAwKS5qc29uKHsgb2s6IHRydWUgfSk7CiAgICAgIH0KICAgIH0KICB9CgogIGNvbnNvbGUubG9nKCdFdmVudCBpZ25vcmVkJyk7CiAgcmV0dXJuIHJlcy5zdGF0dXMoMjAwKS5qc29uKHsgb2s6IHRydWUgfSk7Cn0K
+import { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
+
+// Slack 서명 검증
+function verifySlackRequest(req: VercelRequest): boolean {
+  const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
+  
+  if (!slackSigningSecret) {
+    console.warn('SLACK_SIGNING_SECRET is not set - allowing request for testing');
+    return true;
+  }
+
+  const timestamp = req.headers['x-slack-request-timestamp'] as string;
+  const slackSignature = req.headers['x-slack-signature'] as string;
+
+  if (!timestamp || !slackSignature) {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - parseInt(timestamp)) > 300) {
+    console.error('Request timestamp is too old');
+    return false;
+  }
+
+  const sigBasestring = `v0:${timestamp}:${JSON.stringify(req.body)}`;
+  const mySignature = 'v0=' + crypto
+    .createHmac('sha256', slackSigningSecret)
+    .update(sigBasestring)
+    .digest('hex');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(mySignature),
+    Buffer.from(slackSignature)
+  );
+}
+
+// Slack 메시지 조회
+async function getSlackMessage(channel: string, timestamp: string) {
+  console.log('getSlackMessage - Channel:', channel, 'TS:', timestamp);
+  
+  const response = await fetch(
+    `https://slack.com/api/conversations.history?channel=${channel}&latest=${timestamp}&inclusive=true&limit=1`,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  const data = await response.json();
+  console.log('getSlackMessage response:', JSON.stringify(data, null, 2));
+  return data.messages?.[0];
+}
+
+// Slack 메시지 전송
+async function sendSlackMessage(channel: string, text: string) {
+  console.log('=== sendSlackMessage START ===');
+  console.log('SLACK_BOT_TOKEN exists:', !!process.env.SLACK_BOT_TOKEN);
+  console.log('SLACK_BOT_TOKEN prefix:', process.env.SLACK_BOT_TOKEN?.substring(0, 10));
+  console.log('Channel:', channel);
+  console.log('Text:', text);
+  
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      channel,
+      text
+    })
+  });
+  
+  const data = await response.json();
+  console.log('=== Slack API Response ===');
+  console.log(JSON.stringify(data, null, 2));
+  console.log('=== sendSlackMessage END ===');
+  return data;
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  console.log('=== Slack Event Received ===');
+  console.log('Method:', req.method);
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  
+  if (req.method !== 'POST') {
+    console.log('Method not allowed:', req.method);
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  if (!verifySlackRequest(req)) {
+    console.error('Invalid Slack signature');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const body = req.body;
+
+  if (body.type === 'url_verification') {
+    console.log('URL verification request - challenge:', body.challenge);
+    return res.status(200).json({ challenge: body.challenge });
+  }
+
+  if (body.type === 'event_callback') {
+    const event = body.event;
+
+    if (event.type === 'reaction_added' && event.reaction === '+1') {
+      console.log('👍 Reaction detected!');
+      console.log('Channel:', event.item.channel);
+      console.log('Timestamp:', event.item.ts);
+      
+      try {
+        console.log('Starting message processing...');
+        
+        const message = await getSlackMessage(event.item.channel, event.item.ts);
+        
+        if (!message) {
+          console.error('Message not found');
+          await sendSlackMessage(event.item.channel, '❌ 메시지를 찾을 수 없습니다');
+          return res.status(200).json({ ok: true });
+        }
+
+        console.log('Message text:', message.text);
+
+        // Task 번호 추출
+        const taskMatch = message.text.match(/Task (\d+)/);
+        const taskNumber = taskMatch ? parseInt(taskMatch[1]) : null;
+        
+        console.log('Task number:', taskNumber || 'None');
+
+        // 배포 URL 추출
+        const blocks = message.blocks || [];
+        let deployUrl = 'https://jamus.vercel.app';
+        
+        for (const block of blocks) {
+          if (block.type === 'section' && block.fields) {
+            for (const field of block.fields) {
+              if (field.text && field.text.includes('배포 확인')) {
+                const urlMatch = field.text.match(/<([^|>]+)/);
+                if (urlMatch) {
+                  deployUrl = urlMatch[1];
+                }
+              }
+            }
+          }
+        }
+
+        console.log('Deploy URL:', deployUrl);
+
+        // 문서화 시작 알림
+        const taskInfo = taskNumber ? `Task ${taskNumber}` : '이 배포';
+        console.log('Sending start message...');
+        const result1 = await sendSlackMessage(
+          event.item.channel,
+          `📝 ${taskInfo} 문서화를 시작합니다...`
+        );
+
+        if (!result1.ok) {
+          console.error('Failed to send start message:', result1.error);
+          return res.status(200).json({ ok: true });
+        }
+
+        // 실제 문서화 로직 실행
+        if (taskNumber) {
+          console.log(`Starting documentation for Task ${taskNumber}...`);
+          
+          try {
+            // task-documenter 동적 import (ES Module)
+            const { documentTask } = await import('../../../lib/task-documenter.js');
+            
+            const docResult = await documentTask(taskNumber) as {
+              success: boolean;
+              taskNumber: number;
+              summary: {
+                commits: number;
+                bugs: number;
+                totalTime: string;
+                aiTime: string;
+                humanTime: string;
+              };
+            };
+            
+            console.log('Documentation result:', docResult);
+            
+            // 문서화 완료 알림
+            const result2 = await sendSlackMessage(
+              event.item.channel,
+              `✅ Task ${taskNumber} 문서화 완료!\n` +
+              `- 총 커밋: ${docResult.summary.commits}개\n` +
+              `- 버그 수정: ${docResult.summary.bugs}개\n` +
+              `- 총 개발 시간: ${docResult.summary.totalTime}\n` +
+              `- AI 구현: ${docResult.summary.aiTime}\n` +
+              `- 리뷰/수정: ${docResult.summary.humanTime}\n` +
+              `- 배포 URL: ${deployUrl}`
+            );
+            
+            if (!result2.ok) {
+              console.error('Failed to send completion message:', result2.error);
+            }
+            
+          } catch (docError) {
+            console.error('Documentation error:', docError);
+            const errorMessage = docError instanceof Error ? docError.message : 'Unknown error';
+            
+            await sendSlackMessage(
+              event.item.channel,
+              `⚠️ Task ${taskNumber} 문서화 중 오류 발생:\n${errorMessage}`
+            );
+          }
+          
+        } else {
+          // Task 번호가 없는 경우 (일반 배포)
+          console.log('No task number found - skipping documentation');
+          const result2 = await sendSlackMessage(
+            event.item.channel,
+            `✅ 배포 확인 완료!\n` +
+            `- 배포 URL: ${deployUrl}\n` +
+            `- Task 번호가 없어 문서화를 건너뜁니다`
+          );
+          
+          if (!result2.ok) {
+            console.error('Failed to send completion message:', result2.error);
+          }
+        }
+
+        console.log('Processing completed successfully!');
+        return res.status(200).json({ ok: true });
+
+      } catch (error) {
+        console.error('Error processing reaction:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'N/A');
+        
+        try {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          await sendSlackMessage(
+            event.item.channel,
+            `❌ 문서화 실패: ${errorMessage}`
+          );
+        } catch (sendError) {
+          console.error('Failed to send error message:', sendError);
+        }
+        
+        return res.status(200).json({ ok: true });
+      }
+    }
+  }
+
+  console.log('Event ignored');
+  return res.status(200).json({ ok: true });
+}
