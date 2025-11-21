@@ -111,7 +111,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.log('Channel:', event.item.channel);
       console.log('Timestamp:', event.item.ts);
       
-      // ⚠️ 중요: 즉시 응답하지 말고 처리 완료 후 응답
       try {
         console.log('Starting message processing...');
         
@@ -125,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log('Message text:', message.text);
 
-        // Task 번호 추출 (선택사항)
+        // Task 번호 추출
         const taskMatch = message.text.match(/Task (\d+)/);
         const taskNumber = taskMatch ? parseInt(taskMatch[1]) : null;
         
@@ -163,17 +162,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ ok: true });
         }
 
-        // TODO: Phase 3-5에서 실제 문서화 로직 구현
-        console.log('Sending completion message...');
-        const result2 = await sendSlackMessage(
-          event.item.channel,
-          `✅ ${taskInfo} 문서화 준비 완료!\n` +
-          `- 배포 URL: ${deployUrl}\n` +
-          `- Phase 3-5에서 실제 문서화 구현 예정`
-        );
-
-        if (!result2.ok) {
-          console.error('Failed to send completion message:', result2.error);
+        // 실제 문서화 로직 실행
+        if (taskNumber) {
+          console.log(`Starting documentation for Task ${taskNumber}...`);
+          
+          try {
+            // task-documenter 동적 import (ES Module)
+            const { documentTask } = await import('../../../lib/task-documenter.js');
+            
+            const docResult = await documentTask(taskNumber);
+            
+            console.log('Documentation result:', docResult);
+            
+            // 문서화 완료 알림
+            const result2 = await sendSlackMessage(
+              event.item.channel,
+              `✅ Task ${taskNumber} 문서화 완료!\n` +
+              `- 총 커밋: ${docResult.summary.commits}개\n` +
+              `- 버그 수정: ${docResult.summary.bugs}개\n` +
+              `- 총 개발 시간: ${docResult.summary.totalTime}\n` +
+              `- AI 구현: ${docResult.summary.aiTime}\n` +
+              `- 리뷰/수정: ${docResult.summary.humanTime}\n` +
+              `- 배포 URL: ${deployUrl}`
+            );
+            
+            if (!result2.ok) {
+              console.error('Failed to send completion message:', result2.error);
+            }
+            
+          } catch (docError) {
+            console.error('Documentation error:', docError);
+            const errorMessage = docError instanceof Error ? docError.message : 'Unknown error';
+            
+            await sendSlackMessage(
+              event.item.channel,
+              `⚠️ Task ${taskNumber} 문서화 중 오류 발생:\n${errorMessage}`
+            );
+          }
+          
+        } else {
+          // Task 번호가 없는 경우 (일반 배포)
+          console.log('No task number found - skipping documentation');
+          const result2 = await sendSlackMessage(
+            event.item.channel,
+            `✅ 배포 확인 완료!\n` +
+            `- 배포 URL: ${deployUrl}\n` +
+            `- Task 번호가 없어 문서화를 건너뜁니다`
+          );
+          
+          if (!result2.ok) {
+            console.error('Failed to send completion message:', result2.error);
+          }
         }
 
         console.log('Processing completed successfully!');
