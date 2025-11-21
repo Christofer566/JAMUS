@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createWeeklyPages } from '../lib/create-weekly-pages';
 
 async function test() {
