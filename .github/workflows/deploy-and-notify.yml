@@ -17,7 +17,9 @@ jobs:
         run: |
           # Extract task number from commit message (first line only)
           COMMIT_MSG=$(git log -1 --pretty=%s)
-          TASK_NUM=$(echo "$COMMIT_MSG" | grep -oP 'Task \K\d+' || echo "0")
+          echo "Debug: Commit message is '$COMMIT_MSG'"
+          TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]*' | sed 's/Task //' || echo "0")
+          echo "Debug: Extracted TASK_NUM is '$TASK_NUM'"
           {
             echo "task_number=$TASK_NUM"
             echo "commit_message<<EOF"
@@ -42,6 +44,7 @@ jobs:
           COMMIT_TIME: ${{ steps.commit.outputs.time }}
           COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
         run: |
+          echo "Debug: TASK_NUMBER before Slack notification is '$TASK_NUMBER'" # Diagnostic line
           if [ "$TASK_NUMBER" != "0" ]; then
             TASK_TITLE="Task ${TASK_NUMBER}"
           else
