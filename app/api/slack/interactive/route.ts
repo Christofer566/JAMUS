@@ -142,8 +142,8 @@ export async function POST(request: NextRequest) {
       if (!('content' in fileData)) {
         throw new Error('File not found or is a directory');
       }
-    } catch (error: any) {
-      if (error.status === 404) {
+    } catch (error) {
+      if (error instanceof Error && (error as any).status === 404) {
         return NextResponse.json({
           response_type: 'ephemeral',
           text: `❌ 파일을 찾을 수 없습니다: ${taskId}.json\n이미 처리되었을 수 있습니다.`
@@ -183,11 +183,12 @@ export async function POST(request: NextRequest) {
       text: `${message}\n\n승인자: <@${payload.user.id}>\nTask ID: ${taskId}\n실행 폴더: \`${destPath}\``
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({
       response_type: 'ephemeral',
-      text: `❌ 오류 발생: ${error.message}`
+      text: `❌ 오류 발생: ${errorMessage}`
     }, { status: 500 });
   }
 }

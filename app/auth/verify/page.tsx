@@ -67,8 +67,9 @@ function VerifyContent() {
 
       showToastMessage('✅ 이메일이 재전송되었습니다')
       setCountdown(60) // 60초 쿨다운 시작
-    } catch (error: any) {
-      showToastMessage('❌ ' + (error.message || '이메일 전송 중 오류가 발생했습니다'))
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+      showToastMessage('❌ ' + (errorMessage || '이메일 전송 중 오류가 발생했습니다'))
     } finally {
       setLoading(false)
     }

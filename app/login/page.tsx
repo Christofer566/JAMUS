@@ -83,9 +83,10 @@ export default function LoginPage() {
 
         window.location.href = '/'
       }
-    } catch (err: any) {
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
       setError(
-        err.message ||
+        errorMessage ||
           (mode === 'login'
             ? '로그인 중 오류가 발생했습니다'
             : '회원가입 중 오류가 발생했습니다')

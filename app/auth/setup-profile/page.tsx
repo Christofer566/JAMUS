@@ -51,8 +51,9 @@ export default function SetupProfilePage() {
 
       // 성공 후 Feed로
       router.push('/')
-    } catch (err: any) {
-      setError(err.message || '닉네임 저장 중 오류가 발생했습니다')
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
+      setError(errorMessage || '닉네임 저장 중 오류가 발생했습니다')
     } finally {
       setLoading(false)
     }
