@@ -146,7 +146,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await sendSlackMessage(event.item.channel, slackMessage);
             
           } catch (docError) {
-            await sendSlackMessage(event.item.channel, `⚠️ Task ${taskNumber} 문서화 중 오류 발생 (Part 1):\n${docError.message}`);
+            console.error('Documentation error (Part 1):', docError);
+            const errorMessage = docError instanceof Error ? docError.message : 'Unknown error';
+            await sendSlackMessage(
+              event.item.channel,
+              `⚠️ Task ${taskNumber} 문서화 중 오류 발생 (Part 1):\n${errorMessage}`
+            );
           }
           
         } else {
