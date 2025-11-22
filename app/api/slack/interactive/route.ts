@@ -62,63 +62,27 @@ export async function POST(request: NextRequest) {
       const response = NextResponse.json({
         response_type: 'in_channel',
         replace_original: true,
-        text: `✅ Task ${taskNumber} 최종 문서화를 시작합니다.\n잠시 후 완료 메시지가 전송됩니다. (승인자: <@${user}>)`
+        text: `⏳ Task ${taskNumber} 최종 문서화를 시작합니다. (요청자: <@${user}>)\n\n_최대 1분 정도 소요될 수 있습니다._`
       });
 
-      // 2. 백그라운드에서 실제 작업 실행 (await 하지 않음)
-      (async () => {
-        try {
-          const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
-          await finishDocumentationProcess(taskNumber, weekString, channel);
-        } catch (error) {
-          console.error('Error in finishDocumentationProcess (background):', error);
-          // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 처리
-        }
-      })();
-
+      // 2. 응답을 먼저 보낸 후, 백그라운드에서 실제 작업 실행 (await 하지 않음)
+                    (async () => {
+                      try {
+                        const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
+                        await finishDocumentationProcess(taskNumber, weekString, channel);
+                      } catch (error) {
+                        console.error('Error in finishDocumentationProcess (background):', error);
+                        // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 이미 처리됨
+                      }
+                    })();
       return response;
     }
 
     // ========================================
-    // 🆕 문서화 시작 버튼 처리
+    // (구)문서화 시작 버튼 처리 - 주석 처리 또는 삭제 가능
     // ========================================
     if (actionId === 'start_documentation') {
-      const value = action.value; // "task_number|deploy_url"
-      const [taskNumber, deployUrl] = value.split('|');
-      const channel = payload.channel.id;
 
-      console.log('Starting documentation for Task', taskNumber);
-      console.log('Deploy URL:', deployUrl);
-
-      // 즉시 응답 (메시지 업데이트)
-      const response = NextResponse.json({
-        response_type: 'in_channel',
-        replace_original: false,
-        text: `📝 Task ${taskNumber} 문서화를 시작합니다...\n승인자: <@${payload.user.id}>`
-      });
-
-      // 백그라운드에서 처리
-      (async () => {
-        try {
-          // TODO: Phase 3-5에서 실제 문서화 로직 구현
-          await sendSlackMessage(
-            channel,
-            `✅ Task ${taskNumber} 문서화 준비 완료!\n` +
-            `- 배포 URL: ${deployUrl}\n` +
-            `- Phase 3-5에서 실제 문서화 구현 예정`
-          );
-        } catch (error) {
-          console.error('Error in documentation:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          await sendSlackMessage(
-            channel,
-            `❌ 문서화 실패: ${errorMessage}`
-          );
-        }
-      })();
-
-      return response;
-    }
 
     // ========================================
     // 기존 Task 승인 처리
