@@ -139,9 +139,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ ok: true });
         }
 
-        // 실제 문서화 로직 실행
+        // 실제 문서화 로직 실행 (Part 1)
         if (taskNumber) {
-          console.log(`Starting documentation for Task ${taskNumber}...`);
+          console.log(`Starting documentation for Task ${taskNumber} (Part 1)...`);
           
           try {
             const lockKey = `task-lock:${taskNumber}:${event.item.ts}`;
@@ -152,54 +152,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 console.log(`Task ${taskNumber} 이미 실행 중 (중복 방지)`);
                 return res.status(200).json({ ok: true, message: 'Already processing' });
               }
-              
               // 5분간 락 설정
               await kv.set(lockKey, Date.now(), { ex: 300 });
             } catch (error) {
               console.log('KV 에러 (무시하고 계속):', error);
-              // KV 실패해도 문서화는 계속
             }
 
-            // task-documenter 동적 import (ES Module)
-            const { documentTask } = await import('../../../lib/task-documenter.js');
+            // task-documenter 동적 import 및 Part 1 실행
+            const { startDocumentationProcess } = await import('../../../lib/task-documenter.js');
+            const initialAnalysis = await startDocumentationProcess(taskNumber);
             
-            const docResult = await documentTask(taskNumber, "W03", event.item.channel) as { // Pass placeholder weekString and channel
-              success: boolean;
-              taskNumber: number;
-              summary: {
-                commits: number;
-                bugs: number;
-                totalTime: string;
-                aiTime: string;
-                humanTime: string;
-              };
+            const { timeAnalysis, calendarEvent } = initialAnalysis;
+
+            // Slack 알림 (사용자 확인 요청 버튼 포함)
+            const slackMessage = {
+              text: `📝 Task ${taskNumber} 시간 추정 완료`, // Fallback text
+              blocks: [
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `📝 *Task ${taskNumber} 시간 추정 완료*\n\n` +
+                          `✅ 추정 총 시간: ${timeAnalysis.totalDevelopmentTime}\n` +
+                          `✅ AI 구현: ${timeAnalysis.aiImplementationTime}\n` +
+                          `✅ 리뷰/수정: ${timeAnalysis.humanReviewTime}\n\n` +
+                          (calendarEvent ? `👉 <${calendarEvent.htmlLink}|Google Calendar에서 확인 및 수정>` : "Google Calendar 이벤트 생성 실패")
+                  }
+                },
+                {
+                  type: "section",
+                  text: {
+                      type: "mrkdwn",
+                      text: "시간을 수정한 후, 아래 버튼을 눌러 문서화를 계속 진행하세요."
+                  }
+                },
+                {
+                  type: "actions",
+                  elements: [
+                    {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: "✅ 확인 완료, 문서화 계속",
+                        emoji: true
+                      },
+                      style: "primary",
+                      action_id: "finish_documentation",
+                      value: JSON.stringify({
+                          taskNumber: taskNumber,
+                          weekString: "W03", // TODO: Dynamic weekString
+                      })
+                    }
+                  ]
+                }
+              ]
             };
             
-            console.log('Documentation result:', docResult);
-            
-            // 문서화 완료 알림
-            const completionMessageResult = await sendSlackMessage(
-              event.item.channel,
-              `✅ Task ${taskNumber} 문서화 완료!\n` +
-              `- 총 커밋: ${docResult.summary.commits}개\n` +
-              `- 버그 수정: ${docResult.summary.bugs}개\n` +
-              `- 총 개발 시간: ${docResult.summary.totalTime}\n` +
-              `- AI 구현: ${docResult.summary.aiTime}\n` +
-              `- 리뷰/수정: ${docResult.summary.humanTime}\n` +
-              `- 배포 URL: ${deployUrl || '없음'}`
-            );
-            
-            if (!completionMessageResult.ok) {
-              console.error('Failed to send completion message:', completionMessageResult.error);
-            }
+            await sendSlackMessage(event.item.channel, slackMessage);
             
           } catch (docError) {
-            console.error('Documentation error:', docError);
+            console.error('Documentation error (Part 1):', docError);
             const errorMessage = docError instanceof Error ? docError.message : 'Unknown error';
             
             await sendSlackMessage(
               event.item.channel,
-              `⚠️ Task ${taskNumber} 문서화 중 오류 발생:\n${errorMessage}`
+              `⚠️ Task ${taskNumber} 문서화 중 오류 발생 (Part 1):\n${errorMessage}`
             );
           }
           

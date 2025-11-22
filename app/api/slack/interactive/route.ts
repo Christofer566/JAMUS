@@ -51,6 +51,35 @@ export async function POST(request: NextRequest) {
     console.log(`🎯 Action: ${actionId}`);
 
     // ========================================
+    // ✅ 문서화 완료 버튼 처리 (Phase 3)
+    // ========================================
+    if (actionId === 'finish_documentation') {
+      const { taskNumber, weekString } = JSON.parse(action.value);
+      const channel = payload.channel.id;
+      const user = payload.user.id;
+
+      // 1. 사용자에게 즉시 응답 (메시지 업데이트)
+      const response = NextResponse.json({
+        response_type: 'in_channel',
+        replace_original: true,
+        text: `✅ Task ${taskNumber} 최종 문서화를 시작합니다.\n잠시 후 완료 메시지가 전송됩니다. (승인자: <@${user}>)`
+      });
+
+      // 2. 백그라운드에서 실제 작업 실행 (await 하지 않음)
+      (async () => {
+        try {
+          const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
+          await finishDocumentationProcess(taskNumber, weekString, channel);
+        } catch (error) {
+          console.error('Error in finishDocumentationProcess (background):', error);
+          // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 처리
+        }
+      })();
+
+      return response;
+    }
+
+    // ========================================
     // 🆕 문서화 시작 버튼 처리
     // ========================================
     if (actionId === 'start_documentation') {
