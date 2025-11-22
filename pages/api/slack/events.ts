@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { kv } from '@vercel/kv';
+import { sendSlackMessage } from '../../../lib/slack-client.js';
 
 // Slack 서명 검증
 function verifySlackRequest(req: VercelRequest): boolean {
@@ -55,32 +56,7 @@ async function getSlackMessage(channel: string, timestamp: string) {
   return data.messages?.[0];
 }
 
-// Slack 메시지 전송
-async function sendSlackMessage(channel: string, text: string) {
-  console.log('=== sendSlackMessage START ===');
-  console.log('SLACK_BOT_TOKEN exists:', !!process.env.SLACK_BOT_TOKEN);
-  console.log('SLACK_BOT_TOKEN prefix:', process.env.SLACK_BOT_TOKEN?.substring(0, 10));
-  console.log('Channel:', channel);
-  console.log('Text:', text);
-  
-  const response = await fetch('https://slack.com/api/chat.postMessage', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      channel,
-      text
-    })
-  });
-  
-  const data = await response.json();
-  console.log('=== Slack API Response ===');
-  console.log(JSON.stringify(data, null, 2));
-  console.log('=== sendSlackMessage END ===');
-  return data;
-}
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('=== Slack Event Received ===');
