@@ -124,9 +124,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log('Message text:', message.text);
 
-        // Task 번호 추출
-        const taskMatch = message.text.match(/Task (\d+)/);
-        const taskNumber = taskMatch ? parseInt(taskMatch[1]) : null;
+        // Task 번호 추출 (e.g., Task 6.2)
+        const taskMatch = message.text.match(/Task (\d+(\.\d+)*)/);
+        const taskNumberString = taskMatch ? taskMatch[1] : null;
+        const taskNumber = taskNumberString ? parseFloat(taskNumberString) : null;
         
         console.log('Task number:', taskNumber || 'None');
 
@@ -151,18 +152,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // 문서화 시작 알림
         const taskInfo = taskNumber ? `Task ${taskNumber}` : '이 배포';
-        console.log('Sending start message...');
-                    const taskInfo = taskNumber ? `Task ${taskNumber}` : '이 배포';
-                    console.log('Sending start message...');
-                    const result1 = await sendSlackMessage(
-                      event.item.channel,
-                      `📝 ${taskInfo} 문서화를 시작합니다...`
-                    );
-        
-                    if (!result1.ok) {
-                      console.error('Failed to send start message:', result1.error);
-                      return res.status(200).json({ ok: true });
-                    }
+        const startMessageResult = await sendSlackMessage(
+          event.item.channel,
+          `📝 ${taskInfo} 문서화를 시작합니다...`
+        );
+
+        if (!startMessageResult.ok) {
+          console.error('Failed to send start message:', startMessageResult.error);
+          return res.status(200).json({ ok: true });
+        }
+
         // 실제 문서화 로직 실행
         if (taskNumber) {
           console.log(`Starting documentation for Task ${taskNumber}...`);
@@ -171,24 +170,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // task-documenter 동적 import (ES Module)
             const { documentTask } = await import('../../../lib/task-documenter.js');
             
-            // TODO: Notion 문서화 임시 비활성화 (DB 정리 후 활성화)
-            console.log(`[임시 비활성화] Task ${taskNumber} Notion 문서화 건너뜀.`);
-            // const docResult = await documentTask(taskNumber) as {
-            //   success: boolean;
-            //   taskNumber: number;
-            //   summary: {
-            //     commits: number;
-            //     bugs: number;
-            //     totalTime: string;
-            //     aiTime: string;
-            //     humanTime: string;
-            //   };
-            // };
+            const docResult = await documentTask(taskNumber) as {
+              success: boolean;
+              taskNumber: number;
+              summary: {
+                commits: number;
+                bugs: number;
+                totalTime: string;
+                aiTime: string;
+                humanTime: string;
+              };
+            };
             
-            // console.log('Documentation result:', docResult);
+            console.log('Documentation result:', docResult);
             
             // 문서화 완료 알림
-            const result2 = await sendSlackMessage(
+            const completionMessageResult = await sendSlackMessage(
               event.item.channel,
               `✅ Task ${taskNumber} 문서화 완료!\n` +
               `- 총 커밋: ${docResult.summary.commits}개\n` +
@@ -199,8 +196,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               `- 배포 URL: ${deployUrl || '없음'}`
             );
             
-            if (!result2.ok) {
-              console.error('Failed to send completion message:', result2.error);
+            if (!completionMessageResult.ok) {
+              console.error('Failed to send completion message:', completionMessageResult.error);
             }
             
           } catch (docError) {
@@ -216,16 +213,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else {
           // Task 번호가 없는 경우 (일반 배포)
           console.log('No task number found - skipping documentation');
-          const result2 = await sendSlackMessage(
+          await sendSlackMessage(
             event.item.channel,
             `✅ 배포 확인 완료!\n` +
             `- 배포 URL: ${deployUrl}\n` +
             `- Task 번호가 없어 문서화를 건너뜁니다`
           );
-          
-          if (!result2.ok) {
-            console.error('Failed to send completion message:', result2.error);
-          }
         }
 
         console.log('Processing completed successfully!');
