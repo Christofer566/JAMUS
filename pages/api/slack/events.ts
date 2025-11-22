@@ -152,18 +152,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // 문서화 시작 알림
         const taskInfo = taskNumber ? `Task ${taskNumber}` : '이 배포';
         console.log('Sending start message...');
-        // TODO: Upstash Redis로 중복 방지 (다음 주 Task)
-        console.log(`[중복 방지 임시] Task ${taskNumber} Slack 알림 생략: 문서화 시작`);
-        // const result1 = await sendSlackMessage(
-        //   event.item.channel,
-        //   `📝 ${taskInfo} 문서화를 시작합니다...`
-        // );
-
-        // if (!result1.ok) {
-        //   console.error('Failed to send start message:', result1.error);
-        //   return res.status(200).json({ ok: true });
-        // }
-
+                    const taskInfo = taskNumber ? `Task ${taskNumber}` : '이 배포';
+                    console.log('Sending start message...');
+                    const result1 = await sendSlackMessage(
+                      event.item.channel,
+                      `📝 ${taskInfo} 문서화를 시작합니다...`
+                    );
+        
+                    if (!result1.ok) {
+                      console.error('Failed to send start message:', result1.error);
+                      return res.status(200).json({ ok: true });
+                    }
         // 실제 문서화 로직 실행
         if (taskNumber) {
           console.log(`Starting documentation for Task ${taskNumber}...`);
@@ -172,37 +171,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // task-documenter 동적 import (ES Module)
             const { documentTask } = await import('../../../lib/task-documenter.js');
             
-            const docResult = await documentTask(taskNumber) as {
-              success: boolean;
-              taskNumber: number;
-              summary: {
-                commits: number;
-                bugs: number;
-                totalTime: string;
-                aiTime: string;
-                humanTime: string;
-              };
-            };
+            // TODO: Notion 문서화 임시 비활성화 (DB 정리 후 활성화)
+            console.log(`[임시 비활성화] Task ${taskNumber} Notion 문서화 건너뜀.`);
+            // const docResult = await documentTask(taskNumber) as {
+            //   success: boolean;
+            //   taskNumber: number;
+            //   summary: {
+            //     commits: number;
+            //     bugs: number;
+            //     totalTime: string;
+            //     aiTime: string;
+            //     humanTime: string;
+            //   };
+            // };
             
-            console.log('Documentation result:', docResult);
+            // console.log('Documentation result:', docResult);
             
-            // TODO: Upstash Redis로 중복 방지 (다음 주 Task)
-            console.log(`[중복 방지 임시] Task ${taskNumber} Slack 알림 생략: 문서화 완료`);
-            // // 문서화 완료 알림
-            // const result2 = await sendSlackMessage(
-            //   event.item.channel,
-            //   `✅ Task ${taskNumber} 문서화 완료!\n` +
-            //   `- 총 커밋: ${docResult.summary.commits}개\n` +
-            //   `- 버그 수정: ${docResult.summary.bugs}개\n` +
-            //   `- 총 개발 시간: ${docResult.summary.totalTime}\n` +
-            //   `- AI 시간: ${docResult.summary.aiTime}\n` +
-            //   `- 리뷰/수정: ${docResult.summary.humanTime}\n` +
-            //   `- 배포 URL: ${deployUrl}`
-            // );
+            // 문서화 완료 알림
+            const result2 = await sendSlackMessage(
+              event.item.channel,
+              `✅ Task ${taskNumber} 문서화 완료!\n` +
+              `- 총 커밋: ${docResult.summary.commits}개\n` +
+              `- 버그 수정: ${docResult.summary.bugs}개\n` +
+              `- 총 개발 시간: ${docResult.summary.totalTime}\n` +
+              `- AI 구현: ${docResult.summary.aiTime}\n` +
+              `- 리뷰/수정: ${docResult.summary.humanTime}\n` +
+              `- 배포 URL: ${deployUrl || '없음'}`
+            );
             
-            // if (!result2.ok) {
-            //   console.error('Failed to send completion message:', result2.error);
-            // }
+            if (!result2.ok) {
+              console.error('Failed to send completion message:', result2.error);
+            }
             
           } catch (docError) {
             console.error('Documentation error:', docError);
