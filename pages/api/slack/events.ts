@@ -161,10 +161,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // task-documenter 동적 import 및 Part 1 실행
             const { startDocumentationProcess } = await import('../../../lib/task-documenter.js');
             const initialAnalysis = await startDocumentationProcess(taskNumber);
-            
-            const { timeAnalysis, calendarEvent } = initialAnalysis;
 
-            // Slack 알림 (사용자 확인 요청 버튼 포함)
+            // Send Slack notification with button
             const slackMessage = {
               text: `📝 Task ${taskNumber} 시간 추정 완료`, // Fallback text
               blocks: [
@@ -173,10 +171,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   text: {
                     type: "mrkdwn",
                     text: `📝 *Task ${taskNumber} 시간 추정 완료*\n\n` +
-                          `✅ 추정 총 시간: ${timeAnalysis.totalDevelopmentTime}\n` +
-                          `✅ AI 구현: ${timeAnalysis.aiImplementationTime}\n` +
-                          `✅ 리뷰/수정: ${timeAnalysis.humanReviewTime}\n\n` +
-                          (calendarEvent ? `👉 <${calendarEvent.htmlLink}|Google Calendar에서 확인 및 수정>` : "Google Calendar 이벤트 생성 실패")
+                          `✅ 추정 총 시간: ${initialAnalysis.timeAnalysis.totalDevelopmentTime}\n` +
+                          `✅ AI 구현: ${initialAnalysis.timeAnalysis.aiImplementationTime}\n` +
+                          `✅ 리뷰/수정: ${initialAnalysis.timeAnalysis.humanReviewTime}\n\n` +
+                          (initialAnalysis.calendarEvent ? `👉 <${initialAnalysis.calendarEvent.htmlLink}|Google Calendar에서 확인 및 수정>` : "Google Calendar 이벤트 생성 실패")
                   }
                 },
                 {
@@ -200,7 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       action_id: "finish_documentation",
                       value: JSON.stringify({
                           taskNumber: taskNumber,
-                          weekString: "W03", // TODO: Dynamic weekString
+                          weekString: "W03", // Still using placeholder
                       })
                     }
                   ]
