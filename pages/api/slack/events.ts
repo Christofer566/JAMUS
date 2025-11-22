@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
+import { kv } from '@vercel/kv';
 
 // Slack 서명 검증
 function verifySlackRequest(req: VercelRequest): boolean {
@@ -167,6 +168,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log(`Starting documentation for Task ${taskNumber}...`);
           
           try {
+            const lockKey = `task-lock:${taskNumber}:${event.item.ts}`;
+
+            try {
+              const isLocked = await kv.get(lockKey);
+              if (isLocked) {
+                console.log(`Task ${taskNumber} 이미 실행 중 (중복 방지)`);
+                return res.status(200).json({ ok: true, message: 'Already processing' });
+              }
+              
+              // 5분간 락 설정
+              await kv.set(lockKey, Date.now(), { ex: 300 });
+            } catch (error) {
+              console.log('KV 에러 (무시하고 계속):', error);
+              // KV 실패해도 문서화는 계속
+            }
+
             // task-documenter 동적 import (ES Module)
             const { documentTask } = await import('../../../lib/task-documenter.js');
             
