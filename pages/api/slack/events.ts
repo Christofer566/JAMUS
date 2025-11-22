@@ -160,7 +160,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             // task-documenter 동적 import 및 Part 1 실행
             const { startDocumentationProcess } = await import('../../../lib/task-documenter.js');
-            const initialAnalysis = await startDocumentationProcess(taskNumber);
+            const initialAnalysis = /** @type {any} */ (await startDocumentationProcess(taskNumber));
 
             // Send Slack notification with button
             const slackMessage = {
