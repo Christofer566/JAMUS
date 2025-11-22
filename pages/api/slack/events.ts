@@ -187,7 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // task-documenter 동적 import (ES Module)
             const { documentTask } = await import('../../../lib/task-documenter.js');
             
-            const docResult = await documentTask(taskNumber) as {
+            const docResult = await documentTask(taskNumber, "W03") as { // Pass placeholder weekString
               success: boolean;
               taskNumber: number;
               summary: {
