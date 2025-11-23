@@ -1,7 +1,0 @@
-{
-  "task_id": "TASK-TEST-006",
-  "title": "최종 E2E 자동화 검증",
-  "complexity": 1,
-  "estimated_hours": 0.3,
-  "description": "모든 수정사항 적용 후 완전한 E2E 자동화 최종 검증"
-}
