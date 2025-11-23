@@ -61,9 +61,18 @@ jobs:
           fi
 
       - name: Commit and Push
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config user.name "Slack Button Handler"
           git config user.email "slack-button@jamus.dev"
           git add triggers/
           git commit -m "🔀 Route task to executor" || echo "No changes"
-          git push origin main
+
+          if [ -n "$GH_PAT" ]; then
+            echo "✅ Using GH_PAT to trigger workflows"
+            git push https://${GH_PAT}@github.com/${{ github.repository }}.git main
+          else
+            echo "⚠️ GH_PAT not found, using default push"
+            git push origin main
+          fi
