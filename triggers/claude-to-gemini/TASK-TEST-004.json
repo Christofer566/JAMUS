@@ -1,0 +1,7 @@
+{
+  "task_id": "TASK-TEST-004",
+  "title": "workflow_run 자동화 테스트",
+  "complexity": 2,
+  "estimated_hours": 0.5,
+  "description": "workflow_run 이벤트를 사용한 완전 자동화 검증"
+}
