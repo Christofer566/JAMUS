@@ -1,10 +1,12 @@
 name: Slack Approval Notification
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'triggers/pending-approval/**'
+  workflow_run:
+    workflows: ["Claude Response (v3.1 - Single Round)"]
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -12,7 +14,8 @@ permissions:
 jobs:
   notify-slack:
     runs-on: ubuntu-latest
-    
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
