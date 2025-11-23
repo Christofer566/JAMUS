@@ -1,7 +1,0 @@
-{
-  "task_id": "TASK-TEST-003",
-  "title": "완전 자동화 테스트",
-  "complexity": 2,
-  "estimated_hours": 0.5,
-  "description": "PAT 기반 완전 자동화 워크플로우 검증"
-}
