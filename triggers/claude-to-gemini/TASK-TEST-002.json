@@ -1,0 +1,7 @@
+{
+  "task_id": "TASK-TEST-002",
+  "title": "E2E 테스트 - 정상 흐름 (MEMO 통합)",
+  "complexity": 3,
+  "estimated_hours": 1,
+  "description": "간단한 테스트 페이지 추가 (MEMO 파일 자동 로드 테스트)"
+}
