@@ -1,31 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'; // NextRequest import 제거
 import { Octokit } from '@octokit/rest';
+import { sendSlackMessage } from '../../../../lib/slack-client.js'; // sendSlackMessage import 추가
 
-// Slack 메시지 전송 함수
-async function sendSlackMessage(channel: string, text: string) {
-  console.log('SLACK_BOT_TOKEN exists:', !!process.env.SLACK_BOT_TOKEN);
-  console.log('SLACK_BOT_TOKEN prefix:', process.env.SLACK_BOT_TOKEN?.substring(0, 10));
-  const response = await fetch('https://slack.com/api/chat.postMessage', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      channel,
-      text
-    })
-  });
-  const data = await response.json();
-  console.log('Slack API response:', data);
-  return data;
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(request) { // request 타입 제거
   try {
     // 1. Slack Payload 파싱
     const formData = await request.formData();
-    const payloadString = formData.get('payload') as string;
+    const payloadString = formData.get('payload'); // as string 제거
 
     if (!payloadString) {
       return NextResponse.json({ error: 'No payload' }, { status: 400 });
@@ -66,26 +47,23 @@ export async function POST(request: NextRequest) {
       });
 
       // 2. 응답을 먼저 보낸 후, 백그라운드에서 실제 작업 실행 (await 하지 않음)
-                    (async () => {
-                      try {
-                        const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
-                        await finishDocumentationProcess(taskNumber, weekString, channel);
-                      } catch (error) {
-                        console.error('Error in finishDocumentationProcess (background):', error);
-                        // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 이미 처리됨
-                      }
-                    })();
+      (async () => {
+        try {
+          const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
+          await finishDocumentationProcess(taskNumber, weekString, channel);
+        } catch (error) { // :any 제거
+          console.error('Error in finishDocumentationProcess (background):', error);
+          // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 이미 처리됨
+          // 비동기 백그라운드 작업이므로, 여기서는 슬랙으로 별도 에러 메시지를 보낼 수 없음.
+          // 오류 알림은 finishDocumentationProcess 내부에서 최종적으로 처리되어야 함.
+        }
+      })();
+
       return response;
     }
 
     // ========================================
-    // (구)문서화 시작 버튼 처리 - 주석 처리 또는 삭제 가능
-    // ========================================
-    if (actionId === 'start_documentation') {
-
-
-    // ========================================
-    // 기존 Task 승인 처리
+    // 기존 Task 승인 처리 (이하 기존 로직)
     // ========================================
     const taskId = action.value;
     console.log(`📋 Task ID: ${taskId}`);
@@ -142,8 +120,9 @@ export async function POST(request: NextRequest) {
       if (!('content' in fileData)) {
         throw new Error('File not found or is a directory');
       }
-    } catch (error) {
-      if (error instanceof Error && (error as any).status === 404) {
+    } catch (error) { // :any 제거
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+      if (errorMessage.includes('404')) { //Simplified check for 404
         return NextResponse.json({
           response_type: 'ephemeral',
           text: `❌ 파일을 찾을 수 없습니다: ${taskId}.json\n이미 처리되었을 수 있습니다.`
@@ -180,10 +159,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       response_type: 'in_channel',
       replace_original: true,
-      text: `${message}\n\n승인자: <@${payload.user.id}>\nTask ID: ${taskId}\n실행 폴더: \`${destPath}\``
+      text: `${message}\n\n승인자: <@${payload.user.id}>\nTask ID: ${taskId}\n실행 폴더: 
+`${destPath}
+``
     });
 
-  } catch (error) {
+  } catch (error) { // :any 제거
     console.error('❌ Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({
@@ -194,7 +175,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Slack Challenge 응답 (설정 시 필요)
-export async function GET(request: NextRequest) {
+export async function GET(request) { // request 타입 제거
   const { searchParams } = new URL(request.url);
   const challenge = searchParams.get('challenge');
 
