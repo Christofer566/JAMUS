@@ -4,5 +4,5 @@ DEV_MEMO.md
 README.md
 automation/README.md
 gemini_quota.json
-quota_prediction_feedback.jsonapi/
+quota_prediction_feedback.json
 triggers/
