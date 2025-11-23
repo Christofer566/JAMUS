@@ -1,26 +1,26 @@
 import { Client } from '@notionhq/client';
 import * as fs from 'fs';
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
 export async function ensureDebuggingHistoryExists(): Promise<string> {
     // 환경 변수 확인
     const dbId = process.env.NOTION_DEBUGGING_HISTORY_DB_ID;
 
     console.log('Environment Check:');
-    console.log('NOTION_TOKEN:', process.env.NOTION_TOKEN ? 'Set' : 'Missing');
+    console.log('NOTION_API_KEY:', process.env.NOTION_API_KEY ? 'Set' : 'Missing');
     console.log('NOTION_PROJECT_ROOT_PAGE_ID:', process.env.NOTION_PROJECT_ROOT_PAGE_ID ? 'Set' : 'Missing');
-    console.log('NOTION_WEEKLY_TASK_DB_ID:', process.env.NOTION_WEEKLY_TASK_DB_ID ? 'Set' : 'Missing');
+    console.log('NOTION_WTL_TEMPLATE_ID:', process.env.NOTION_WTL_TEMPLATE_ID ? 'Set' : 'Missing');
 
     // 필수 환경 변수 체크
-    if (!process.env.NOTION_TOKEN) {
-        throw new Error('NOTION_TOKEN 환경 변수가 설정되지 않았습니다.');
+    if (!process.env.NOTION_API_KEY) {
+        throw new Error('NOTION_API_KEY 환경 변수가 설정되지 않았습니다.');
     }
     if (!process.env.NOTION_PROJECT_ROOT_PAGE_ID) {
         throw new Error('NOTION_PROJECT_ROOT_PAGE_ID 환경 변수가 설정되지 않았습니다.');
     }
-    if (!process.env.NOTION_WEEKLY_TASK_DB_ID) {
-        throw new Error('NOTION_WEEKLY_TASK_DB_ID 환경 변수가 설정되지 않았습니다.');
+    if (!process.env.NOTION_WTL_TEMPLATE_ID) {
+        throw new Error('NOTION_WTL_TEMPLATE_ID 환경 변수가 설정되지 않았습니다.');
     }
 
     if (dbId) {
@@ -48,7 +48,7 @@ export async function ensureDebuggingHistoryExists(): Promise<string> {
             },
             'Task': {
                 relation: {
-                    database_id: process.env.NOTION_WEEKLY_TASK_DB_ID as string
+                    database_id: '1c4e3f42aa9743c08eed60e59ccaf797' // Weekly Task List DB ID
                 }
             },
             '상태': {

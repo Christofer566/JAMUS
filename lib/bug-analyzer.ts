@@ -323,7 +323,7 @@ export async function createBugEntry(
   deployUrl: string
 ): Promise<string> {
   const notion = new Client({
-    auth: process.env.NOTION_TOKEN
+    auth: process.env.NOTION_API_KEY
   });
 
   // DB 존재 확인
