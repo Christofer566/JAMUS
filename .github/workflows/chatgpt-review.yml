@@ -27,4 +27,5 @@ jobs:
       - name: Run ChatGPT Review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: node .github/scripts/chatgpt-review.js

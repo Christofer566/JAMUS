@@ -152,7 +152,16 @@ ${task.dev_memo || 'No DEV_MEMO provided'}
       }
 
       execSync(`git commit -m "🤖 ChatGPT Review Round 1: ${task.task_id}"`);
-      execSync(`git push origin main`);
+
+      // Use PAT to trigger other workflows
+      const ghPat = process.env.GH_PAT;
+      if (ghPat) {
+        console.log('✅ Using GH_PAT for push (will trigger other workflows)');
+        execSync(`git push https://${ghPat}@github.com/Christofer566/JAMUS.git main`);
+      } else {
+        console.log('⚠️ GH_PAT not found, using default push');
+        execSync(`git push origin main`);
+      }
 
       console.log('✅ Review complete and pushed to GitHub');
     }
