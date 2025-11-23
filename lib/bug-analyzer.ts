@@ -119,12 +119,13 @@ export async function analyzeBugs(bugFixCount: number, allCommits: any[]): Promi
   });
 
   // 마지막 버그 추가
-  if (currentBug) {
-    if (!currentBug.resolvedAt) {
+  if (currentBug !== null) {
+    const bug = currentBug; // TypeScript 타입 좁히기
+    if (!bug.resolvedAt) {
       // 마지막 커밋까지 해결되지 않았다면 마지막 커밋 시간을 해결 시간으로
-      currentBug.resolvedAt = new Date(allCommits[allCommits.length - 1].date);
+      bug.resolvedAt = new Date(allCommits[allCommits.length - 1].date);
     }
-    bugs.push(currentBug);
+    bugs.push(bug);
   }
 
   // 각 버그의 해결 시간 계산
