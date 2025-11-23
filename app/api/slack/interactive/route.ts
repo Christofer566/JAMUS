@@ -39,27 +39,27 @@ export async function POST(request: any) { // request 타입 제거
       const channel = payload.channel.id;
       const user = payload.user.id;
 
-      // 1. 사용자에게 즉시 응답 (메시지 업데이트)
-      const response = NextResponse.json({
-        response_type: 'in_channel',
-        replace_original: true,
-        text: `⏳ Task ${taskNumber} 최종 문서화를 시작합니다. (요청자: <@${user}>)\n\n_최대 1분 정도 소요될 수 있습니다._`
-      });
+      try {
+        // 문서화 프로세스 실행 (동기 - await 사용)
+        const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
+        await finishDocumentationProcess(taskNumber, weekString, channel);
 
-      // 2. 응답을 먼저 보낸 후, 백그라운드에서 실제 작업 실행 (await 하지 않음)
-      (async () => {
-        try {
-          const { finishDocumentationProcess } = await import('../../../../lib/task-documenter.js');
-          await finishDocumentationProcess(taskNumber, weekString, channel);
-        } catch (error) { // :any 제거
-          console.error('Error in finishDocumentationProcess (background):', error);
-          // 오류 발생 시 알림은 finishDocumentationProcess 내부에서 이미 처리됨
-          // 비동기 백그라운드 작업이므로, 여기서는 슬랙으로 별도 에러 메시지를 보낼 수 없음.
-          // 오류 알림은 finishDocumentationProcess 내부에서 최종적으로 처리되어야 함.
-        }
-      })();
+        // 성공 시 버튼 메시지 업데이트
+        return NextResponse.json({
+          response_type: 'in_channel',
+          replace_original: true,
+          text: `✅ Task ${taskNumber} 문서화 완료! (요청자: <@${user}>)`
+        });
+      } catch (error) {
+        console.error('Error in finishDocumentationProcess:', error);
 
-      return response;
+        // 실패 시 버튼 메시지 업데이트
+        return NextResponse.json({
+          response_type: 'in_channel',
+          replace_original: true,
+          text: `❌ Task ${taskNumber} 문서화 실패\n오류: ${error instanceof Error ? error.message : 'Unknown error'}\n요청자: <@${user}>`
+        });
+      }
     }
 
     // ========================================
