@@ -159,9 +159,7 @@ export async function POST(request) { // request 타입 제거
     return NextResponse.json({
       response_type: 'in_channel',
       replace_original: true,
-      text: `${message}\n\n승인자: <@${payload.user.id}>\nTask ID: ${taskId}\n실행 폴더: 
-`${destPath}
-``
+      text: `${message}\n\n승인자: <@${payload.user.id}>\nTask ID: ${taskId}\n실행 폴더: \`${destPath}\``
     });
 
   } catch (error) { // :any 제거
