@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'; // NextRequest import 제거
 import { Octokit } from '@octokit/rest';
 import { sendSlackMessage } from '../../../../lib/slack-client.js'; // sendSlackMessage import 추가
 
-export async function POST(request) { // request 타입 제거
+export async function POST(request: any) { // request 타입 제거
   try {
     // 1. Slack Payload 파싱
     const formData = await request.formData();
@@ -173,7 +173,7 @@ export async function POST(request) { // request 타입 제거
 }
 
 // Slack Challenge 응답 (설정 시 필요)
-export async function GET(request) { // request 타입 제거
+export async function GET(request: any) { // request 타입 제거
   const { searchParams } = new URL(request.url);
   const challenge = searchParams.get('challenge');
 
