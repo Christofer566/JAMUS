@@ -47,12 +47,21 @@ async function executeTasks() {
     // 완료 메시지
     console.log('\n' + '='.repeat(50));
     console.log('✅ 모든 작업 완료!');
-    console.log('🔍 로컬에서 결과를 확인하세요.');
     console.log('📁 결과 위치: triggers/completed/');
-    console.log('\n📤 확인 후 수동으로 커밋해주세요:');
-    console.log('   git add .');
-    console.log('   git commit -m "🤖 Task completed by Claude Code"');
-    console.log('   git push');
+
+    // 자동 커밋 및 푸시
+    try {
+        console.log('\n📤 Git 커밋 및 푸시 중...');
+        execSync('git config user.name "Claude Code Executor"');
+        execSync('git config user.email "claude-code@jamus.dev"');
+        execSync('git add .');
+        execSync('git commit -m "🤖 Task completed by Claude Code" || echo "No changes to commit"');
+        execSync('git push origin main');
+        console.log('✅ Git 푸시 완료!');
+    } catch (error) {
+        console.error('⚠️  Git 작업 실패:', error.message);
+        console.log('📝 수동으로 커밋해주세요');
+    }
 }
 
 async function executeTask(filename) {
@@ -73,13 +82,12 @@ async function executeTask(filename) {
         console.log(`🎯 Complexity: ${task.complexity}/10`);
         console.log(`⏱️  Estimated: ${task.estimated_hours}h\n`);
 
-        // DEV_MEMO 읽기
-        const memoPath = `triggers/claude-to-gemini/${task.task_id}-memo.md`;
+        // DEV_MEMO 읽기 (JSON 파일 내부에 포함됨)
         let devMemo = '';
 
-        if (fs.existsSync(memoPath)) {
-            devMemo = fs.readFileSync(memoPath, 'utf8');
-            console.log('✅ DEV_MEMO 로드 완료');
+        if (task.dev_memo) {
+            devMemo = task.dev_memo;
+            console.log('✅ DEV_MEMO 로드 완료 (JSON 내부)');
         } else {
             console.log('⚠️  DEV_MEMO 없음 - 기본 지침으로 진행');
             devMemo = `Task ${task.task_id}: ${task.title}을 구현하세요.`;
