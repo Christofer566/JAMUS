@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.38: Add detailed logging to GitHub analyzer for debugging\n\n- Add step-by-step progress logging (Step 1/6 ~ 6/6)\n- Add individual commit fetch logging with progress\n- Add detailed error information (type, message, status, response, stack)\n- Add execution time tracking for each phase\n- Add comprehensive error handling in commit detail fetching\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.39: Fix Slack interactive handler to use await instead of background execution\n\n- Change from background async execution to synchronous await\n- Ensure finishDocumentationProcess completes before function terminates\n- Add proper success/failure response handling\n- Fix Vercel Serverless function termination issue\n\nThis resolves the silent crash issue where Part 2 documentation\nwas being interrupted due to function termination after response.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.40: Update Claude API model to latest Sonnet 3.5\n\n- Update from deprecated claude-3-sonnet-20240229\n- Update to claude-3-5-sonnet-20241022 (latest)\n- Fix 404 not_found_error in documentation generation\n- Ensure compatibility with current Anthropic API\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "WebSearch",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.40 (Fix): Correct Claude API model name to claude-sonnet-4-5\n\n- Fix incorrect model name (claude-3-5-sonnet-20241022 does not exist)\n- Use correct model: claude-sonnet-4-5 (September 2025)\n- Resolve 404 not_found_error in API calls\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.40: Correct Claude API model name to claude-sonnet-4-5\n\n- Fix incorrect model name (claude-3-5-sonnet-20241022 does not exist)\n- Use correct model: claude-sonnet-4-5 (September 2025)\n- Resolve 404 not_found_error in API calls\n- This is the actual latest Claude Sonnet model\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.41: Fix Notion date validation error\n\n- Always use current date for 완료일 field\n- Remove dependency on Claude-generated completedAt\n- Fix ISO 8601 date format validation error\n- Prevent \"2025-01-XX\" invalid date format\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(cat:*)",
+      "Bash(git pull:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
