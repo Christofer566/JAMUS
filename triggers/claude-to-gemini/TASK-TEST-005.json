@@ -1,7 +1,0 @@
-{
-  "task_id": "TASK-TEST-005",
-  "title": "완전 E2E 자동화 최종 테스트",
-  "complexity": 1,
-  "estimated_hours": 0.5,
-  "description": "모든 워크플로우 수정 완료 후 최종 E2E 자동화 검증"
-}
