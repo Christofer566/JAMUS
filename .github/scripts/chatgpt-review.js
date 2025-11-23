@@ -35,11 +35,24 @@ async function reviewTask() {
     for (const file of files) {
       console.log(`\n📝 Processing file: ${file}`);
       const taskPath = path.join(triggerDir, file);
-      
+
       const taskContent = fs.readFileSync(taskPath, 'utf8');
       const cleanContent = taskContent.replace(/^\uFEFF/, ''); // BOM 제거
       const task = JSON.parse(cleanContent);
-      
+
+      // ✨ NEW: Check for -memo.md file
+      const memoFileName = file.replace('.json', '-memo.md');
+      const memoPath = path.join(triggerDir, memoFileName);
+
+      if (fs.existsSync(memoPath)) {
+        console.log(`📄 Found MEMO file: ${memoFileName}`);
+        const memoContent = fs.readFileSync(memoPath, 'utf8');
+        task.dev_memo = memoContent;
+        console.log(`✅ DEV_MEMO loaded (${memoContent.length} characters)`);
+      } else {
+        console.log(`⚠️ No MEMO file found: ${memoFileName}`);
+      }
+
       console.log(`✅ Reviewing task: ${task.task_id}`);
 
       const prompt = `
@@ -131,6 +144,13 @@ ${task.dev_memo || 'No DEV_MEMO provided'}
       execSync(`git config user.email "chatgpt@jamus.dev"`);
       execSync(`git add ${reviewPath}`);
       execSync(`git rm ${taskPath}`);
+
+      // ✨ NEW: Also remove -memo.md file if it exists
+      if (fs.existsSync(memoPath)) {
+        execSync(`git rm ${memoPath}`);
+        console.log(`✅ Removed MEMO file: ${memoFileName}`);
+      }
+
       execSync(`git commit -m "🤖 ChatGPT Review Round 1: ${task.task_id}"`);
       execSync(`git push origin main`);
 
