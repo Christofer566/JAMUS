@@ -96,6 +96,12 @@ export async function ensureDebuggingHistoryExists(): Promise<string> {
                         { name: '인증 오류', color: 'pink' }
                     ]
                 }
+            },
+            '주차': {
+                rich_text: {}
+            },
+            'Task 번호': {
+                number: { format: 'number' }
             }
         }
     });

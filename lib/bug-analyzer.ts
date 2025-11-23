@@ -331,11 +331,14 @@ ${bug.commits.length === 1
  * - 커밋 SHA (Text)
  * - 관련 파일 (Multi-select)
  * - 카테고리 (Multi-select)
+ * - 주차 (Text) - 예: W03, W04
+ * - Task 번호 (Number) - 예: 7, 8
  */
 export async function createBugEntry(
   taskNumber: number | string,
   bug: Bug,
-  deployUrl: string
+  deployUrl: string,
+  weekString?: string // 주차 정보 (선택적)
 ): Promise<string> {
   const notion = new Client({
     auth: process.env.NOTION_API_KEY
@@ -401,6 +404,15 @@ export async function createBugEntry(
       },
       '카테고리': {
         multi_select: categories.map(c => ({ name: c }))
+      },
+      '주차': {
+        rich_text: weekString ? [{
+          type: 'text',
+          text: { content: weekString }
+        }] : []
+      },
+      'Task 번호': {
+        number: typeof taskNumber === 'string' ? parseInt(taskNumber) : taskNumber
       }
     }
   });
