@@ -9,23 +9,25 @@ export async function ensureDebuggingHistoryExists(): Promise<string> {
 
     console.log('Environment Check:');
     console.log('NOTION_API_KEY:', process.env.NOTION_API_KEY ? 'Set' : 'Missing');
-    console.log('NOTION_PROJECT_ROOT_PAGE_ID:', process.env.NOTION_PROJECT_ROOT_PAGE_ID ? 'Set' : 'Missing');
-    console.log('NOTION_WTL_TEMPLATE_ID:', process.env.NOTION_WTL_TEMPLATE_ID ? 'Set' : 'Missing');
+    console.log('NOTION_DEBUGGING_HISTORY_DB_ID:', dbId ? 'Set' : 'Not set');
 
     // 필수 환경 변수 체크
     if (!process.env.NOTION_API_KEY) {
         throw new Error('NOTION_API_KEY 환경 변수가 설정되지 않았습니다.');
     }
-    if (!process.env.NOTION_PROJECT_ROOT_PAGE_ID) {
-        throw new Error('NOTION_PROJECT_ROOT_PAGE_ID 환경 변수가 설정되지 않았습니다.');
-    }
-    if (!process.env.NOTION_WTL_TEMPLATE_ID) {
-        throw new Error('NOTION_WTL_TEMPLATE_ID 환경 변수가 설정되지 않았습니다.');
-    }
 
+    // DB가 이미 존재하면 바로 반환 (생성용 환경 변수 체크 불필요)
     if (dbId) {
         console.log('✅ Debugging History DB 이미 존재:', dbId);
         return dbId;
+    }
+
+    // DB를 새로 생성해야 하는 경우에만 필요한 환경 변수 체크
+    console.log('🔨 새 DB 생성을 위한 환경 변수 체크...');
+    console.log('NOTION_PROJECT_ROOT_PAGE_ID:', process.env.NOTION_PROJECT_ROOT_PAGE_ID ? 'Set' : 'Missing');
+
+    if (!process.env.NOTION_PROJECT_ROOT_PAGE_ID) {
+        throw new Error('NOTION_PROJECT_ROOT_PAGE_ID 환경 변수가 설정되지 않았습니다. DB 생성에 필요합니다.');
     }
 
     console.log('🔨 Debugging History DB 생성 중...');
