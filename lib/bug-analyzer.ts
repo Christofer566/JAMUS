@@ -318,6 +318,20 @@ ${bug.commits.length === 1
 }
 
 // 5. 버그 페이지 생성 (메인 함수)
+/**
+ * Debugging History DB에 버그 페이지를 생성합니다.
+ *
+ * 필수 Notion DB 속성:
+ * - 버그 제목 (Title)
+ * - 상태 (Select: 발생, 해결, 재발)
+ * - 심각도 (Select: Critical, High, Medium, Low)
+ * - 발생 시각 (Date)
+ * - 해결 시각 (Date)
+ * - 소요 시간(분) (Number)
+ * - 커밋 SHA (Text)
+ * - 관련 파일 (Multi-select)
+ * - 카테고리 (Multi-select)
+ */
 export async function createBugEntry(
   taskNumber: number | string,
   bug: Bug,
