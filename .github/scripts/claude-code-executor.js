@@ -56,7 +56,17 @@ async function executeTasks() {
         execSync('git config user.email "claude-code@jamus.dev"');
         execSync('git add .');
         execSync('git commit -m "🤖 Task completed by Claude Code" || echo "No changes to commit"');
-        execSync('git push origin main');
+
+        // GH_PAT 사용
+        const ghPat = process.env.GH_PAT;
+        if (ghPat) {
+            console.log('✅ Using GH_PAT for push');
+            execSync(`git push https://${ghPat}@github.com/Christofer566/JAMUS.git main`);
+        } else {
+            console.log('⚠️ GH_PAT not found, using default push');
+            execSync('git push origin main');
+        }
+
         console.log('✅ Git 푸시 완료!');
     } catch (error) {
         console.error('⚠️  Git 작업 실패:', error.message);
