@@ -120,7 +120,7 @@ export async function analyzeBugs(bugFixCount: number, allCommits: any[]): Promi
 
   // 마지막 버그 추가
   if (currentBug !== null) {
-    const bug = currentBug; // TypeScript 타입 좁히기
+    const bug = currentBug as Bug; // TypeScript 타입 단언 (forEach 루프 때문에 필요)
     if (!bug.resolvedAt) {
       // 마지막 커밋까지 해결되지 않았다면 마지막 커밋 시간을 해결 시간으로
       bug.resolvedAt = new Date(allCommits[allCommits.length - 1].date);
