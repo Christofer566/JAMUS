@@ -19,9 +19,30 @@ const mockJams = [
 ];
 
 const mockSongs = [
-  { id: "1", title: "Dynamite", artist: "BTS", duration: 199 },
-  { id: "2", title: "Butter", artist: "BTS", duration: 164 },
-  { id: "3", title: "Permission to Dance", artist: "BTS", duration: 187 }
+  { 
+    id: "1", 
+    title: "Autumn Leaves", 
+    artist: "JAMUS AI", 
+    duration: 160,
+    audioUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves.wav",
+    coverUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/Autumn%20Leaves.png"
+  },
+  { 
+    id: "2", 
+    title: "Blue Bossa", 
+    artist: "JAMUS AI", 
+    duration: 160,
+    audioUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/blue-bossa.wav",
+    coverUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/Blue%20Bossa.png"
+  },
+  { 
+    id: "3", 
+    title: "All of Me", 
+    artist: "JAMUS AI", 
+    duration: 160,
+    audioUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/all-of-me.wav",
+    coverUrl: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/All%20of%20me.png"
+  }
 ];
 
 const COLOR_PALETTE = ['#FF7B7B', '#FFD166', '#3DDF85', '#B794F6'];
@@ -244,6 +265,19 @@ export default function FeedClientPage() {
     }
   }, [clampTime, jamOnlyMode]);
 
+  // Load new audio when song changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.load();
+      if (isPlaying) {
+        audioRef.current.play().catch(() => {
+          setIsPlaying(false);
+          console.log('⚠️ Auto-play blocked - user must click Play');
+        });
+      }
+    }
+  }, [currentSongIndex]);
+
   const getCurrentSectionAndMeasure = () => {
     for (let i = 0; i < progressSections.length; i++) {
       const section = progressSections[i];
@@ -407,7 +441,7 @@ export default function FeedClientPage() {
     <FeedContainer>
       <audio
         ref={audioRef}
-        src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        src={currentSong.audioUrl}
         preload="auto"
       />
       <div className="flex h-full min-h-0 flex-col">
