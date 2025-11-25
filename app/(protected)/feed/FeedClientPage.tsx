@@ -256,6 +256,19 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     }
   }, [clampTime, jamOnlyMode]);
 
+  // Load new audio when song changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.load();
+      if (isPlaying) {
+        audioRef.current.play().catch(() => {
+          setIsPlaying(false);
+          console.log('⚠️ Auto-play blocked - user must click Play');
+        });
+      }
+    }
+  }, [currentSongIndex]);
+
   const getCurrentSectionAndMeasure = () => {
     for (let i = 0; i < richSections.length; i++) {
       const section = richSections[i];
