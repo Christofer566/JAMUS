@@ -6,21 +6,23 @@ export interface Note {
 
 export function chordToNotes(chord: string): Note[] {
   // Simple chord to notes mapping
-  // We'll use whole notes for MVP
-  const chordMap: Record<string, string[]> = {
-    'C': ['C/4', 'E/4', 'G/4'],
-    'G': ['G/4', 'B/4', 'D/5'],
-    'Am': ['A/4', 'C/5', 'E/5'],
-    'F': ['F/4', 'A/4', 'C/5'],
-    'Dm': ['D/4', 'F/4', 'A/4'],
-    'Em': ['E/4', 'G/4', 'B/4'],
+  // Return single note representing the chord root
+  const rootNoteMap: Record<string, string> = {
+    'C': 'C/4',
+    'G': 'G/4',
+    'Am': 'A/4',
+    'F': 'F/4',
+    'Dm': 'D/4',
+    'Em': 'E/4',
     // Add more chords as needed
   };
 
-  const notes = chordMap[chord] || ['C/4', 'E/4', 'G/4']; // Default to C major
-  
-  return notes.map(key => ({
-    key,
-    duration: 'w' // whole note
-  }));
+  const rootNote = rootNoteMap[chord] || 'C/4'; // Default to C
+
+  // Return single whole note (4 beats in 4/4 time)
+  // This prevents "Too many ticks" error
+  return [{
+    key: rootNote,
+    duration: 'w' // whole note (4 beats)
+  }];
 }

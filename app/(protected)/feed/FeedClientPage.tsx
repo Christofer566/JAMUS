@@ -7,6 +7,13 @@ import Billboard from '@/components/feed/Billboard';
 import PlayerBar from '@/components/feed/PlayerBar';
 import { useStageContext } from '@/contexts/StageContext';
 
+import { SongWithMusicData, ProgressSection, StructureData } from '@/types/music';
+import { generateProgressSections, calculateMeasureDuration, getMeasureStartTime } from '@/utils/musicCalculations';
+
+interface FeedClientPageProps {
+  initialSongs: any[];
+}
+
 const mockJams = [
   { id: "1", name: "RhythmMasterX", instrument: "Guitar", profileImage: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop", color: "#FF6B6B" },
   { id: "2", name: "PianoMaestro", instrument: "Piano", profileImage: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop", color: "#4ECDC4" },
@@ -16,12 +23,6 @@ const mockJams = [
   { id: "6", name: "ViolinStar", instrument: "Violin", profileImage: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop", color: "#B4A7D6" },
   { id: "7", name: "SaxMaster", instrument: "Saxophone", profileImage: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop", color: "#FFD93D" },
   { id: "8", name: "TrumpetHero", instrument: "Trumpet", profileImage: "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=100&h=100&fit=crop", color: "#6BCB77" }
-];
-
-const mockSongs = [
-  { id: "1", title: "Dynamite", artist: "BTS", duration: 199 },
-  { id: "2", title: "Butter", artist: "BTS", duration: 164 },
-  { id: "3", title: "Permission to Dance", artist: "BTS", duration: 187 }
 ];
 
 const COLOR_PALETTE = ['#FF7B7B', '#FFD166', '#3DDF85', '#B794F6'];
@@ -54,7 +55,7 @@ const getPerformersForJam = (jamIndex: number) => {
   ];
 };
 
-export default function FeedClientPage() {
+export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   const router = useRouter();
   const [currentJamIndex, setCurrentJamIndex] = useState(0);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
@@ -84,28 +85,46 @@ export default function FeedClientPage() {
     };
   }, [router]);
 
-  const currentJam = mockJams[currentJamIndex];
-  const currentSong = mockSongs[currentSongIndex];
-  // const totalDuration = currentSong.duration; // This will now come from the audio element
+  const songs = useMemo(() => {
+    return initialSongs.map(song => ({
+      ...song,
+      structure_data: song.structure_data as unknown as StructureData
+    })) as SongWithMusicData[];
+  }, [initialSongs]);
 
-  const sectionColors = useMemo(() => ({
-    A: COLOR_PALETTE[0],
-    B: COLOR_PALETTE[1],
-    C: COLOR_PALETTE[2],
-    D: COLOR_PALETTE[3],
+  const currentJam = mockJams[currentJamIndex];
+  const currentSong = songs[currentSongIndex];
+
+  const sectionColors: Record<string, string> = useMemo(() => ({
+    'Intro': '#7BA7FF',
+    'A': COLOR_PALETTE[0],
+    'B': COLOR_PALETTE[1],
+    'C': COLOR_PALETTE[2],
+    'D': COLOR_PALETTE[3],
+    'Outro': '#7BA7FF',
   }), []);
 
-  const progressSections = useMemo(() => [
-    { id: 'intro', label: 'In', color: '#7BA7FF', startTime: 0, duration: 16, measures: 4 },
-    { id: 'a1', label: 'A', color: sectionColors.A, startTime: 16, duration: 32, measures: 8 },
-    { id: 'b1', label: 'B', color: sectionColors.B, startTime: 48, duration: 32, measures: 8 },
-    { id: 'c1', label: 'C', color: sectionColors.C, startTime: 80, duration: 32, measures: 8 },
-    { id: 'd1', label: 'D', color: sectionColors.D, startTime: 112, duration: 32, measures: 8 },
-    { id: 'outro', label: 'Out', color: '#7BA7FF', startTime: 144, duration: 16, measures: 4 },
-  ], [sectionColors]);
+  const progressSections = useMemo(() => {
+    if (!currentSong) return [];
+    const measureDuration = calculateMeasureDuration(currentSong.bpm, currentSong.time_signature);
+    return generateProgressSections(currentSong.structure_data, measureDuration);
+  }, [currentSong]);
 
-  const introEndTime = progressSections[0].startTime + progressSections[0].duration;
-  const outroStartTime = progressSections[progressSections.length - 1].startTime;
+  const richSections = useMemo(() => {
+    if (!currentSong) return [];
+    const measureDuration = calculateMeasureDuration(currentSong.bpm, currentSong.time_signature);
+    return currentSong.structure_data.sections.map((s, i) => ({
+      id: `s${i}`,
+      label: s.label,
+      color: sectionColors[s.name] || '#7BA7FF',
+      startTime: getMeasureStartTime(s.startMeasure, measureDuration),
+      duration: (s.endMeasure - s.startMeasure + 1) * measureDuration,
+      measures: s.endMeasure - s.startMeasure + 1
+    }));
+  }, [currentSong, sectionColors]);
+
+  const introEndTime = richSections.length > 0 ? richSections[0].startTime + richSections[0].duration : 0;
+  const outroStartTime = richSections.length > 0 ? richSections[richSections.length - 1].startTime : 0;
 
   const clampTime = useCallback(
     (time: number) => {
@@ -160,18 +179,18 @@ export default function FeedClientPage() {
 
     if (direction === 'next') {
       setCurrentSongIndex((prev) => {
-        const newIndex = (prev + 1) % mockSongs.length;
-        console.log('✅ 새 곡:', mockSongs[newIndex].title);
+        const newIndex = (prev + 1) % songs.length;
+        console.log('✅ 새 곡:', songs[newIndex].title);
         return newIndex;
       });
     } else {
       setCurrentSongIndex((prev) => {
-        const newIndex = (prev - 1 + mockSongs.length) % mockSongs.length;
-        console.log('✅ 새 곡:', mockSongs[newIndex].title);
+        const newIndex = (prev - 1 + songs.length) % songs.length;
+        console.log('✅ 새 곡:', songs[newIndex].title);
         return newIndex;
       });
     }
-  }, [currentSongIndex, getRandomStageColor, introEndTime, jamOnlyMode, setStageColor]);
+  }, [currentSongIndex, getRandomStageColor, introEndTime, jamOnlyMode, setStageColor, songs]);
 
   const togglePlayPause = useCallback(() => {
     setIsPlaying((prev) => !prev);
@@ -188,7 +207,7 @@ export default function FeedClientPage() {
   // 키보드 제어: ←→ (JAM 전환), ZX (마디 이동), Space (재생/정지)
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      switch(e.code) {
+      switch (e.code) {
         case 'ArrowDown':
           e.preventDefault();
           e.stopPropagation();
@@ -209,14 +228,7 @@ export default function FeedClientPage() {
           e.preventDefault();
           handleJamChange('next');
           break;
-        case 'KeyZ':
-          e.preventDefault();
-          skipBackward();
-          break;
-        case 'KeyX':
-          e.preventDefault();
-          skipForward();
-          break;
+
         case 'KeyS':
           e.preventDefault();
           e.stopPropagation();
@@ -245,8 +257,8 @@ export default function FeedClientPage() {
   }, [clampTime, jamOnlyMode]);
 
   const getCurrentSectionAndMeasure = () => {
-    for (let i = 0; i < progressSections.length; i++) {
-      const section = progressSections[i];
+    for (let i = 0; i < richSections.length; i++) {
+      const section = richSections[i];
       const sectionEndTime = section.startTime + section.duration;
 
       if (currentTime >= section.startTime && currentTime < sectionEndTime) {
@@ -268,8 +280,8 @@ export default function FeedClientPage() {
     }
 
     return {
-      sectionIndex: progressSections.length - 1,
-      measure: progressSections[progressSections.length - 1].measures - 1,
+      sectionIndex: richSections.length - 1,
+      measure: richSections.length > 0 ? richSections[richSections.length - 1].measures - 1 : 0,
       measureProgress: 0,
       sectionProgress: 1,
     };
@@ -278,8 +290,8 @@ export default function FeedClientPage() {
   const { sectionIndex, measure, measureProgress, sectionProgress } = getCurrentSectionAndMeasure();
 
   const currentStageColor =
-    sectionIndex >= 0 && sectionIndex < progressSections.length
-      ? progressSections[sectionIndex].color
+    sectionIndex >= 0 && sectionIndex < richSections.length
+      ? richSections[sectionIndex].color
       : '#7BA7FF';
 
   // This useEffect will now control the actual audio element
@@ -361,7 +373,7 @@ export default function FeedClientPage() {
   const performers = getPerformersForJam(currentJamIndex);
 
   const getCurrentPerformer = useCallback(() => {
-    const currentSection = progressSections[sectionIndex];
+    const currentSection = richSections[sectionIndex];
     if (!currentSection) {
       return 'JAMUS';
     }
@@ -374,7 +386,7 @@ export default function FeedClientPage() {
     }
 
     return 'JAMUS';
-  }, [currentTime, performers, progressSections, sectionIndex]);
+  }, [currentTime, performers, richSections, sectionIndex]);
 
   const getCurrentPerformerColor = useCallback(() => {
     for (const performer of performers) {
@@ -407,7 +419,7 @@ export default function FeedClientPage() {
     <FeedContainer>
       <audio
         ref={audioRef}
-        src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+        src={currentSong?.audio_url}
         preload="auto"
       />
       <div className="flex h-full min-h-0 flex-col">
@@ -438,7 +450,8 @@ export default function FeedClientPage() {
             artistName={currentSong.artist}
             isPlaying={isPlaying}
             onPlayPause={togglePlayPause}
-            sections={progressSections}
+            song={currentSong}
+            progressSections={progressSections}
             currentTime={currentTime}
             duration={duration}
             onTimeChange={handleTimeChange}

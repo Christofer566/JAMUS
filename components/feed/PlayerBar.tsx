@@ -2,21 +2,17 @@
 
 import { Play, Pause, RotateCcw, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
-
-interface Section {
-  id: string;
-  label: string;
-  color: string;
-  startTime: number;
-  duration: number;
-}
+import { useState, useEffect, useMemo } from 'react';
+import { SongWithMusicData, ProgressSection } from '@/types/music';
+import { calculateMeasureDuration, seekByMeasures, getCurrentMeasure } from '@/utils/musicCalculations';
 
 interface PlayerBarProps {
   songTitle: string;
   artistName: string;
   isPlaying: boolean;
   onPlayPause: () => void;
-  sections?: Section[];
+  song: SongWithMusicData;
+  progressSections: ProgressSection[];
   currentTime: number;
   duration: number;
   onTimeChange: (time: number) => void;
@@ -32,7 +28,8 @@ export default function PlayerBar({
   artistName,
   isPlaying,
   onPlayPause,
-  sections = [],
+  song,
+  progressSections = [],
   currentTime,
   duration,
   onTimeChange,
@@ -42,17 +39,54 @@ export default function PlayerBar({
   jamOnlyMode = false,
   onToggleJamOnly,
 }: PlayerBarProps) {
-  const getCurrentSectionColor = () => {
-    for (const section of sections) {
-      const sectionEndTime = section.startTime + section.duration;
-      if (currentTime >= section.startTime && currentTime < sectionEndTime) {
-        return section.color;
-      }
+  const [currentMeasure, setCurrentMeasure] = useState(1);
+
+  const measureDuration = useMemo(() => {
+    if (!song) return 0;
+    return calculateMeasureDuration(song.bpm, song.time_signature);
+  }, [song]);
+
+  useEffect(() => {
+    if (measureDuration > 0) {
+      const measure = getCurrentMeasure(currentTime, measureDuration);
+      setCurrentMeasure(measure);
     }
-    return "#7BA7FF";
+  }, [currentTime, measureDuration]);
+
+  const handleSeekByMeasures = (measureOffset: number) => {
+    if (!song) return;
+    const newTime = seekByMeasures(
+      currentTime,
+      measureOffset,
+      measureDuration,
+      duration
+    );
+    onTimeChange(newTime);
   };
 
-  const currentSectionColor = getCurrentSectionColor();
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Only handle if not typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      switch (e.code) {
+        case 'KeyZ':
+          e.preventDefault();
+          handleSeekByMeasures(-1);
+          break;
+        case 'KeyX':
+          e.preventDefault();
+          handleSeekByMeasures(1);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentTime, measureDuration, duration, onTimeChange]); // Dependencies for handleSeekByMeasures logic inside effect
+
+  // Legacy color logic support or default
+  const currentSectionColor = "#7BA7FF";
 
   const handleSkip = (seconds: number) => {
     onTimeChange(currentTime + seconds);
@@ -84,23 +118,23 @@ export default function PlayerBar({
         <div className="relative mt-14 pr-40">
           <div className="space-y-2">
             <div className="relative">
-              {sections.length > 0 && (
+              {progressSections.length > 0 && (
                 <div className="absolute -top-6 left-0 right-0 flex h-5 items-end">
-                  {sections.map((section) => {
-                    const position = (section.startTime / duration) * 100;
+                  {progressSections.map((section, index) => {
+                    const position = (section.value / duration) * 100;
                     return (
-                      <div key={section.id} className="absolute flex flex-col items-center" style={{ left: `${position}%` }}>
+                      <div key={index} className="absolute flex flex-col items-center" style={{ left: `${position}%` }}>
                         <div
                           className="rounded-t px-1.5 py-0.5 text-[9px] backdrop-blur-sm"
                           style={{
-                            backgroundColor: `${section.color}40`,
-                            color: section.color,
-                            border: `1px solid ${section.color}60`,
+                            backgroundColor: `#7BA7FF40`,
+                            color: '#7BA7FF',
+                            border: `1px solid #7BA7FF60`,
                           }}
                         >
                           {section.label}
                         </div>
-                        <div className="h-2 w-px" style={{ backgroundColor: `${section.color}80` }} />
+                        <div className="h-2 w-px" style={{ backgroundColor: `#7BA7FF80` }} />
                       </div>
                     );
                   })}
@@ -129,6 +163,11 @@ export default function PlayerBar({
 
             <div className="flex justify-between text-[10px] text-[#9B9B9B]">
               <span>{formatTime(currentTime)}</span>
+              {song && (
+                <span className="text-[#7BA7FF]">
+                  Measure {currentMeasure} / {song.structure_data.totalMeasures}
+                </span>
+              )}
               <span>{formatTime(duration)}</span>
             </div>
           </div>
@@ -163,7 +202,7 @@ export default function PlayerBar({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleSkip(-10)}
+                onClick={() => handleSeekByMeasures(-1)}
                 className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-colors hover:bg-[#FFFFFF]/10"
                 title="이전 마디 (Z)"
               >
@@ -182,7 +221,7 @@ export default function PlayerBar({
 
               <button
                 type="button"
-                onClick={() => handleSkip(10)}
+                onClick={() => handleSeekByMeasures(1)}
                 className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-colors hover:bg-[#FFFFFF]/10"
                 title="다음 마디 (X)"
               >
@@ -191,6 +230,10 @@ export default function PlayerBar({
               </button>
             </div>
           </div>
+        </div>
+        <div className="absolute bottom-2 right-5 text-[10px] text-[#9B9B9B] flex gap-4">
+          <span>Z: -1 measure</span>
+          <span>X: +1 measure</span>
         </div>
       </div>
     </div>
