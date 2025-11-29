@@ -18,7 +18,7 @@ jobs:
           # Extract task number from commit message (first line only)
           COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "Debug: Commit message is '$COMMIT_MSG'"
-          TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]\+' | sed 's/Task //' || echo "")
+          TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]\+' | head -1 | sed 's/Task //' || echo "")
           echo "Debug: Extracted TASK_NUM is '$TASK_NUM'"
           {
             echo "task_number=$TASK_NUM"
