@@ -370,15 +370,32 @@ export function useWebAudio(): UseWebAudioReturn {
     source.buffer = combinedBufferRef.current;
     source.connect(context.destination);
 
-    // 재생 완료 시 처리 (ref 기반)
+    // 재생 완료 시 처리 (ref 기반) - 반복 재생
     source.onended = () => {
       // ref로 현재 상태 확인 (클로저 문제 방지)
       if (isPlayingRef.current && sourceNodeRef.current === source) {
-        console.log('🎵 [play:onended] 재생 완료');
-        setIsPlaying(false);
-        isPlayingRef.current = false;
+        console.log('🎵 [play:onended] 재생 완료 → 반복 재생');
+
+        // 처음부터 다시 재생
         pauseOffsetRef.current = 0;
         setCurrentTime(0);
+
+        // 새 source 생성하여 반복 재생
+        const ctx = audioContextRef.current;
+        const buffer = combinedBufferRef.current;
+        if (ctx && buffer) {
+          const newSource = ctx.createBufferSource();
+          newSource.buffer = buffer;
+          newSource.connect(ctx.destination);
+
+          // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
+          newSource.onended = source.onended;
+
+          startTimeRef.current = ctx.currentTime;
+          newSource.start(0, 0);
+          sourceNodeRef.current = newSource;
+          console.log('🎵 [play:onended] 반복 재생 시작');
+        }
       }
     };
 
@@ -460,13 +477,30 @@ export function useWebAudio(): UseWebAudioReturn {
       source.connect(context.destination);
 
       source.onended = () => {
-        // ref로 현재 상태 확인 (클로저 문제 방지)
+        // ref로 현재 상태 확인 (클로저 문제 방지) - 반복 재생
         if (isPlayingRef.current && sourceNodeRef.current === source) {
-          console.log('🎵 [seek:onended] 재생 완료');
-          setIsPlaying(false);
-          isPlayingRef.current = false;
+          console.log('🎵 [seek:onended] 재생 완료 → 반복 재생');
+
+          // 처음부터 다시 재생
           pauseOffsetRef.current = 0;
           setCurrentTime(0);
+
+          // 새 source 생성하여 반복 재생
+          const ctx = audioContextRef.current;
+          const buffer = combinedBufferRef.current;
+          if (ctx && buffer) {
+            const newSource = ctx.createBufferSource();
+            newSource.buffer = buffer;
+            newSource.connect(ctx.destination);
+
+            // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
+            newSource.onended = source.onended;
+
+            startTimeRef.current = ctx.currentTime;
+            newSource.start(0, 0);
+            sourceNodeRef.current = newSource;
+            console.log('🎵 [seek:onended] 반복 재생 시작');
+          }
         }
       };
 
