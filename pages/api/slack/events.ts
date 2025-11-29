@@ -93,7 +93,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (taskNumber !== null) {
         console.log(`Starting documentation for Task ${taskNumber} (Part 1)...`);
-        
+
+        // 현재 주차 자동 계산 (11월 11일 = W01 시작 기준)
+        const getWeekString = (): string => {
+          const now = new Date();
+          const startDate = new Date('2025-11-10'); // W01 시작일 (월요일)
+          const diffTime = now.getTime() - startDate.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          const weekNum = Math.floor(diffDays / 7) + 1;
+          return `W${weekNum.toString().padStart(2, '0')}`;
+        };
+        const weekString = getWeekString();
+        console.log(`Current week: ${weekString}`);
+
         try {
           const lockKey = `task-lock:${taskNumber}:${event.item.ts}`;
           const isLocked = await kv.get(lockKey);
@@ -130,7 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     action_id: "finish_documentation",
                     value: JSON.stringify({
                         taskNumber: taskNumber,
-                        weekString: "W03",
+                        weekString: weekString,
                     })
                   }
                 ]
