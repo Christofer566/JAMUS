@@ -1,4 +1,3 @@
-
 import { Client } from '@notionhq/client';
 import {
   BlockObjectResponse,
@@ -36,12 +35,12 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
     try {
         let markdownContent = '';
         let pageTitle = 'Untitled';
-        
+
         const page = await notion.pages.retrieve({ page_id: pageId });
         if ('properties' in page && 'title' in page.properties && 'title' in (page.properties.title as any) && (page.properties.title as any).title.length > 0) {
           pageTitle = getRichText((page.properties.title as any).title);
         }
-        
+
         let nextCursor: string | undefined = undefined;
         do {
           const response = await notion.blocks.children.list({
@@ -59,9 +58,7 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
                 case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
                 case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
                 case 'code':
-                    markdownContent += `\
-```${block.code.language || ''}\n${getRichText(block.code.rich_text)}\n\
-```\n\n`;
+                    markdownContent += '```' + (block.code.language || '') + '\n' + getRichText(block.code.rich_text) + '\n```\n\n';
                     break;
                 default: break;
             }
@@ -71,7 +68,7 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
         return { title: pageTitle, content: markdownContent };
     } catch (error: any) {
         console.error(`❌ Notion 페이지 읽기 오류 (ID: ${pageId}):`, error.message);
-        throw error; // Re-throw the error to fail the workflow
+        throw error;
     }
 }
 
@@ -219,12 +216,12 @@ async function main() {
     const dynamicContext = await getDynamicContext();
     const bugHistoryContext = await getBugHistoryContext();
     const { title: dsTitle, content: dsContent } = await readNotionPageAsMarkdown(dsPageId);
-    
+
     const fullContext = `
 === PROJECT CONTEXT (GitHub .context/)===${staticContext}
 === CURRENT STATE (Notion Context Hub) ===${dynamicContext}
 === RELATED BUG HISTORY (Notion Debugging History DB) ===${bugHistoryContext}`;
-    
+
     console.log('✅✅✅ 3-Layer 컨텍스트 종합 완료!');
 
     // 2. Run AI reviews in sequence
