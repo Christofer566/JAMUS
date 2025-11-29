@@ -32,9 +32,6 @@ jobs:
       - name: Install OpenAI SDK
         run: npm install openai # Explicitly install as it's not a core dependency for the app
       
-      - name: Install Gemini CLI
-        run: npm install -g @google/generative-ai # Install globally for CLI usage
-
       - name: Run On-Demand Review Script
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}

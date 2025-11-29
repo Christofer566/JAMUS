@@ -1,4 +1,3 @@
-
 import { Client } from '@notionhq/client';
 import {
   BlockObjectResponse,
@@ -8,10 +7,14 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai'; // Add this import
 
 // --- Client Initialization ---
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Initialize Gemini SDK
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string); // Add this
+
 
 // --- Configuration ---
 const CONTEXT_HUB_PAGE_ID = '2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc';
@@ -55,7 +58,11 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
             case 'paragraph': markdownContent += `${getRichText(block.paragraph.rich_text)}\n`; break;
             case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
             case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
-            case 'code': markdownContent += `\`\`\`${block.code.language}\n${getRichText(block.code.rich_text)}\n\`\`\`\n`; break;
+            case 'code': markdownContent += `\
+\
+```${block.code.language}\n${getRichText(block.code.rich_text)}\n\
+```\
+`; break;
             default: break;
         }
       }
@@ -175,16 +182,12 @@ async function runGeminiReview(fullContext: string, dsContent: string, chatGptRe
     }
     const prompt = `${fullContext}\n=== CHATGPT's INITIAL REVIEW ===\n${chatGptReview}\n💡 Your Role: You are a final reviewer. Analyze the DS and ChatGPT's review, then provide a concluding opinion and recommend the best tool for implementation.\n=== DEVELOPMENT SPEC TO REVIEW ===\n${dsContent}\n=== REVIEW REQUEST ===\nBased on all the context, provide a final review and recommend an executor (Antigravity/Gemini CLI/Claude Code) with reasons in Markdown format.`;
     try {
-        console.log('💎 Gemini CLI 실행 중...');
-        const result = execSync('gemini', {
-            input: prompt,
-            encoding: 'utf8',
-            timeout: 1800000, // 30 mins
-            stdio: 'pipe',
-            env: { ...process.env },
-        });
-        console.log('✅ Gemini 최종 검토 완료!');
-        return result.toString() || 'Gemini 응답 없음.';
+        console.log('💎 Gemini API 호출 중...');
+        const model = genAI.getGenerativeModel({ model: "gemini-pro"});
+        const result = await model.generateContent(prompt);
+        const response = result.response.text();
+        console.log('✅ Gemini API 호출 완료!');
+        return response || 'Gemini 응답 없음.';
     } catch (error: any) {
         console.error('❌ Gemini 최종 검토 중 오류 발생:', error.message);
         return `Gemini 최종 검토 중 오류 발생: ${error.message}`;
@@ -196,6 +199,7 @@ async function main() {
   const dsPageId = process.argv[2];
   if (!dsPageId) {
     console.error('오류: 검토할 Notion DS 페이지 ID를 명령줄 인자로 제공해주세요.');
+    process.error('사용법: npx tsx scripts/on-demand-review.ts <NOTION_PAGE_ID>');
     process.exit(1);
   }
   if (!process.env.NOTION_API_KEY) {
