@@ -141,8 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     style: "primary",
                     action_id: "finish_documentation",
                     value: JSON.stringify({
-                        taskNumber: taskNumber,
-                        weekString: weekString,
+                        taskNumber: taskNumber
                     })
                   }
                 ]
