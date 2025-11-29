@@ -1,0 +1,44 @@
+name: Run Manual DS Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      notion_page_id:
+        description: 'Notion Design Specification Page ID to review'
+        required: true
+        type: string
+
+permissions:
+  contents: write # To push changes if needed (though we're avoiding commits for reviews, good practice for future)
+  pull-requests: write # If we wanted to create PRs for review results
+
+jobs:
+  run-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # Adjust as needed
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Install OpenAI SDK
+        run: npm install openai # Explicitly install as it's not a core dependency for the app
+      
+      - name: Install Gemini CLI
+        run: npm install -g @google/generative-ai # Install globally for CLI usage
+
+      - name: Run On-Demand Review Script
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Optional: if we want Slack notifications
+        run: npx tsx scripts/on-demand-review.ts ${{ github.event.inputs.notion_page_id }}

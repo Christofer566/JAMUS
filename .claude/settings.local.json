@@ -12,7 +12,11 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nTask 6.41: Fix Notion date validation error\n\n- Always use current date for 완료일 field\n- Remove dependency on Claude-generated completedAt\n- Fix ISO 8601 date format validation error\n- Prevent \"2025-01-XX\" invalid date format\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit:*)",
       "Bash(cat:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
