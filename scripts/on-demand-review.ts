@@ -1,4 +1,3 @@
-
 import { Client } from '@notionhq/client';
 import {
   BlockObjectResponse,
@@ -33,39 +32,46 @@ const getRichText = (richText: any[]): string => {
 };
 
 async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string; content: string }> {
-    let markdownContent = '';
-    let pageTitle = 'Untitled';
-    
-    const page = await notion.pages.retrieve({ page_id: pageId });
-    if ('properties' in page && 'title' in page.properties && 'title' in (page.properties.title as any) && (page.properties.title as any).title.length > 0) {
-      pageTitle = getRichText((page.properties.title as any).title);
-    }
-    
-    let nextCursor: string | undefined = undefined;
-    do {
-      const response = await notion.blocks.children.list({
-        block_id: pageId,
-        start_cursor: nextCursor,
-      });
-      const blocks = response.results as BlockObjectResponse[];
-      for (const block of blocks) {
-        if (!('type' in block)) continue;
-        switch (block.type) {
-            case 'heading_1': markdownContent += `# ${getRichText(block.heading_1.rich_text)}\n\n`; break;
-            case 'heading_2': markdownContent += `## ${getRichText(block.heading_2.rich_text)}\n\n`; break;
-            case 'heading_3': markdownContent += `### ${getRichText(block.heading_3.rich_text)}\n\n`; break;
-            case 'paragraph': markdownContent += `${getRichText(block.paragraph.rich_text)}\n\n`; break;
-            case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
-            case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
-            case 'code':
-                markdownContent += ````${block.code.language || ''}\n${getRichText(block.code.rich_text)}\n````\n\n`;
-                break;
-            default: break;
+    try {
+        let markdownContent = '';
+        let pageTitle = 'Untitled';
+        
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        if ('properties' in page && 'title' in page.properties && 'title' in (page.properties.title as any) && (page.properties.title as any).title.length > 0) {
+          pageTitle = getRichText((page.properties.title as any).title);
         }
-      }
-      nextCursor = response.next_cursor ?? undefined;
-    } while (nextCursor);
-    return { title: pageTitle, content: markdownContent };
+        
+        let nextCursor: string | undefined = undefined;
+        do {
+          const response = await notion.blocks.children.list({
+            block_id: pageId,
+            start_cursor: nextCursor,
+          });
+          const blocks = response.results as BlockObjectResponse[];
+          for (const block of blocks) {
+            if (!('type' in block)) continue;
+            switch (block.type) {
+                case 'heading_1': markdownContent += `# ${getRichText(block.heading_1.rich_text)}\n\n`; break;
+                case 'heading_2': markdownContent += `## ${getRichText(block.heading_2.rich_text)}\n\n`; break;
+                case 'heading_3': markdownContent += `### ${getRichText(block.heading_3.rich_text)}\n\n`; break;
+                case 'paragraph': markdownContent += `${getRichText(block.paragraph.rich_text)}\n\n`; break;
+                case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
+                case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
+                case 'code':
+                    markdownContent += `\
+```${block.code.language || ''}\n${getRichText(block.code.rich_text)}\n\
+```\n\n`;
+                    break;
+                default: break;
+            }
+          }
+          nextCursor = response.next_cursor ?? undefined;
+        } while (nextCursor);
+        return { title: pageTitle, content: markdownContent };
+    } catch (error: any) {
+        console.error(`❌ Notion 페이지 읽기 오류 (ID: ${pageId}):`, error.message);
+        throw error; // Re-throw the error to fail the workflow
+    }
 }
 
 function markdownToNotionBlocks(markdown: string): any[] {
