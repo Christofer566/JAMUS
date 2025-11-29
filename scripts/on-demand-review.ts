@@ -199,7 +199,7 @@ async function main() {
   const dsPageId = process.argv[2];
   if (!dsPageId) {
     console.error('오류: 검토할 Notion DS 페이지 ID를 명령줄 인자로 제공해주세요.');
-    process.error('사용법: npx tsx scripts/on-demand-review.ts <NOTION_PAGE_ID>');
+    console.error('사용법: npx tsx scripts/on-demand-review.ts <NOTION_PAGE_ID>');
     process.exit(1);
   }
   if (!process.env.NOTION_API_KEY) {
