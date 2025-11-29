@@ -9,6 +9,14 @@ interface Performer {
   playRange: [number, number];
 }
 
+// Feed용 structure_data (마디 수 정보)
+interface FeedStructureData {
+  introMeasures: number;
+  chorusMeasures: number;
+  outroMeasures: number;
+  feedTotalMeasures: number;
+}
+
 interface BillboardProps {
   className?: string;
   userName: string;
@@ -18,6 +26,7 @@ interface BillboardProps {
   artistName: string;
   performers: Performer[];
   chordProgression: string[][];
+  structureData?: FeedStructureData;  // 추가
   currentSectionIndex: number;
   currentMeasure: number;
   measureProgress: number;
@@ -28,7 +37,19 @@ function mergeClassNames(...values: (string | undefined)[]) {
   return values.filter(Boolean).join(" ");
 }
 
-const createSections = (performers: Performer[], chordProgression: string[][]) => {
+/**
+ * Feed용 섹션 생성 함수
+ * 구조: intro + chorus×4 + outro
+ *
+ * @param performers - JAMUS 제외한 4명의 performer
+ * @param chordProgression - 4마디씩 그룹핑된 2D 배열
+ * @param structureData - 마디 수 정보
+ */
+const createSections = (
+  performers: Performer[],
+  chordProgression: string[][],
+  structureData?: FeedStructureData
+) => {
   const sections: {
     id: string;
     label: string;
@@ -38,47 +59,95 @@ const createSections = (performers: Performer[], chordProgression: string[][]) =
     measures: { chord: string }[];
   }[] = [];
 
+  // 기본값 (structureData 없는 경우)
+  const introMeasures = structureData?.introMeasures || 8;
+  const chorusMeasures = structureData?.chorusMeasures || 32;
+  const outroMeasures = structureData?.outroMeasures || 8;
+
+  // 줄 수 계산 (4마디 = 1줄)
+  const introLines = Math.ceil(introMeasures / 4);
+  const chorusLines = Math.ceil(chorusMeasures / 4);
+  const outroLines = Math.ceil(outroMeasures / 4);
+
+  console.log('🎵 [createSections] Structure:', {
+    introMeasures, chorusMeasures, outroMeasures,
+    introLines, chorusLines, outroLines,
+    totalLines: chordProgression.length
+  });
+
+  let lineIndex = 0;
+
+  // 1. Intro 섹션 (JAMUS)
+  const introMeasuresList: { chord: string }[] = [];
+  for (let i = 0; i < introLines && lineIndex < chordProgression.length; i++) {
+    const line = chordProgression[lineIndex];
+    if (line) {
+      line.forEach(chord => introMeasuresList.push({ chord }));
+    }
+    lineIndex++;
+  }
   sections.push({
     id: "intro",
     label: "Intro",
     user: "JAMUS",
     userImage: undefined,
     color: "#7BA7FF",
-    measures: chordProgression[0]?.map((chord: string) => ({ chord })) || [],
+    measures: introMeasuresList,
   });
 
-  const labels = ["A", "B", "C", "D"];
-  const realPerformers = performers.filter((performer) => performer.name !== "JAMUS");
+  // 2. Chorus × 4 섹션 (각 performer에게 1 chorus씩)
+  const chorusLabels = ["A", "B", "C", "D"];
+  const realPerformers = performers.filter(p => p.name !== "JAMUS");
 
-  realPerformers.forEach((performer, performerIndex) => {
-    if (performerIndex < 4) {
-      const firstLineIndex = 1 + performerIndex * 2;
-      const secondLineIndex = firstLineIndex + 1;
+  for (let chorusIdx = 0; chorusIdx < 4; chorusIdx++) {
+    const performer = realPerformers[chorusIdx] || {
+      name: `Player ${chorusIdx + 1}`,
+      color: '#7BA7FF'
+    };
 
-      const firstLineMeasures =
-        chordProgression[firstLineIndex]?.map((chord: string) => ({ chord })) || [];
-      const secondLineMeasures =
-        chordProgression[secondLineIndex]?.map((chord: string) => ({ chord })) || [];
-
-      sections.push({
-        id: `section-${labels[performerIndex]} `,
-        label: labels[performerIndex],
-        user: performer.name,
-        userImage: undefined,
-        color: performer.color,
-        measures: [...firstLineMeasures, ...secondLineMeasures],
-      });
+    const chorusMeasuresList: { chord: string }[] = [];
+    for (let i = 0; i < chorusLines && lineIndex < chordProgression.length; i++) {
+      const line = chordProgression[lineIndex];
+      if (line) {
+        line.forEach(chord => chorusMeasuresList.push({ chord }));
+      }
+      lineIndex++;
     }
-  });
 
+    sections.push({
+      id: `section-${chorusLabels[chorusIdx]}`,
+      label: chorusLabels[chorusIdx],
+      user: performer.name,
+      userImage: undefined,
+      color: performer.color,
+      measures: chorusMeasuresList,
+    });
+  }
+
+  // 3. Outro 섹션 (JAMUS)
+  const outroMeasuresList: { chord: string }[] = [];
+  while (lineIndex < chordProgression.length) {
+    const line = chordProgression[lineIndex];
+    if (line) {
+      line.forEach(chord => outroMeasuresList.push({ chord }));
+    }
+    lineIndex++;
+  }
   sections.push({
     id: "outro",
     label: "Outro",
     user: "JAMUS",
     userImage: undefined,
     color: "#7BA7FF",
-    measures: chordProgression[9]?.map((chord: string) => ({ chord })) || [],
+    measures: outroMeasuresList,
   });
+
+  console.log('🎵 [createSections] Created sections:', sections.map(s => ({
+    label: s.label,
+    measures: s.measures.length,
+    user: s.user,
+    color: s.color,  // 색상 확인 추가
+  })));
 
   return sections;
 };
@@ -92,13 +161,14 @@ export default function Billboard({
   artistName,
   performers,
   chordProgression,
+  structureData,
   currentSectionIndex,
   currentMeasure,
   measureProgress,
   sectionProgress,
 }: BillboardProps) {
   const router = useRouter();
-  const sections = createSections(performers, chordProgression);
+  const sections = createSections(performers, chordProgression, structureData);
   const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
   const billboardRef = useRef<HTMLDivElement | null>(null);
 

@@ -6,6 +6,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { SongWithMusicData, ProgressSection } from '@/types/music';
 import { calculateMeasureDuration, seekByMeasures, getCurrentMeasure } from '@/utils/musicCalculations';
 
+interface Performer {
+  name: string;
+  color: string;
+  playRange: [number, number]; // [startMeasure, endMeasure]
+}
+
 interface PlayerBarProps {
   songTitle: string;
   artistName: string;
@@ -21,6 +27,8 @@ interface PlayerBarProps {
   onPrevJam?: () => void;
   jamOnlyMode?: boolean;
   onToggleJamOnly?: (value: boolean) => void;
+  performers?: Performer[]; // 연주자 배열 추가
+  pressedKey?: string | null; // 현재 눌린 키 (시각적 피드백용)
 }
 
 export default function PlayerBar({
@@ -38,13 +46,65 @@ export default function PlayerBar({
   onPrevJam,
   jamOnlyMode = false,
   onToggleJamOnly,
+  performers = [],
+  pressedKey = null,
 }: PlayerBarProps) {
   const [currentMeasure, setCurrentMeasure] = useState(1);
+
+  // 🔍 디버깅: performers 전체 데이터 확인
+  useEffect(() => {
+    if (performers.length > 0) {
+      console.log('🎨 [PlayerBar] performers 전체:', JSON.stringify(performers.map(p => ({
+        name: p.name,
+        color: p.color,
+        playRange: p.playRange,
+      })), null, 2));
+    }
+  }, [performers]);
 
   const measureDuration = useMemo(() => {
     if (!song) return 0;
     return calculateMeasureDuration(song.bpm, song.time_signature);
   }, [song]);
+
+  // 🎵 연주자별 시간 구간 (playRange는 이미 초 단위)
+  const performerTimeRanges = useMemo(() => {
+    if (performers.length === 0) return [];
+
+    // 섹션 라벨
+    const sectionLabels = ['Intro', 'A', 'B', 'C', 'D', 'Outro'];
+
+    const ranges = performers.map((p, idx) => ({
+      name: p.name,
+      color: p.color,
+      label: sectionLabels[idx] || p.name.charAt(0),
+      startTime: p.playRange[0], // 이미 초 단위
+      endTime: p.playRange[1],   // 이미 초 단위
+    }));
+
+    // 디버깅: 색상 및 시간 구간 확인
+    console.log('🎨 [PlayerBar] performerTimeRanges:', ranges.map(r => ({
+      name: r.name,
+      label: r.label,
+      color: r.color,
+      startTime: r.startTime.toFixed(1) + 's',
+      endTime: r.endTime.toFixed(1) + 's',
+    })));
+
+    return ranges;
+  }, [performers]);
+
+  // 🎵 현재 재생 위치의 연주자 색상
+  const currentPerformerColor = useMemo(() => {
+    if (performerTimeRanges.length === 0) return '#7BA7FF';
+
+    for (const range of performerTimeRanges) {
+      if (currentTime >= range.startTime && currentTime < range.endTime) {
+        return range.color;
+      }
+    }
+    return '#7BA7FF'; // 기본 JAMUS 색상
+  }, [currentTime, performerTimeRanges]);
 
   useEffect(() => {
     if (measureDuration > 0) {
@@ -85,9 +145,6 @@ export default function PlayerBar({
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [currentTime, measureDuration, duration, onTimeChange]); // Dependencies for handleSeekByMeasures logic inside effect
 
-  // Legacy color logic support or default
-  const currentSectionColor = "#7BA7FF";
-
   const handleSkip = (seconds: number) => {
     onTimeChange(currentTime + seconds);
   };
@@ -117,24 +174,34 @@ export default function PlayerBar({
 
         <div className="relative mt-14 pr-40">
           <div className="space-y-2">
-            <div className="relative">
-              {progressSections.length > 0 && (
-                <div className="absolute -top-6 left-0 right-0 flex h-5 items-end">
-                  {progressSections.map((section, index) => {
-                    const position = (section.value / duration) * 100;
+            <div className="relative pt-8">
+              {/* 🎵 연주자별 마커 (performers 기반) - 재생바 위에 표시 */}
+              {performerTimeRanges.length > 0 && duration > 0 && (
+                <div className="absolute top-0 left-0 right-0 h-7 pointer-events-none">
+                  {performerTimeRanges.map((range, index) => {
+                    // 마커 위치 계산 (0% ~ 99% 범위)
+                    const position = Math.max(0, Math.min((range.startTime / duration) * 100, 99));
+
                     return (
-                      <div key={index} className="absolute flex flex-col items-center" style={{ left: `${position}%` }}>
+                      <div
+                        key={index}
+                        className="absolute bottom-0 flex flex-col items-center"
+                        style={{ left: `${position}%` }}
+                      >
                         <div
-                          className="rounded-t px-1.5 py-0.5 text-[9px] backdrop-blur-sm"
+                          className="rounded px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap"
                           style={{
-                            backgroundColor: `#7BA7FF40`,
-                            color: '#7BA7FF',
-                            border: `1px solid #7BA7FF60`,
+                            backgroundColor: range.color,
+                            color: '#FFFFFF',
+                            boxShadow: `0 0 4px ${range.color}80`,
                           }}
                         >
-                          {section.label}
+                          {range.label}
                         </div>
-                        <div className="h-2 w-px" style={{ backgroundColor: `#7BA7FF80` }} />
+                        <div
+                          className="w-0.5 h-2"
+                          style={{ backgroundColor: range.color }}
+                        />
                       </div>
                     );
                   })}
@@ -149,13 +216,17 @@ export default function PlayerBar({
                 className="relative flex w-full select-none items-center touch-none"
               >
                 <SliderPrimitive.Track className="relative h-3 w-full grow overflow-hidden rounded-full bg-[#FFFFFF]/10">
-                  <SliderPrimitive.Range className="absolute h-full" style={{ backgroundColor: currentSectionColor }} />
+                  <SliderPrimitive.Range
+                    className="absolute h-full transition-colors duration-300"
+                    style={{ backgroundColor: currentPerformerColor }}
+                  />
                 </SliderPrimitive.Track>
                 <SliderPrimitive.Thumb
-                  className="block size-4 shrink-0 rounded-full shadow-sm transition-[color,box-shadow] focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+                  className="block size-4 shrink-0 rounded-full shadow-sm transition-all duration-300 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
                   style={{
-                    backgroundColor: currentSectionColor,
-                    border: `2px solid ${currentSectionColor}`,
+                    backgroundColor: currentPerformerColor,
+                    border: `2px solid ${currentPerformerColor}`,
+                    boxShadow: `0 0 8px ${currentPerformerColor}80`,
                   }}
                 />
               </SliderPrimitive.Root>
@@ -163,9 +234,9 @@ export default function PlayerBar({
 
             <div className="flex justify-between text-[10px] text-[#9B9B9B]">
               <span>{formatTime(currentTime)}</span>
-              {song && (
-                <span className="text-[#7BA7FF]">
-                  Measure {currentMeasure} / {song.structure_data.totalMeasures}
+              {song && song.structure_data && (
+                <span className="text-sm text-[#7BA7FF]">
+                  마디 {currentMeasure} / {song.structure_data.totalMeasures || song.structure_data.feedTotalMeasures || '?'}
                 </span>
               )}
               <span>{formatTime(duration)}</span>
@@ -180,7 +251,9 @@ export default function PlayerBar({
                 type="button"
                 onClick={onPrevJam}
                 disabled={!onPrevJam}
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 text-[#E0E0E0] transition-colors hover:bg-[#FFFFFF]/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`flex h-6 w-6 items-center justify-center rounded-full border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 text-[#E0E0E0] transition-all duration-150 hover:bg-[#FFFFFF]/10 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  pressedKey === 'left' ? 'scale-90 bg-[#7BA7FF]/30 border-[#7BA7FF]' : ''
+                }`}
                 title="이전 JAM (←)"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -192,7 +265,9 @@ export default function PlayerBar({
                 type="button"
                 onClick={onNextJam}
                 disabled={!onNextJam}
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 text-[#E0E0E0] transition-colors hover:bg-[#FFFFFF]/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`flex h-6 w-6 items-center justify-center rounded-full border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 text-[#E0E0E0] transition-all duration-150 hover:bg-[#FFFFFF]/10 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  pressedKey === 'right' ? 'scale-90 bg-[#7BA7FF]/30 border-[#7BA7FF]' : ''
+                }`}
                 title="다음 JAM (→)"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -203,7 +278,9 @@ export default function PlayerBar({
               <button
                 type="button"
                 onClick={() => handleSeekByMeasures(-1)}
-                className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-colors hover:bg-[#FFFFFF]/10"
+                className={`relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-all duration-150 hover:bg-[#FFFFFF]/10 ${
+                  pressedKey === 'z' ? 'scale-90 bg-[#7BA7FF]/30 text-[#7BA7FF]' : ''
+                }`}
                 title="이전 마디 (Z)"
               >
                 <RotateCcw className="h-3 w-3" />
@@ -213,7 +290,9 @@ export default function PlayerBar({
               <button
                 type="button"
                 onClick={onPlayPause}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-[#7BA7FF] text-white shadow-lg shadow-[#7BA7FF]/30 transition-colors hover:bg-[#6A96EE]"
+                className={`flex h-11 w-11 items-center justify-center rounded-full bg-[#7BA7FF] text-white shadow-lg shadow-[#7BA7FF]/30 transition-all duration-150 hover:bg-[#6A96EE] ${
+                  pressedKey === 'space' ? 'scale-90 brightness-75' : ''
+                }`}
                 title={isPlaying ? "일시정지 (Space)" : "재생 (Space)"}
               >
                 {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="h-4.5 w-4.5 ml-0.5" />}
@@ -222,7 +301,9 @@ export default function PlayerBar({
               <button
                 type="button"
                 onClick={() => handleSeekByMeasures(1)}
-                className="relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-colors hover:bg-[#FFFFFF]/10"
+                className={`relative flex h-8 w-8 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-all duration-150 hover:bg-[#FFFFFF]/10 ${
+                  pressedKey === 'x' ? 'scale-90 bg-[#7BA7FF]/30 text-[#7BA7FF]' : ''
+                }`}
                 title="다음 마디 (X)"
               >
                 <RotateCw className="h-3 w-3" />
@@ -232,8 +313,8 @@ export default function PlayerBar({
           </div>
         </div>
         <div className="absolute bottom-2 right-5 text-[10px] text-[#9B9B9B] flex gap-4">
-          <span>Z: -1 measure</span>
-          <span>X: +1 measure</span>
+          <span>Z: -1 마디</span>
+          <span>X: +1 마디</span>
         </div>
       </div>
     </div>
