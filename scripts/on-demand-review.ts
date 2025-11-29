@@ -180,7 +180,7 @@ async function runGeminiReview(fullContext: string, dsContent: string, chatGptRe
     const prompt = `${fullContext}\n=== CHATGPT's INITIAL REVIEW ===\n${chatGptReview}\n💡 Your Role: You are a final reviewer. Analyze the DS and ChatGPT's review, then provide a concluding opinion and recommend the best tool for implementation.\n=== DEVELOPMENT SPEC TO REVIEW ===\n${dsContent}\n=== REVIEW REQUEST ===\nBased on all the context, provide a final review and recommend an executor (Antigravity/Gemini CLI/Claude Code) with reasons in Markdown format.`;
     try {
         console.log('💎 Gemini API 호출 중...');
-        const model = genAI.getGenerativeModel({ model: "gemini-pro"});
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest"});
         const result = await model.generateContent(prompt);
         const response = result.response.text();
         console.log('✅ Gemini API 호출 완료!');
