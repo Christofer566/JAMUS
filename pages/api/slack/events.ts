@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      if (taskNumber) {
+      if (taskNumber !== null) {
         console.log(`Starting documentation for Task ${taskNumber} (Part 1)...`);
         
         try {
