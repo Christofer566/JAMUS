@@ -18,7 +18,11 @@ jobs:
           # Extract task number from commit message (first line only)
           COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "Debug: Commit message is '$COMMIT_MSG'"
-          TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]\+' | head -1 | sed 's/Task //' || echo "")
+          # Task 번호 추출 (실패 시 "none" 반환, "0"도 유효한 Task)
+          TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]\+' | head -1 | sed 's/Task //')
+          if [ -z "$TASK_NUM" ]; then
+            TASK_NUM="none"
+          fi
           echo "Debug: Extracted TASK_NUM is '$TASK_NUM'"
           {
             echo "task_number=$TASK_NUM"
@@ -38,7 +42,7 @@ jobs:
       - name: Update Notion Context Hub
         id: notion
         continue-on-error: true
-        if: steps.task.outputs.task_number != ''
+        if: steps.task.outputs.task_number != 'none'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
@@ -100,7 +104,7 @@ jobs:
           CONTEXT_HUB_UPDATED: ${{ steps.notion.outputs.updated }}
         run: |
           echo "Debug: TASK_NUMBER before Slack notification is '$TASK_NUMBER'"
-          if [ -n "$TASK_NUMBER" ]; then
+          if [ -n "$TASK_NUMBER" ] && [ "$TASK_NUMBER" != "none" ]; then
             TASK_TITLE="Task ${TASK_NUMBER}"
           else
             TASK_TITLE="배포"
@@ -109,7 +113,7 @@ jobs:
           # Context Hub 업데이트 상태 메시지
           if [ "$CONTEXT_HUB_UPDATED" = "true" ]; then
             CONTEXT_HUB_STATUS="🔗 Context Hub 업데이트됨"
-          elif [ -z "$TASK_NUMBER" ]; then
+          elif [ "$TASK_NUMBER" = "none" ]; then
             CONTEXT_HUB_STATUS="ℹ️ Task 없음 - Context Hub 스킵"
           else
             CONTEXT_HUB_STATUS="⚠️ Context Hub 업데이트 실패"
