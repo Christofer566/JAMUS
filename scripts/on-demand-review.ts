@@ -58,9 +58,7 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
             case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
             case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
             case 'code':
-                markdownContent += `
-```${block.code.language || ''}\n${getRichText(block.code.rich_text)}
-```\n\n`;
+                markdownContent += ````${block.code.language || ''}\n${getRichText(block.code.rich_text)}\n````\n\n`;
                 break;
             default: break;
         }
