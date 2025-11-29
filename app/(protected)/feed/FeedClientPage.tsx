@@ -137,20 +137,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   // 🧪 임시 테스트: useWebAudio 훅
   const webAudio = useWebAudio();
 
-  // 🎵 곡 변경 시 Web Audio 오디오 로드
-  useEffect(() => {
-    // 현재 곡의 audio_urls 가져오기 (없으면 테스트 URL 사용)
-    const audioUrls = currentSong?.audio_urls || TEST_AUDIO_URLS;
-
-    console.log('🎵 [WebAudio] Loading audio for:', currentSong?.title || 'Test Song');
-    console.log('🎵 [WebAudio] Audio URLs:', audioUrls);
-
-    webAudio.loadAudio(audioUrls);
-  }, [currentSongIndex]); // currentSongIndex 변경 시 새 오디오 로드
-
-  // 🎵 오디오 로드 완료 시 자동 재생 (feedIntroEndTime은 아래에서 정의되므로 나중에 처리)
-  // 이 useEffect는 feedIntroEndTime 정의 후 아래로 이동됨
-
   // 🧪 임시 테스트: 상태 로그
   useEffect(() => {
     console.log('🧪 [WebAudio Test] State:', {
@@ -204,6 +190,37 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   const currentJamSet = JAM_SETS[currentJamSetIndex] || JAM_SETS[0];
   const currentSong = songs[currentSongIndex];
 
+  // 🎵 webAudio ref (useEffect 의존성에서 제외하기 위함)
+  const webAudioRef = useRef(webAudio);
+  webAudioRef.current = webAudio;
+
+  // 🎵 곡 변경 시 Web Audio 오디오 로드 (currentSong 기반)
+  // 첫 마운트 여부 추적
+  const isFirstMount = useRef(true);
+
+  useEffect(() => {
+    if (!currentSong) return;
+
+    // 현재 곡의 audio_urls 가져오기 (없으면 테스트 URL 사용)
+    const audioUrls = currentSong.audio_urls || TEST_AUDIO_URLS;
+
+    console.log('🎵 [WebAudio] 곡 변경 감지, 새 오디오 로드:', currentSong.title);
+    console.log('🎵 [WebAudio] Audio URLs:', audioUrls);
+    console.log('🎵 [WebAudio] isFirstMount:', isFirstMount.current);
+
+    // 이전 재생 완전 정지 후 새 오디오 로드
+    webAudioRef.current.stop();
+
+    // 첫 마운트가 아니면 (곡 변경 시) shouldAutoPlay를 true로 설정
+    // 첫 마운트는 초기 state로 이미 true
+    if (!isFirstMount.current) {
+      setShouldAutoPlay(true);
+    }
+    isFirstMount.current = false;
+
+    webAudioRef.current.loadAudio(audioUrls);
+  }, [currentSong?.id]); // currentSong.id 변경 시만 실행
+
   // 🎵 Feed 구조 기반 JAM 재생 범위 계산 (early 정의 - AutoPlay에서 사용)
   const { feedIntroEndTime, feedOutroStartTime } = useMemo(() => {
     if (!currentSong?.structure_data) {
@@ -223,20 +240,22 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   // 🎵 오디오 로드 완료 시 자동 재생
   useEffect(() => {
+    console.log('🎵 [AutoPlay Check] isReady:', webAudio.isReady, 'shouldAutoPlay:', shouldAutoPlay);
+
     if (webAudio.isReady && shouldAutoPlay) {
       // jamOnlyMode면 Chorus A부터, 아니면 처음부터
       const startTime = jamOnlyMode ? feedIntroEndTime : 0;
       console.log('🎵 [AutoPlay] 오디오 로드 완료, 자동 재생 시작:', startTime.toFixed(2) + 's', jamOnlyMode ? '(JAM Only)' : '(Full)');
 
       if (startTime > 0) {
-        webAudio.seek(startTime);
+        webAudioRef.current.seek(startTime);
         setCurrentTime(startTime);
       }
-      webAudio.play();
+      webAudioRef.current.play();
       setIsPlaying(true);
       setShouldAutoPlay(false); // 플래그 리셋
     }
-  }, [webAudio.isReady, shouldAutoPlay, webAudio, jamOnlyMode, feedIntroEndTime]);
+  }, [webAudio.isReady, shouldAutoPlay, jamOnlyMode, feedIntroEndTime]); // webAudio 의존성 제거
 
   const sectionColors: Record<string, string> = useMemo(() => ({
     'Intro': '#7BA7FF',
@@ -326,29 +345,30 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   const handleSongChange = useCallback((direction: 'next' | 'prev') => {
     console.log('🎵 [handleSongChange] 곡 변경 시작:', direction);
-    console.log('🎵 [handleSongChange] 현재 곡 인덱스:', currentSongIndex);
+    console.log('🎵 [handleSongChange] 이전 곡:', currentSongIndex, songs[currentSongIndex]?.title);
 
-    // 현재 재생 중지
-    webAudio.stop();
+    // 1. 현재 재생 완전 정지 및 UI 상태 초기화
     setCurrentTime(0);
     setIsPlaying(false);
-    setShouldAutoPlay(true); // 새 곡 로드 완료 후 자동 재생
     setStageColor(getRandomStageColor());
 
-    if (direction === 'next') {
-      setCurrentSongIndex((prev) => {
-        const newIndex = (prev + 1) % songs.length;
-        console.log('✅ [handleSongChange] 새 곡:', songs[newIndex]?.title);
-        return newIndex;
-      });
-    } else {
-      setCurrentSongIndex((prev) => {
-        const newIndex = (prev - 1 + songs.length) % songs.length;
-        console.log('✅ [handleSongChange] 새 곡:', songs[newIndex]?.title);
-        return newIndex;
-      });
-    }
-  }, [currentSongIndex, getRandomStageColor, setStageColor, songs, webAudio]);
+    // 2. 곡 인덱스 변경 (useEffect에서 새 오디오 자동 로드 + shouldAutoPlay 설정)
+    const newSongIndex = direction === 'next'
+      ? (currentSongIndex + 1) % songs.length
+      : (currentSongIndex - 1 + songs.length) % songs.length;
+
+    // 3. JAM 세트(연주자)도 함께 변경
+    const newJamSetIndex = direction === 'next'
+      ? (currentJamSetIndex + 1) % JAM_SETS.length
+      : (currentJamSetIndex - 1 + JAM_SETS.length) % JAM_SETS.length;
+
+    console.log('🎵 [handleSongChange] 새 곡:', newSongIndex, songs[newSongIndex]?.title);
+    console.log('🎵 [handleSongChange] 새 JAM 세트:', newJamSetIndex, JAM_SETS[newJamSetIndex]?.map(p => p.name));
+
+    // 4. 곡 인덱스 + JAM 세트 업데이트 → useEffect가 새 오디오 로드 + shouldAutoPlay=true 설정
+    setCurrentSongIndex(newSongIndex);
+    setCurrentJamSetIndex(newJamSetIndex);
+  }, [currentSongIndex, currentJamSetIndex, getRandomStageColor, setStageColor, songs]);
 
   // 🧪 useWebAudio 연결: togglePlayPause
   const togglePlayPause = useCallback(() => {

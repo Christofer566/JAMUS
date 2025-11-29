@@ -191,10 +191,13 @@ export function useWebAudio(): UseWebAudioReturn {
     setCurrentTime(0);
     setDuration(0);
     pauseOffsetRef.current = 0;
+    isPlayingRef.current = false;
+    setIsPlaying(false);
 
-    // 이전 재생 정지
+    // 이전 재생 완전 정지 및 버퍼 초기화
     if (sourceNodeRef.current) {
       try {
+        sourceNodeRef.current.onended = null; // 콜백 제거
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
       } catch {
@@ -202,6 +205,10 @@ export function useWebAudio(): UseWebAudioReturn {
       }
       sourceNodeRef.current = null;
     }
+
+    // 이전 버퍼 초기화 (중요: 새 곡 로드 전 기존 버퍼 제거)
+    combinedBufferRef.current = null;
+    console.log('🎵 [loadAudio] 이전 버퍼 초기화 완료');
 
     try {
       // Step 1: AudioContext 초기화
