@@ -1,3 +1,4 @@
+
 import { Client } from '@notionhq/client';
 import {
   BlockObjectResponse,
@@ -7,14 +8,12 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
-import { GoogleGenerativeAI } from '@google/generative-ai'; // Add this import
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // --- Client Initialization ---
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-// Initialize Gemini SDK
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string); // Add this
-
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
 // --- Configuration ---
 const CONTEXT_HUB_PAGE_ID = '2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc';
@@ -52,17 +51,15 @@ async function readNotionPageAsMarkdown(pageId: string): Promise<{ title: string
       for (const block of blocks) {
         if (!('type' in block)) continue;
         switch (block.type) {
-            case 'heading_1': markdownContent += `# ${getRichText(block.heading_1.rich_text)}\n`; break;
-            case 'heading_2': markdownContent += `## ${getRichText(block.heading_2.rich_text)}\n`; break;
-            case 'heading_3': markdownContent += `### ${getRichText(block.heading_3.rich_text)}\n`; break;
-            case 'paragraph': markdownContent += `${getRichText(block.paragraph.rich_text)}\n`; break;
+            case 'heading_1': markdownContent += `# ${getRichText(block.heading_1.rich_text)}\n\n`; break;
+            case 'heading_2': markdownContent += `## ${getRichText(block.heading_2.rich_text)}\n\n`; break;
+            case 'heading_3': markdownContent += `### ${getRichText(block.heading_3.rich_text)}\n\n`; break;
+            case 'paragraph': markdownContent += `${getRichText(block.paragraph.rich_text)}\n\n`; break;
             case 'bulleted_list_item': markdownContent += `* ${getRichText(block.bulleted_list_item.rich_text)}\n`; break;
             case 'numbered_list_item': markdownContent += `1. ${getRichText(block.numbered_list_item.rich_text)}\n`; break;
-            case 'code': markdownContent += `\
-\
-```${block.code.language}\n${getRichText(block.code.rich_text)}\n\
-```\
-`; break;
+            case 'code':
+                markdownContent += `\`\`\`${block.code.language || ''}\n${getRichText(block.code.rich_text)}\n\`\`\`\n\n`;
+                break;
             default: break;
         }
       }
@@ -245,8 +242,8 @@ async function main() {
     console.log(`링크: https://www.notion.so/${newReviewPage.id.replace(/-/g, '')}`);
     printHeader('모든 작업 완료');
 
-  } catch (error) {
-    console.error('❌ 전체 워크플로우 실행 중 오류 발생:', error);
+  } catch (error: any) {
+    console.error('❌ 전체 워크플로우 실행 중 오류 발생:', error.message);
     process.exit(1);
   }
 }
