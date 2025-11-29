@@ -148,15 +148,8 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     webAudio.loadAudio(audioUrls);
   }, [currentSongIndex]); // currentSongIndex 변경 시 새 오디오 로드
 
-  // 🎵 오디오 로드 완료 시 자동 재생
-  useEffect(() => {
-    if (webAudio.isReady && shouldAutoPlay) {
-      console.log('🎵 [AutoPlay] 오디오 로드 완료, 자동 재생 시작');
-      webAudio.play();
-      setIsPlaying(true);
-      setShouldAutoPlay(false); // 플래그 리셋
-    }
-  }, [webAudio.isReady, shouldAutoPlay, webAudio]);
+  // 🎵 오디오 로드 완료 시 자동 재생 (feedIntroEndTime은 아래에서 정의되므로 나중에 처리)
+  // 이 useEffect는 feedIntroEndTime 정의 후 아래로 이동됨
 
   // 🧪 임시 테스트: 상태 로그
   useEffect(() => {
@@ -211,6 +204,40 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   const currentJamSet = JAM_SETS[currentJamSetIndex] || JAM_SETS[0];
   const currentSong = songs[currentSongIndex];
 
+  // 🎵 Feed 구조 기반 JAM 재생 범위 계산 (early 정의 - AutoPlay에서 사용)
+  const { feedIntroEndTime, feedOutroStartTime } = useMemo(() => {
+    if (!currentSong?.structure_data) {
+      return { feedIntroEndTime: 0, feedOutroStartTime: 0 };
+    }
+    const measureDuration = calculateMeasureDuration(currentSong.bpm, currentSong.time_signature);
+    const introMeasures = currentSong.structure_data.introMeasures || 8;
+    const chorusMeasures = currentSong.structure_data.chorusMeasures || 32;
+
+    // Intro 끝 = Chorus A 시작
+    const introEnd = introMeasures * measureDuration;
+    // Outro 시작 = Chorus D 끝
+    const outroStart = (introMeasures + chorusMeasures * 4) * measureDuration;
+
+    return { feedIntroEndTime: introEnd, feedOutroStartTime: outroStart };
+  }, [currentSong]);
+
+  // 🎵 오디오 로드 완료 시 자동 재생
+  useEffect(() => {
+    if (webAudio.isReady && shouldAutoPlay) {
+      // jamOnlyMode면 Chorus A부터, 아니면 처음부터
+      const startTime = jamOnlyMode ? feedIntroEndTime : 0;
+      console.log('🎵 [AutoPlay] 오디오 로드 완료, 자동 재생 시작:', startTime.toFixed(2) + 's', jamOnlyMode ? '(JAM Only)' : '(Full)');
+
+      if (startTime > 0) {
+        webAudio.seek(startTime);
+        setCurrentTime(startTime);
+      }
+      webAudio.play();
+      setIsPlaying(true);
+      setShouldAutoPlay(false); // 플래그 리셋
+    }
+  }, [webAudio.isReady, shouldAutoPlay, webAudio, jamOnlyMode, feedIntroEndTime]);
+
   const sectionColors: Record<string, string> = useMemo(() => ({
     'Intro': '#7BA7FF',
     'A': COLOR_PALETTE[0],
@@ -239,6 +266,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     }));
   }, [currentSong, sectionColors]);
 
+  // 기존 richSections 기반 (호환성 유지)
   const introEndTime = richSections.length > 0 ? richSections[0].startTime + richSections[0].duration : 0;
   const outroStartTime = richSections.length > 0 ? richSections[richSections.length - 1].startTime : 0;
 
@@ -246,8 +274,9 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     (time: number) => {
       if (jamOnlyMode) {
         const epsilon = 0.01;
-        const lowerBound = introEndTime;
-        const upperBound = Math.max(lowerBound, outroStartTime - epsilon);
+        // Feed 구조 기반 JAM 범위 사용
+        const lowerBound = feedIntroEndTime;
+        const upperBound = Math.max(lowerBound, feedOutroStartTime - epsilon);
         return Math.min(Math.max(time, lowerBound), upperBound);
       }
 
@@ -255,7 +284,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       const upperBound = duration; // Use dynamic duration
       return Math.min(Math.max(time, lowerBound), upperBound);
     },
-    [duration, introEndTime, jamOnlyMode, outroStartTime]
+    [duration, feedIntroEndTime, feedOutroStartTime, jamOnlyMode]
   );
 
   const getRandomStageColor = useCallback(() => {
@@ -283,14 +312,17 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       });
     }
 
-    // 곡 처음부터 재생
-    webAudio.stop();  // 먼저 정지
-    webAudio.seek(0);
-    setCurrentTime(0);
+    // 재생 위치 결정: jamOnlyMode면 Chorus A부터, 아니면 처음부터
+    const startTime = jamOnlyMode ? feedIntroEndTime : 0;
+    console.log('🎵 [handleJamSetChange] 재생 시작 위치:', startTime.toFixed(2) + 's', jamOnlyMode ? '(JAM Only)' : '(Full)');
+
+    webAudio.stop();
+    webAudio.seek(startTime);
+    setCurrentTime(startTime);
     setIsPlaying(true);
-    await webAudio.play();  // 재생 시작
+    await webAudio.play();
     setStageColor(getRandomStageColor());
-  }, [currentJamSetIndex, getRandomStageColor, setStageColor, webAudio]);
+  }, [currentJamSetIndex, getRandomStageColor, setStageColor, webAudio, jamOnlyMode, feedIntroEndTime]);
 
   const handleSongChange = useCallback((direction: 'next' | 'prev') => {
     console.log('🎵 [handleSongChange] 곡 변경 시작:', direction);
@@ -430,6 +462,8 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     seekByMeasure,
     jamOnlyMode,
     setJamOnlyMode,
+    feedIntroEndTime,
+    webAudio,
   });
 
   // ref 업데이트 (리렌더링 시 최신 함수 참조)
@@ -441,8 +475,10 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       seekByMeasure,
       jamOnlyMode,
       setJamOnlyMode,
+      feedIntroEndTime,
+      webAudio,
     };
-  }, [handleSongChange, handleJamSetChange, togglePlayPause, seekByMeasure, jamOnlyMode]);
+  }, [handleSongChange, handleJamSetChange, togglePlayPause, seekByMeasure, jamOnlyMode, feedIntroEndTime, webAudio]);
 
   // 키보드 제어: ←→ (JAM 세트 전환), ↑↓ (곡 전환), ZX (마디 이동), Space (재생/정지)
   useEffect(() => {
@@ -530,10 +566,17 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
         case 'KeyS':
           e.preventDefault();
           e.stopPropagation();
+          setKeyFeedback('s');
           {
             const nextJamOnly = !handlers.jamOnlyMode;
             handlers.setJamOnlyMode(nextJamOnly);
             console.log('🎛️ JAM-only 모드 토글:', nextJamOnly ? 'ON' : 'OFF');
+
+            // JAM-only 활성화 시 Intro에 있으면 Chorus A로 이동
+            if (nextJamOnly && handlers.webAudio.currentTime < handlers.feedIntroEndTime) {
+              console.log('🎵 [JAM Only] Intro에서 Chorus A로 이동');
+              handlers.webAudio.seek(handlers.feedIntroEndTime);
+            }
           }
           break;
 
@@ -558,6 +601,27 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       setCurrentTime((prev) => clampTime(prev));
     }
   }, [clampTime, jamOnlyMode]);
+
+  // 🎵 JAM만 듣기 모드: 재생 범위 감시 및 자동 seek
+  useEffect(() => {
+    if (!jamOnlyMode || !webAudio.isPlaying) return;
+
+    const currentPos = webAudio.currentTime;
+
+    // Intro 구간에 있으면 Chorus A 시작으로 이동
+    if (currentPos < feedIntroEndTime) {
+      console.log('🎵 [JAM Only] Intro 감지 → Chorus A로 이동');
+      webAudio.seek(feedIntroEndTime);
+      return;
+    }
+
+    // Outro 진입 시 Chorus A로 돌아가기 (루프)
+    if (currentPos >= feedOutroStartTime) {
+      console.log('🎵 [JAM Only] Outro 감지 → Chorus A로 루프');
+      webAudio.seek(feedIntroEndTime);
+      return;
+    }
+  }, [jamOnlyMode, webAudio.isPlaying, webAudio.currentTime, feedIntroEndTime, feedOutroStartTime, webAudio]);
 
   // 🧪 주석처리: 기존 audio 태그 로드 (useWebAudio로 대체)
   // useEffect(() => {
@@ -807,9 +871,9 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   const currentPerformerName = getCurrentPerformer();
 
   const handleTimeChange = (newTime: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = clampTime(newTime);
-    }
+    const clampedTime = clampTime(newTime);
+    webAudio.seek(clampedTime);
+    setCurrentTime(clampedTime);
   };
 
   useEffect(() => {
@@ -872,6 +936,8 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
             onToggleJamOnly={setJamOnlyMode}
             performers={performers}
             pressedKey={pressedKey}
+            feedIntroEndTime={feedIntroEndTime}
+            feedOutroStartTime={feedOutroStartTime}
           />
         </div>
       </div>

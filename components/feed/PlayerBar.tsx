@@ -29,6 +29,8 @@ interface PlayerBarProps {
   onToggleJamOnly?: (value: boolean) => void;
   performers?: Performer[]; // 연주자 배열 추가
   pressedKey?: string | null; // 현재 눌린 키 (시각적 피드백용)
+  feedIntroEndTime?: number; // JAM 시작 시간 (Chorus A 시작)
+  feedOutroStartTime?: number; // JAM 끝 시간 (Outro 시작)
 }
 
 export default function PlayerBar({
@@ -48,8 +50,28 @@ export default function PlayerBar({
   onToggleJamOnly,
   performers = [],
   pressedKey = null,
+  feedIntroEndTime = 0,
+  feedOutroStartTime = 0,
 }: PlayerBarProps) {
   const [currentMeasure, setCurrentMeasure] = useState(1);
+
+  // 🎵 슬라이더 값 변경 핸들러 (드래그/클릭 모두 처리)
+  const handleSliderChange = (value: number[]) => {
+    let newTime = value[0];
+
+    // JAM만 듣기 모드일 때 범위 보정
+    if (jamOnlyMode && feedIntroEndTime > 0 && feedOutroStartTime > 0) {
+      if (newTime < feedIntroEndTime) {
+        newTime = feedIntroEndTime;
+        console.log('🎵 [Slider] Intro 범위 → Chorus A로 보정');
+      } else if (newTime >= feedOutroStartTime) {
+        newTime = feedOutroStartTime - 0.1;
+        console.log('🎵 [Slider] Outro 범위 → Chorus D 끝으로 보정');
+      }
+    }
+
+    onTimeChange(newTime);
+  };
 
   // 🔍 디버깅: performers 전체 데이터 확인
   useEffect(() => {
@@ -212,7 +234,7 @@ export default function PlayerBar({
                 value={[currentTime]}
                 max={duration}
                 step={1}
-                onValueChange={(value) => onTimeChange(value[0])}
+                onValueChange={handleSliderChange}
                 className="relative flex w-full select-none items-center touch-none"
               >
                 <SliderPrimitive.Track className="relative h-3 w-full grow overflow-hidden rounded-full bg-[#FFFFFF]/10">

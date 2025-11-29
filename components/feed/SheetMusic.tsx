@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { Heart } from "lucide-react";
 import VexFlowStaff from './VexFlowStaff';
+import { renderChordMeasure } from '@/utils/chordParser';
 
 interface Measure {
   chord: string;
@@ -227,6 +228,15 @@ export default function SheetMusic({
         ? globalMeasureIndex >= selectedMeasures.start && globalMeasureIndex <= selectedMeasures.end
         : false;
 
+      // DEBUG: 첫 8마디만 로그 (코드 데이터 구조 확인)
+      if (globalMeasureIndex < 8) {
+        console.log(`🎵 [renderMeasure] 마디 ${globalMeasureIndex}:`, {
+          chord: measure.chord,
+          type: typeof measure.chord,
+          measure: measure
+        });
+      }
+
       return (
         <div
           key={localIndex}
@@ -257,7 +267,31 @@ export default function SheetMusic({
                 transition: 'color 0.3s ease, font-size 0.3s ease, font-weight 0.3s ease, text-shadow 0.3s ease'
               }}
             >
-              {measure.chord}
+              {(() => {
+                // 안전한 코드 렌더링 (파싱 실패 시 원본 표시)
+                try {
+                  const { nodes, count, isEmpty } = renderChordMeasure(measure.chord);
+
+                  if (isEmpty) {
+                    return measure.chord || '';
+                  }
+
+                  if (count === 1) {
+                    return nodes[0];
+                  }
+
+                  // 다중 코드: 균등 분할
+                  return (
+                    <div className="flex w-full justify-around px-1">
+                      {nodes}
+                    </div>
+                  );
+                } catch (e) {
+                  // 에러 시 원본 표시
+                  console.error('🎵 [renderMeasure] 코드 렌더링 에러:', measure.chord, e);
+                  return measure.chord || '';
+                }
+              })()}
             </div>
           )}
         </div>
