@@ -7,11 +7,11 @@ jobs:
   notify-deployment:
     runs-on: ubuntu-latest
     if: github.event.deployment_status.state == 'success'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
+
       - name: Extract Task Number
         id: task
         run: |
@@ -26,7 +26,7 @@ jobs:
             echo "$COMMIT_MSG"
             echo "EOF"
           } >> $GITHUB_OUTPUT
-          
+
       - name: Get Commit Info
         id: commit
         run: |
@@ -34,7 +34,61 @@ jobs:
           COMMIT_TIME=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
           echo "time=$COMMIT_TIME" >> $GITHUB_OUTPUT
-          
+
+      - name: Update Notion Context Hub
+        id: notion
+        continue-on-error: true
+        if: steps.task.outputs.task_number != '0' && steps.task.outputs.task_number != ''
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          TASK_NUMBER: ${{ steps.task.outputs.task_number }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+          COMMIT_TIME: ${{ steps.commit.outputs.time }}
+          COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
+        run: |
+          echo "📝 Updating Notion Context Hub..."
+
+          # 완료 로그 메시지 생성
+          LOG_MESSAGE="✅ [${COMMIT_TIME}] Task ${TASK_NUMBER} 완료 - ${COMMIT_MESSAGE} (${COMMIT_SHA})"
+          echo "Log message: $LOG_MESSAGE"
+
+          # Notion API 호출 - Context Hub 페이지 하단에 로그 추가
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.notion.com/v1/blocks/${CONTEXT_HUB_PAGE_ID}/children" \
+            -H "Authorization: Bearer ${NOTION_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Notion-Version: 2022-06-28" \
+            -d '{
+              "children": [
+                {
+                  "object": "block",
+                  "type": "paragraph",
+                  "paragraph": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "'"${LOG_MESSAGE}"'"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Context Hub 업데이트 성공!"
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Context Hub 업데이트 실패 (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Send Slack Notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -43,14 +97,24 @@ jobs:
           COMMIT_SHA: ${{ steps.commit.outputs.sha }}
           COMMIT_TIME: ${{ steps.commit.outputs.time }}
           COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
+          CONTEXT_HUB_UPDATED: ${{ steps.notion.outputs.updated }}
         run: |
-          echo "Debug: TASK_NUMBER before Slack notification is '$TASK_NUMBER'" # Diagnostic line
-          if [ "$TASK_NUMBER" != "0" ]; then
+          echo "Debug: TASK_NUMBER before Slack notification is '$TASK_NUMBER'"
+          if [ "$TASK_NUMBER" != "0" ] && [ -n "$TASK_NUMBER" ]; then
             TASK_TITLE="Task ${TASK_NUMBER}"
           else
             TASK_TITLE="배포"
           fi
-          
+
+          # Context Hub 업데이트 상태 메시지
+          if [ "$CONTEXT_HUB_UPDATED" = "true" ]; then
+            CONTEXT_HUB_STATUS="🔗 Context Hub 업데이트됨"
+          elif [ "$TASK_NUMBER" = "0" ] || [ -z "$TASK_NUMBER" ]; then
+            CONTEXT_HUB_STATUS="ℹ️ Task 없음 - Context Hub 스킵"
+          else
+            CONTEXT_HUB_STATUS="⚠️ Context Hub 업데이트 실패"
+          fi
+
           curl -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d '{
@@ -92,6 +156,13 @@ jobs:
                       "text": "💬 *메시지*\n'"${COMMIT_MESSAGE}"'"
                     }
                   ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "'"${CONTEXT_HUB_STATUS}"'"
+                  }
                 },
                 {
                   "type": "divider"
