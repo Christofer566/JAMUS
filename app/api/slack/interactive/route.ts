@@ -35,9 +35,21 @@ export async function POST(request: any) { // request 타입 제거
     // ✅ 문서화 완료 버튼 처리 (Phase 3)
     // ========================================
     if (actionId === 'finish_documentation') {
-      const { taskNumber, weekString } = JSON.parse(action.value);
+      const { taskNumber } = JSON.parse(action.value);
       const channel = payload.channel.id;
       const user = payload.user.id;
+
+      // 현재 주차 자동 계산 (11월 10일 = W01 시작 기준)
+      const getWeekString = (): string => {
+        const now = new Date();
+        const startDate = new Date('2025-11-10'); // W01 시작일 (월요일)
+        const diffTime = now.getTime() - startDate.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const weekNum = Math.floor(diffDays / 7) + 1;
+        return `W${weekNum.toString().padStart(2, '0')}`;
+      };
+      const weekString = getWeekString();
+      console.log(`📅 Current week: ${weekString}`);
 
       try {
         // 문서화 프로세스 실행 (동기 - await 사용)
