@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { ChevronLeft } from 'lucide-react';
 import FeedContainer from '@/components/feed/FeedContainer';
 import Billboard from '@/components/feed/Billboard';
-import PlayerBar from '@/components/feed/PlayerBar';
+import FeedPlayerBar from '@/components/feed/FeedPlayerBar';
 import { useStageContext } from '@/contexts/StageContext';
 
 import { SongWithMusicData, ProgressSection, StructureData, ChordData } from '@/types/music';
@@ -904,6 +905,37 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     setStageColor(getCurrentPerformerColor());
   }, [getCurrentPerformerColor, setStageColor]);
 
+  // Feed용 섹션 라벨 계산
+  const feedSectionLabels = ['Intro', 'A', 'B', 'C', 'D', 'Outro'];
+  const currentSectionLabel = feedSectionLabels[feedSectionIndex] || 'Intro';
+
+  // 전체 마디 수 계산
+  const totalMeasures = currentSong?.structure_data?.feedTotalMeasures || currentSong?.structure_data?.totalMeasures || 48;
+
+  // 전역 마디 번호 계산
+  const globalMeasure = useMemo(() => {
+    if (!currentSong?.structure_data) return feedMeasure + 1;
+    const { introMeasures = 8, chorusMeasures = 32 } = currentSong.structure_data;
+
+    let measureOffset = 0;
+    switch (feedSectionIndex) {
+      case 0: measureOffset = 0; break; // Intro
+      case 1: measureOffset = introMeasures; break; // A
+      case 2: measureOffset = introMeasures + chorusMeasures; break; // B
+      case 3: measureOffset = introMeasures + chorusMeasures * 2; break; // C
+      case 4: measureOffset = introMeasures + chorusMeasures * 3; break; // D
+      case 5: measureOffset = introMeasures + chorusMeasures * 4; break; // Outro
+    }
+    return measureOffset + feedMeasure + 1;
+  }, [feedSectionIndex, feedMeasure, currentSong?.structure_data]);
+
+  // 시간 포맷 함수
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
   return (
     <FeedContainer>
       <audio
@@ -912,8 +944,43 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
         preload="auto"
       />
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex flex-1 min-h-0 flex-col">
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* 최상단 헤더: 뒤로가기 + 앨범커버 + 곡 정보 */}
+        <div className="flex items-center gap-4 flex-shrink-0 mb-4">
+          <button
+            onClick={() => router.back()}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors"
+          >
+            <ChevronLeft size={24} className="text-white" />
+          </button>
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-500 shadow-lg">
+            <span className="text-xl">🎵</span>
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-bold text-white leading-none">{currentSong.title}</h1>
+            <span className="text-sm text-gray-400">{currentSong.artist}</span>
+          </div>
+        </div>
+
+        {/* 악보 영역 컨테이너 */}
+        <div className="flex-1 min-h-0 relative">
+          {/* 악보 영역 상단 헤더 (플래그 스타일) */}
+          <div className="absolute -top-0 left-0 right-0 z-10 px-4 py-3 rounded-t-xl border border-b-0 border-gray-700 bg-[#0F172A]">
+            <div className="flex justify-between items-center text-white">
+              <div className="flex gap-6 text-sm font-mono text-gray-300">
+                <span>{formatTime(currentTime)} / {formatTime(duration)}</span>
+                <span>{currentSectionLabel} - {globalMeasure}/{totalMeasures} 마디</span>
+              </div>
+              <button
+                onClick={() => router.push('/single')}
+                className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
+              >
+                이 JAM에 참여하기
+              </button>
+            </div>
+          </div>
+
+          {/* 악보 영역 */}
+          <div className="h-full pt-12 rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 overflow-hidden">
             <Billboard
               key={`jamSet-${currentJamSetIndex}-song-${currentSongIndex}`}
               className="h-full"
@@ -938,26 +1005,29 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           </div>
         </div>
 
-        <div className="mt-6 flex-shrink-0">
-          <PlayerBar
-            className="flex-shrink-0"
-            songTitle={currentSong.title}
-            artistName={currentSong.artist}
-            isPlaying={isPlaying}
-            onPlayPause={togglePlayPause}
-            song={currentSong}
-            progressSections={progressSections}
+        {/* 하단: PlayerBar (재생바 + 컨트롤러) */}
+        <div className="mt-6 flex-shrink-0 rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 p-4 space-y-4">
+          <FeedPlayerBar
             currentTime={currentTime}
             duration={duration}
-            onTimeChange={handleTimeChange}
-            onNextJam={() => handleJamSetChange('next')}
-            onPrevJam={() => handleJamSetChange('prev')}
-            jamOnlyMode={jamOnlyMode}
-            onToggleJamOnly={setJamOnlyMode}
             performers={performers}
-            pressedKey={pressedKey}
+            onTimeChange={handleTimeChange}
+            jamOnlyMode={jamOnlyMode}
             feedIntroEndTime={feedIntroEndTime}
             feedOutroStartTime={feedOutroStartTime}
+            isPlaying={isPlaying}
+            onPlayPause={togglePlayPause}
+            onSeekByMeasure={(offset) => {
+              if (!currentSong?.bpm) return;
+              const measureDuration = calculateMeasureDuration(currentSong.bpm, currentSong.time_signature);
+              const newTime = webAudio.currentTime + (offset * measureDuration);
+              const clampedTime = Math.max(0, Math.min(newTime, webAudio.duration));
+              webAudio.seek(clampedTime);
+            }}
+            onNextJam={() => handleJamSetChange('next')}
+            onPrevJam={() => handleJamSetChange('prev')}
+            onToggleJamOnly={setJamOnlyMode}
+            pressedKey={pressedKey}
           />
         </div>
       </div>

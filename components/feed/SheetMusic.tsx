@@ -149,6 +149,14 @@ export default function SheetMusic({
     }
   }, [currentSectionIndex, currentRowIndex]); // 줄이 바뀔 때만 스크롤
 
+  // 전역 마디 번호 계산 함수
+  const getGlobalMeasureNumber = (sectionIdx: number, localMeasureIdx: number): number => {
+    const offset = sections
+      .slice(0, sectionIdx)
+      .reduce((total, s) => total + s.measures.length, 0);
+    return offset + localMeasureIdx + 1; // 1부터 시작
+  };
+
   const renderSection = (section: Section, sectionIdx: number) => {
     const globalMeasureOffset = sections
       .slice(0, sectionIdx)
@@ -228,6 +236,10 @@ export default function SheetMusic({
         ? globalMeasureIndex >= selectedMeasures.start && globalMeasureIndex <= selectedMeasures.end
         : false;
 
+      // 마디 번호 (01, 02, 03... 형식)
+      const measureNumber = getGlobalMeasureNumber(sectionIdx, localIndex);
+      const measureNumberStr = measureNumber.toString().padStart(2, '0');
+
       // DEBUG: 첫 8마디만 로그 (코드 데이터 구조 확인)
       if (globalMeasureIndex < 8) {
         console.log(`🎵 [renderMeasure] 마디 ${globalMeasureIndex}:`, {
@@ -245,6 +257,11 @@ export default function SheetMusic({
           onMouseEnter={() => handleMouseEnter(globalMeasureIndex)}
           style={{ cursor: 'pointer' }}
         >
+          {/* 마디 번호 - 각 마디 좌측 상단 */}
+          <div className="absolute top-1 left-2 text-xs text-gray-400 font-mono font-medium z-10">
+            {measureNumberStr}
+          </div>
+
           <div
             className="absolute left-0 top-0 bottom-0 w-1"
             style={{ backgroundColor: `${sectionColor}40` }}

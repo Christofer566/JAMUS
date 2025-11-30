@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import SheetMusic from "./SheetMusic";
 import { useOnClickOutside } from "@/hooks/useOnClickOutside";
 
@@ -167,45 +166,22 @@ export default function Billboard({
   measureProgress,
   sectionProgress,
 }: BillboardProps) {
-  const router = useRouter();
   const sections = createSections(performers, chordProgression, structureData);
   const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
   const billboardRef = useRef<HTMLDivElement | null>(null);
 
   useOnClickOutside(billboardRef as React.RefObject<HTMLElement>, () => setSelectedMeasures(null));
 
-  const handleJoinJam = () => {
-    router.push("/single");
-  };
-
   return (
     <div
       ref={billboardRef}
       className={mergeClassNames(
-        "flex h-full w-full flex-col rounded-2xl border border-white/10 bg-[#1B1C26]/60 shadow-2xl backdrop-blur-xl",
+        "flex h-full w-full flex-col",
         className,
       )}
     >
-      <div className="flex flex-shrink-0 items-center justify-between px-6 pt-5 pb-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-500 shadow-lg">
-            <span className="text-2xl">🎵</span>
-          </div>
-          <div>
-            <p className="text-lg font-bold text-white">{songTitle}</p>
-            <p className="text-sm text-[#9B9B9B]">{artistName}</p>
-          </div>
-        </div>
-
-        <button
-          onClick={handleJoinJam}
-          className="rounded-full bg-white px-6 py-2 text-sm font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
-        >
-          이 JAM에 참여하기
-        </button>
-      </div>
-
-      <div className="mx-5 mb-5 flex-1 overflow-hidden rounded-2xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 p-8 backdrop-blur-sm">
+      {/* 악보 영역만 표시 (헤더는 FeedClientPage로 이동) */}
+      <div className="flex-1 overflow-hidden p-8">
         <SheetMusic
           sections={sections}
           currentSectionIndex={currentSectionIndex}

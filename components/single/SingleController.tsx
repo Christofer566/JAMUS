@@ -144,9 +144,9 @@ export default function SingleController({
             type="checkbox"
             checked={jamOnlyMode}
             onChange={(e) => onToggleJamOnly(e.target.checked)}
-            className="h-4 w-4 appearance-none rounded border-2 border-[#FF7B7B]/60 bg-transparent checked:border-[#FF7B7B] checked:bg-[#FF7B7B] flex items-center justify-center after:hidden checked:after:block after:content-['✓'] after:text-[10px] after:text-white transition-all"
+            className="h-4 w-4 appearance-none rounded border-2 border-[#9B9B9B]/60 bg-transparent checked:border-[#7BA7FF] checked:bg-[#7BA7FF] flex items-center justify-center after:hidden checked:after:block after:content-['✓'] after:text-[10px] after:text-white transition-all"
           />
-          <span className="text-xs text-[#FF7B7B] group-hover:text-[#FF9B9B] transition-colors whitespace-nowrap">
+          <span className="text-xs text-[#9B9B9B] group-hover:text-[#E0E0E0] transition-colors whitespace-nowrap">
             JAM만 듣기 (S)
           </span>
         </label>

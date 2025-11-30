@@ -200,7 +200,7 @@ export default function SingleScore({
           style={{ cursor: 'pointer' }}
         >
           {/* 마디 번호 - 각 마디 좌측 상단 */}
-          <div className="absolute top-1 left-1 text-[10px] text-gray-500 font-mono z-10">
+          <div className="absolute top-1 left-2 text-xs text-gray-400 font-mono font-medium z-10">
             {measureNumberStr}
           </div>
 
