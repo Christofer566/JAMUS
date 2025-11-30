@@ -39,6 +39,60 @@ jobs:
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
           echo "time=$COMMIT_TIME" >> $GITHUB_OUTPUT
 
+      - name: Clean Old Task Logs from Context Hub
+        id: clean_logs
+        continue-on-error: true
+        if: steps.task.outputs.task_number != 'none'
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          TASK_NUMBER: ${{ steps.task.outputs.task_number }}
+        run: |
+          echo "🔍 Checking existing logs in Context Hub..."
+
+          # 현재 Task의 정수 부분 추출 (0.1 -> 0, 1.2 -> 1)
+          CURRENT_TASK_INT=$(echo "$TASK_NUMBER" | cut -d'.' -f1)
+          echo "Current Task (integer part): $CURRENT_TASK_INT"
+
+          # 페이지 블록들 조회
+          BLOCKS_RESPONSE=$(curl -s -X GET "https://api.notion.com/v1/blocks/${CONTEXT_HUB_PAGE_ID}/children?page_size=100" \
+            -H "Authorization: Bearer ${NOTION_API_KEY}" \
+            -H "Notion-Version: 2022-06-28")
+
+          # 로그 블록 필터링 및 삭제
+          DELETED_COUNT=0
+          BLOCK_IDS=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.type == "paragraph") | select(.paragraph.rich_text[0].text.content | startswith("✅ [")) | .id')
+
+          for BLOCK_ID in $BLOCK_IDS; do
+            # 해당 블록의 텍스트에서 Task 번호 추출
+            BLOCK_TEXT=$(echo "$BLOCKS_RESPONSE" | jq -r --arg id "$BLOCK_ID" '.results[] | select(.id == $id) | .paragraph.rich_text[0].text.content')
+            BLOCK_TASK=$(echo "$BLOCK_TEXT" | grep -oP 'Task \K[0-9]+' | head -1)
+
+            echo "Found log block: Task $BLOCK_TASK (Block ID: $BLOCK_ID)"
+
+            # Task 번호가 다르면 삭제
+            if [ -n "$BLOCK_TASK" ] && [ "$BLOCK_TASK" != "$CURRENT_TASK_INT" ]; then
+              echo "🗑️ Deleting old Task $BLOCK_TASK log..."
+              DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE "https://api.notion.com/v1/blocks/${BLOCK_ID}" \
+                -H "Authorization: Bearer ${NOTION_API_KEY}" \
+                -H "Notion-Version: 2022-06-28")
+
+              DELETE_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
+              if [ "$DELETE_CODE" = "200" ]; then
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+                echo "✅ Deleted successfully"
+              else
+                echo "⚠️ Failed to delete (HTTP $DELETE_CODE)"
+              fi
+
+              # Rate limit 방지
+              sleep 0.3
+            fi
+          done
+
+          echo "🧹 Cleaned up $DELETED_COUNT old log(s)"
+          echo "deleted_count=$DELETED_COUNT" >> $GITHUB_OUTPUT
+
       - name: Update Notion Context Hub
         id: notion
         continue-on-error: true
