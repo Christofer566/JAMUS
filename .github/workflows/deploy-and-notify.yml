@@ -244,6 +244,80 @@ jobs:
             sleep 0.3
           done
 
+          # 3. has_children=true인 블록의 자식에서 bulleted_list_item 검색
+          echo "🔄 Searching for nested bulleted_list_item blocks..."
+          PARENT_BLOCKS=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.has_children == true) | .id')
+
+          for PARENT_ID in $PARENT_BLOCKS; do
+            CHILDREN_RESPONSE=$(curl -s -X GET "https://api.notion.com/v1/blocks/${PARENT_ID}/children?page_size=100" \
+              -H "Authorization: Bearer ${NOTION_API_KEY}" \
+              -H "Notion-Version: 2022-06-28")
+
+            # bulleted_list_item에서 Phase 검색
+            BULLET_BLOCKS=$(echo "$CHILDREN_RESPONSE" | jq -r --arg phase "Phase ${PHASE_NUM}" \
+              '.results[] | select(.type == "bulleted_list_item") | select(.bulleted_list_item.rich_text[0].text.content | contains($phase)) | .id' 2>/dev/null)
+
+            for BLOCK_ID in $BULLET_BLOCKS; do
+              BLOCK_TEXT=$(echo "$CHILDREN_RESPONSE" | jq -r --arg id "$BLOCK_ID" \
+                '.results[] | select(.id == $id) | .bulleted_list_item.rich_text[0].text.content')
+
+              if echo "$BLOCK_TEXT" | grep -q "⏳ Phase ${PHASE_NUM}"; then
+                NEW_TEXT=$(echo "$BLOCK_TEXT" | sed "s/⏳ Phase ${PHASE_NUM}/✅ Phase ${PHASE_NUM}/g")
+                echo "Updating bulleted_list_item: $BLOCK_TEXT -> $NEW_TEXT"
+
+                UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.notion.com/v1/blocks/${BLOCK_ID}" \
+                  -H "Authorization: Bearer ${NOTION_API_KEY}" \
+                  -H "Content-Type: application/json" \
+                  -H "Notion-Version: 2022-06-28" \
+                  -d '{
+                    "bulleted_list_item": {
+                      "rich_text": [{"type": "text", "text": {"content": "'"${NEW_TEXT}"'"}}]
+                    }
+                  }')
+
+                UPDATE_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+                if [ "$UPDATE_CODE" = "200" ]; then
+                  UPDATED_COUNT=$((UPDATED_COUNT + 1))
+                  echo "✅ Bulleted list item updated successfully"
+                else
+                  echo "⚠️ Failed to update bulleted_list_item (HTTP $UPDATE_CODE)"
+                fi
+                sleep 0.3
+              fi
+            done
+
+            # 자식 블록의 to_do도 검색
+            CHILD_TODO_BLOCKS=$(echo "$CHILDREN_RESPONSE" | jq -r --arg phase "Phase ${PHASE_NUM}" \
+              '.results[] | select(.type == "to_do") | select(.to_do.rich_text[0].text.content | contains($phase)) | select(.to_do.checked == false) | .id' 2>/dev/null)
+
+            for BLOCK_ID in $CHILD_TODO_BLOCKS; do
+              BLOCK_TEXT=$(echo "$CHILDREN_RESPONSE" | jq -r --arg id "$BLOCK_ID" \
+                '.results[] | select(.id == $id) | .to_do.rich_text[0].text.content')
+              echo "Checking nested to_do: $BLOCK_TEXT"
+
+              UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.notion.com/v1/blocks/${BLOCK_ID}" \
+                -H "Authorization: Bearer ${NOTION_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -H "Notion-Version: 2022-06-28" \
+                -d '{
+                  "to_do": {
+                    "checked": true
+                  }
+                }')
+
+              UPDATE_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+              if [ "$UPDATE_CODE" = "200" ]; then
+                UPDATED_COUNT=$((UPDATED_COUNT + 1))
+                echo "✅ Nested to-do checked successfully"
+              else
+                echo "⚠️ Failed to update nested to_do (HTTP $UPDATE_CODE)"
+              fi
+              sleep 0.3
+            done
+
+            sleep 0.3
+          done
+
           echo "📊 Updated $UPDATED_COUNT block(s) for Phase $PHASE_NUM"
           echo "phase_updated=true" >> $GITHUB_OUTPUT
           echo "phase_number=$PHASE_NUM" >> $GITHUB_OUTPUT
