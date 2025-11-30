@@ -147,6 +147,107 @@ jobs:
             echo "updated=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Update Phase Status in Context Hub
+        id: phase_update
+        continue-on-error: true
+        if: steps.task.outputs.task_number != 'none'
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
+        run: |
+          echo "🔍 Checking for Phase number in commit message..."
+
+          # Phase 번호 추출 (Task X.Y에서 Y 추출)
+          PHASE_NUM=$(echo "$COMMIT_MESSAGE" | grep -oP 'Task \d+\.(\d+):' | grep -oP '\.\d+' | tr -d '.')
+
+          if [ -z "$PHASE_NUM" ]; then
+            echo "ℹ️ No Phase number found, skipping Phase update"
+            echo "phase_updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "📌 Found Phase $PHASE_NUM, updating Context Hub..."
+
+          # 페이지 블록들 조회
+          BLOCKS_RESPONSE=$(curl -s -X GET "https://api.notion.com/v1/blocks/${CONTEXT_HUB_PAGE_ID}/children?page_size=100" \
+            -H "Authorization: Bearer ${NOTION_API_KEY}" \
+            -H "Notion-Version: 2022-06-28")
+
+          UPDATED_COUNT=0
+
+          # 1. paragraph 블록에서 "⏳ Phase N:" 찾아서 "✅ Phase N:"으로 변경
+          echo "🔄 Searching for paragraph blocks with ⏳ Phase ${PHASE_NUM}..."
+          PARAGRAPH_BLOCKS=$(echo "$BLOCKS_RESPONSE" | jq -r --arg phase "Phase ${PHASE_NUM}" '.results[] | select(.type == "paragraph") | select(.paragraph.rich_text[0].text.content | contains($phase)) | .id')
+
+          for BLOCK_ID in $PARAGRAPH_BLOCKS; do
+            BLOCK_TEXT=$(echo "$BLOCKS_RESPONSE" | jq -r --arg id "$BLOCK_ID" '.results[] | select(.id == $id) | .paragraph.rich_text[0].text.content')
+
+            # ⏳가 있는 경우에만 업데이트
+            if echo "$BLOCK_TEXT" | grep -q "⏳ Phase ${PHASE_NUM}"; then
+              NEW_TEXT=$(echo "$BLOCK_TEXT" | sed "s/⏳ Phase ${PHASE_NUM}/✅ Phase ${PHASE_NUM}/g")
+              echo "Updating paragraph: $BLOCK_TEXT -> $NEW_TEXT"
+
+              UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.notion.com/v1/blocks/${BLOCK_ID}" \
+                -H "Authorization: Bearer ${NOTION_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -H "Notion-Version: 2022-06-28" \
+                -d '{
+                  "paragraph": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "'"${NEW_TEXT}"'"
+                        }
+                      }
+                    ]
+                  }
+                }')
+
+              UPDATE_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+              if [ "$UPDATE_CODE" = "200" ]; then
+                UPDATED_COUNT=$((UPDATED_COUNT + 1))
+                echo "✅ Paragraph updated successfully"
+              else
+                echo "⚠️ Failed to update paragraph (HTTP $UPDATE_CODE)"
+              fi
+              sleep 0.3
+            fi
+          done
+
+          # 2. to_do 블록에서 "Phase N:" 찾아서 checked: true로 변경
+          echo "🔄 Searching for to_do blocks with Phase ${PHASE_NUM}..."
+          TODO_BLOCKS=$(echo "$BLOCKS_RESPONSE" | jq -r --arg phase "Phase ${PHASE_NUM}" '.results[] | select(.type == "to_do") | select(.to_do.rich_text[0].text.content | contains($phase)) | select(.to_do.checked == false) | .id')
+
+          for BLOCK_ID in $TODO_BLOCKS; do
+            BLOCK_TEXT=$(echo "$BLOCKS_RESPONSE" | jq -r --arg id "$BLOCK_ID" '.results[] | select(.id == $id) | .to_do.rich_text[0].text.content')
+            echo "Checking to_do: $BLOCK_TEXT"
+
+            UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.notion.com/v1/blocks/${BLOCK_ID}" \
+              -H "Authorization: Bearer ${NOTION_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Notion-Version: 2022-06-28" \
+              -d '{
+                "to_do": {
+                  "checked": true
+                }
+              }')
+
+            UPDATE_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+            if [ "$UPDATE_CODE" = "200" ]; then
+              UPDATED_COUNT=$((UPDATED_COUNT + 1))
+              echo "✅ To-do checked successfully"
+            else
+              echo "⚠️ Failed to update to_do (HTTP $UPDATE_CODE)"
+            fi
+            sleep 0.3
+          done
+
+          echo "📊 Updated $UPDATED_COUNT block(s) for Phase $PHASE_NUM"
+          echo "phase_updated=true" >> $GITHUB_OUTPUT
+          echo "phase_number=$PHASE_NUM" >> $GITHUB_OUTPUT
+
       - name: Send Slack Notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
