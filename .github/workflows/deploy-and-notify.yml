@@ -248,6 +248,87 @@ jobs:
           echo "phase_updated=true" >> $GITHUB_OUTPUT
           echo "phase_number=$PHASE_NUM" >> $GITHUB_OUTPUT
 
+      - name: Update Codebase State in Context Hub
+        id: codebase_state
+        continue-on-error: true
+        if: steps.task.outputs.task_number != 'none'
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
+          COMMIT_TIME: ${{ steps.commit.outputs.time }}
+        run: |
+          echo "📊 Updating Codebase State table..."
+
+          # 현재 날짜 (배포일)
+          DEPLOY_DATE=$(echo "$COMMIT_TIME" | cut -d' ' -f1)
+          echo "Deploy date: $DEPLOY_DATE"
+
+          # 페이지 블록들 조회
+          BLOCKS_RESPONSE=$(curl -s -X GET "https://api.notion.com/v1/blocks/${CONTEXT_HUB_PAGE_ID}/children?page_size=100" \
+            -H "Authorization: Bearer ${NOTION_API_KEY}" \
+            -H "Notion-Version: 2022-06-28")
+
+          # table 블록 찾기
+          TABLE_ID=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.type == "table") | .id' | head -1)
+
+          if [ -z "$TABLE_ID" ] || [ "$TABLE_ID" = "null" ]; then
+            echo "⚠️ Table block not found, skipping Codebase State update"
+            exit 0
+          fi
+
+          echo "Found table: $TABLE_ID"
+
+          # 테이블 자식 블록(행) 조회
+          TABLE_ROWS=$(curl -s -X GET "https://api.notion.com/v1/blocks/${TABLE_ID}/children?page_size=100" \
+            -H "Authorization: Bearer ${NOTION_API_KEY}" \
+            -H "Notion-Version: 2022-06-28")
+
+          # "마지막 커밋" 행 찾기 및 업데이트
+          COMMIT_ROW_ID=$(echo "$TABLE_ROWS" | jq -r '.results[] | select(.table_row.cells[0][0].text.content == "마지막 커밋") | .id')
+          if [ -n "$COMMIT_ROW_ID" ] && [ "$COMMIT_ROW_ID" != "null" ]; then
+            echo "Updating '마지막 커밋' row..."
+
+            # 커밋 메시지에서 특수문자 이스케이프
+            ESCAPED_MSG=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | head -c 100)
+
+            curl -s -X PATCH "https://api.notion.com/v1/blocks/${COMMIT_ROW_ID}" \
+              -H "Authorization: Bearer ${NOTION_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Notion-Version: 2022-06-28" \
+              -d '{
+                "table_row": {
+                  "cells": [
+                    [{"type": "text", "text": {"content": "마지막 커밋"}}],
+                    [{"type": "text", "text": {"content": "'"${ESCAPED_MSG}"'"}}]
+                  ]
+                }
+              }' > /dev/null
+            echo "✅ '마지막 커밋' updated"
+            sleep 0.3
+          fi
+
+          # "마지막 배포" 행 찾기 및 업데이트
+          DEPLOY_ROW_ID=$(echo "$TABLE_ROWS" | jq -r '.results[] | select(.table_row.cells[0][0].text.content == "마지막 배포") | .id')
+          if [ -n "$DEPLOY_ROW_ID" ] && [ "$DEPLOY_ROW_ID" != "null" ]; then
+            echo "Updating '마지막 배포' row..."
+            curl -s -X PATCH "https://api.notion.com/v1/blocks/${DEPLOY_ROW_ID}" \
+              -H "Authorization: Bearer ${NOTION_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Notion-Version: 2022-06-28" \
+              -d '{
+                "table_row": {
+                  "cells": [
+                    [{"type": "text", "text": {"content": "마지막 배포"}}],
+                    [{"type": "text", "text": {"content": "'"${DEPLOY_DATE}"'"}}]
+                  ]
+                }
+              }' > /dev/null
+            echo "✅ '마지막 배포' updated"
+          fi
+
+          echo "📊 Codebase State update complete"
+
       - name: Send Slack Notification
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
