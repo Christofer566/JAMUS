@@ -4,7 +4,7 @@ import { Play, Pause, RotateCcw, RotateCw, ChevronDown, Save } from "lucide-reac
 
 interface SingleControllerProps {
   isPlaying: boolean;
-  onPlayPause: () => void;
+  onPlayPause: () => void | Promise<void>;
   onSeekBackward: () => void;
   onSeekForward: () => void;
   isJamming: boolean;
@@ -37,10 +37,10 @@ export default function SingleController({
   pressedKey = null,
 }: SingleControllerProps) {
   // 통합 버튼 클릭 핸들러
-  const handleIntegratedButtonClick = () => {
+  const handleIntegratedButtonClick = async () => {
     if (!isPlaying) {
       // 재생 시작
-      onPlayPause();
+      await onPlayPause();
     }
     // JAM 토글
     onToggleJam();
@@ -137,34 +137,34 @@ export default function SingleController({
       </div>
 
       {/* 우측: 옵션 */}
-      <div className="flex items-center gap-4 min-w-[180px] justify-end">
-        {/* JAM만 듣기 체크박스 */}
-        <label className="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={jamOnlyMode}
-            onChange={(e) => onToggleJamOnly(e.target.checked)}
-            className="h-4 w-4 appearance-none rounded border-2 border-[#9B9B9B]/60 bg-transparent checked:border-[#7BA7FF] checked:bg-[#7BA7FF] flex items-center justify-center after:hidden checked:after:block after:content-['✓'] after:text-[10px] after:text-white transition-all"
-          />
-          <span className="text-xs text-[#9B9B9B] group-hover:text-[#E0E0E0] transition-colors whitespace-nowrap">
-            JAM만 듣기 (S)
-          </span>
-        </label>
+      <div className="flex items-center gap-2 min-w-[280px] justify-end">
+        {/* 메트로놈 버튼 */}
+        <button
+          type="button"
+          onClick={() => onToggleMetronome(!metronomeOn)}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            metronomeOn
+              ? 'bg-[#FFD166] text-black'
+              : 'bg-white/10 text-gray-300 hover:bg-white/20'
+          }`}
+        >
+          ♪ 메트로놈
+        </button>
 
-        {/* Metronome 체크박스 */}
-        <label className="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={metronomeOn}
-            onChange={(e) => onToggleMetronome(e.target.checked)}
-            className="h-4 w-4 appearance-none rounded border-2 border-[#9B9B9B]/60 bg-transparent checked:border-[#7BA7FF] checked:bg-[#7BA7FF] flex items-center justify-center after:hidden checked:after:block after:content-['✓'] after:text-[10px] after:text-white transition-all"
-          />
-          <span className="text-xs text-[#9B9B9B] group-hover:text-[#E0E0E0] transition-colors">
-            Metronome
-          </span>
-        </label>
+        {/* JAM만 듣기 버튼 */}
+        <button
+          type="button"
+          onClick={() => onToggleJamOnly(!jamOnlyMode)}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            jamOnlyMode
+              ? 'bg-[#7BA7FF] text-black'
+              : 'bg-white/10 text-gray-300 hover:bg-white/20'
+          }`}
+        >
+          JAM만 듣기
+        </button>
 
-        {/* Save 버튼 - 재생바 Intro 책갈피 색상과 동일 */}
+        {/* Save 버튼 */}
         <button
           type="button"
           onClick={onSave}

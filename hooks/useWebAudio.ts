@@ -9,6 +9,11 @@ export interface AudioUrls {
   outro: string;
 }
 
+// 훅 옵션 타입
+export interface UseWebAudioOptions {
+  chorusRepeat?: number; // chorus 반복 횟수 (기본값: 4, Single은 1)
+}
+
 // 훅 반환 타입
 export interface UseWebAudioReturn {
   isLoading: boolean;
@@ -35,9 +40,12 @@ declare global {
 
 /**
  * Web Audio API 기반 오디오 재생 훅
- * intro + chorus×4 + outro를 하나의 연속 버퍼로 합성하여 재생
+ * intro + chorus×N + outro를 하나의 연속 버퍼로 합성하여 재생
+ *
+ * @param options.chorusRepeat - chorus 반복 횟수 (기본값: 4 for Feed, 1 for Single)
  */
-export function useWebAudio(): UseWebAudioReturn {
+export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn {
+  const { chorusRepeat = 4 } = options;
   // 상태
   const [isLoading, setIsLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -93,7 +101,7 @@ export function useWebAudio(): UseWebAudioReturn {
 
   /**
    * 여러 AudioBuffer를 하나로 합성
-   * intro + chorus×4 + outro
+   * intro + chorus×N + outro
    */
   const combineBuffers = useCallback((
     context: AudioContext,
@@ -101,8 +109,8 @@ export function useWebAudio(): UseWebAudioReturn {
     chorus: AudioBuffer,
     outro: AudioBuffer
   ): AudioBuffer => {
-    // 총 길이 계산: intro + chorus×4 + outro
-    const totalLength = intro.length + (chorus.length * 4) + outro.length;
+    // 총 길이 계산: intro + chorus×N + outro
+    const totalLength = intro.length + (chorus.length * chorusRepeat) + outro.length;
     const sampleRate = intro.sampleRate;
     const numberOfChannels = Math.max(intro.numberOfChannels, chorus.numberOfChannels, outro.numberOfChannels);
 
@@ -112,7 +120,8 @@ export function useWebAudio(): UseWebAudioReturn {
       chorus: { length: chorus.length, duration: chorus.duration.toFixed(2) + 's' },
       outro: { length: outro.length, duration: outro.duration.toFixed(2) + 's' },
       totalLength,
-      expectedTotal: intro.length + (chorus.length * 4) + outro.length,
+      chorusRepeat,
+      expectedTotal: intro.length + (chorus.length * chorusRepeat) + outro.length,
       numberOfChannels,
       sampleRate,
     });
@@ -135,11 +144,11 @@ export function useWebAudio(): UseWebAudioReturn {
       outputData.set(introData, offset);
       offset += intro.length;
 
-      // 2. Chorus × 4 복사
+      // 2. Chorus × N 복사
       const chorusData = channel < chorus.numberOfChannels
         ? chorus.getChannelData(channel)
         : chorus.getChannelData(0);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < chorusRepeat; i++) {
         console.log(`🎵 [combineBuffers] Ch${channel} - Chorus[${i}]: offset=${offset}, length=${chorusData.length}`);
         outputData.set(chorusData, offset);
         offset += chorus.length;
@@ -157,7 +166,7 @@ export function useWebAudio(): UseWebAudioReturn {
     }
 
     return combined;
-  }, []);
+  }, [chorusRepeat]);
 
   /**
    * 현재 재생 시간 업데이트 (requestAnimationFrame)
@@ -287,7 +296,7 @@ export function useWebAudio(): UseWebAudioReturn {
       }
 
       // Step 5: 버퍼 합성
-      console.log('🎵 [loadAudio] Step 5: Combining buffers (intro + chorus×4 + outro)...');
+      console.log(`🎵 [loadAudio] Step 5: Combining buffers (intro + chorus×${chorusRepeat} + outro)...`);
       let combined: AudioBuffer;
       try {
         combined = combineBuffers(context, introBuffer, chorusBuffer, outroBuffer);
@@ -310,7 +319,7 @@ export function useWebAudio(): UseWebAudioReturn {
 
       console.log('✅ [loadAudio] Audio load complete!', {
         intro: introBuffer.duration.toFixed(2) + 's',
-        chorus: chorusBuffer.duration.toFixed(2) + 's × 4',
+        chorus: chorusBuffer.duration.toFixed(2) + `s × ${chorusRepeat}`,
         outro: outroBuffer.duration.toFixed(2) + 's',
         total: combined.duration.toFixed(2) + 's',
       });
