@@ -27,7 +27,11 @@
 ## 커밋 메시지 규칙
 
 ### 패턴 (필수)
-`Task X: <type> - [설명]` 또는 `Task X.Y: <type> - [설명]` 형식
+`[WXX] Task X: <type> - [설명]` 또는 `[WXX] Task X.Y: <type> - [설명]` 형식
+
+- `[WXX]`: 주차 번호 (예: W05 = 5주차)
+- `Task X`: Task 전체 완료
+- `Task X.Y`: Task X의 Phase Y 완료
 
 ### Type 종류
 - `feat`: 새로운 기능 추가
@@ -38,15 +42,16 @@
 - `chore`: 빌드, 설정 파일 수정
 
 ### 예시
-- ✅ `Task 1: feat - 로그인 기능 추가`
-- ✅ `Task 2.1: fix - 날짜 계산 오류 수정`
-- ✅ `Task 0: refactor - FEED 오디오 시스템 재구축`
-- ✅ `Task 3: docs - README 업데이트`
-- ✅ `Task 0.1: chore - 워크플로우 설정 추가`
-- ❌ `feat: 새 기능 추가` (Task 번호 누락)
+- ✅ `[W05] Task 1: feat - Single Mode 오디오 연동`
+- ✅ `[W05] Task 2.1: fix - 날짜 계산 오류 수정`
+- ✅ `[W04] Task 6: refactor - FEED 오디오 시스템 재구축`
+- ✅ `[W04] Task 6.1: feat - Single 페이지 기본 구조`
+- ✅ `[W03] Task 3: docs - README 업데이트`
+- ❌ `Task 1: feat - 로그인 기능` (Week 번호 누락)
+- ❌ `feat: 새 기능 추가` (Week, Task 번호 누락)
 - ❌ `버그 수정` (패턴 위반)
 
 ### 자동화 연동
-- Task 번호가 파싱되어 Context Hub에 로그 자동 추가
+- Week, Task 번호가 파싱되어 Context Hub에 로그 자동 추가
 - Task 번호가 바뀌면 이전 Task 로그 자동 삭제
 - fix 타입 커밋은 Debugging History에 자동 기록

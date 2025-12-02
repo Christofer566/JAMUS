@@ -12,12 +12,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Extract Task Number
+      - name: Extract Task and Week Number
         id: task
         run: |
-          # Extract task number from commit message (first line only)
+          # Extract task and week number from commit message (first line only)
+          # Format: [WXX] Task X.Y: type - description
           COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "Debug: Commit message is '$COMMIT_MSG'"
+
+          # Week 번호 추출 (예: [W05] -> W05, 실패 시 "none")
+          WEEK_NUM=$(echo "$COMMIT_MSG" | grep -oP '\[W\d+\]' | head -1 | tr -d '[]')
+          if [ -z "$WEEK_NUM" ]; then
+            WEEK_NUM="none"
+          fi
+          echo "Debug: Extracted WEEK_NUM is '$WEEK_NUM'"
+
           # Task 번호 추출 (실패 시 "none" 반환, "0"도 유효한 Task)
           TASK_NUM=$(echo "$COMMIT_MSG" | grep -o 'Task [0-9.]\+' | head -1 | sed 's/Task //')
           if [ -z "$TASK_NUM" ]; then
@@ -25,6 +34,7 @@ jobs:
           fi
           echo "Debug: Extracted TASK_NUM is '$TASK_NUM'"
           {
+            echo "week_number=$WEEK_NUM"
             echo "task_number=$TASK_NUM"
             echo "commit_message<<EOF"
             echo "$COMMIT_MSG"
