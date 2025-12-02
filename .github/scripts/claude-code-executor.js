@@ -175,40 +175,47 @@ async function executeTask(filename) {
 }
 
 function generateClaudeMd(task, devMemo) {
-    return `# ${task.title}
+    return `# JAMUS - Claude Code Context
 
-## Task 정보
+## 프로젝트 개요
+
+음악 협업 플랫폼 MVP. 비연주자도 음악 창작에 참여할 수 있게 하는 것이 목표.
+
+**Tech Stack**
+- Frontend: Next.js 14 (App Router) + TypeScript + Tailwind CSS
+- Backend: Supabase (Auth / DB / Realtime / Storage)
+- Audio: Web Audio API + Tone.js + VexFlow
+- Deployment: Vercel (main 브랜치 자동 배포)
+
+**Claude Code 역할: 로직/디버깅 담당**
+- 복잡한 비즈니스 로직 구현
+- 버그 수정 및 디버깅
+- 기존 코드 구조 유지하며 수정
+
+**핵심 규칙**
+- 한 번에 3개 이상 파일 수정 금지
+- Development Spec 범위 내에서만 작업
+- 기존 코드 패턴 따르기
+
+---
+
+## 현재 Task
+
 - **Task ID**: ${task.task_id}
+- **제목**: ${task.title}
 - **복잡도**: ${task.complexity}/10
 - **예상 시간**: ${task.estimated_hours}시간
 
 ## Development Spec
+
 ${devMemo}
 
-## 프로젝트 구조
-- **Framework**: Next.js 15 + TypeScript
-- **Backend**: Supabase (Auth + Database)
-- **Styling**: TailwindCSS v3
-- **컴포넌트**: components/
-- **페이지**: app/
-- **API**: app/api/
-- **타입**: types/
-
-## 코딩 규칙
-- TypeScript strict mode 사용
-- 모든 컴포넌트는 함수형 컴포넌트
-- async/await 사용 (Promise.then 지양)
-- 에러 핸들링 필수
-- 주석은 간결하게
-
 ## 실행 지침
-위 Development Spec에 따라 모든 파일을 생성/수정하세요.
-완료 후 다음을 보고하세요:
-1. 수정한 파일 목록
-2. 주요 변경 사항
-3. 테스트 필요 여부
 
-**중요**: 기존 파일을 수정할 때는 신중하게 진행하세요.
+위 Development Spec에 따라 파일을 생성/수정하세요.
+완료 후 보고: 수정 파일 목록, 주요 변경 사항, 테스트 필요 여부
+
+**중요**: 기존 파일 수정 시 신중하게 진행하세요.
 `;
 }
 
