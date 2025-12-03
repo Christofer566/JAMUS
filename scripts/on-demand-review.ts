@@ -15,7 +15,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
 // --- Configuration ---
-const CONTEXT_HUB_PAGE_ID = '2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc';
+const CONTEXT_HUB_PAGE_ID = process.env.CONTEXT_HUB_PAGE_ID || '2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc';
 const DEBUGGING_HISTORY_DB_ID = '2b475e2c-3a2b-80e2-ba6d-e76d74ddaee6';
 const STATIC_CONTEXT_PATH = '.context';
 

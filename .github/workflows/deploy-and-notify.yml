@@ -55,7 +55,7 @@ jobs:
         if: steps.task.outputs.task_number != 'none'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          CONTEXT_HUB_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
           TASK_NUMBER: ${{ steps.task.outputs.task_number }}
         run: |
           echo "🔍 Checking existing logs in Context Hub..."
@@ -109,7 +109,7 @@ jobs:
         if: steps.task.outputs.task_number != 'none'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          CONTEXT_HUB_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
           TASK_NUMBER: ${{ steps.task.outputs.task_number }}
           COMMIT_SHA: ${{ steps.commit.outputs.sha }}
           COMMIT_TIME: ${{ steps.commit.outputs.time }}
@@ -163,7 +163,7 @@ jobs:
         if: steps.task.outputs.task_number != 'none'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          CONTEXT_HUB_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
           COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
         run: |
           echo "🔍 Checking for Phase number in commit message..."
@@ -338,7 +338,7 @@ jobs:
         if: steps.task.outputs.task_number != 'none'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          CONTEXT_HUB_PAGE_ID: "2ba75e2c-3a2b-81b8-9bc8-fba67fa17ebc"
+          CONTEXT_HUB_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
           COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
           COMMIT_TIME: ${{ steps.commit.outputs.time }}
         run: |
