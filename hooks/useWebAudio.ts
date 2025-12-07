@@ -21,11 +21,13 @@ export interface UseWebAudioReturn {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  volume: number;
   loadAudio: (urls: AudioUrls) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
   seek: (time: number) => void;
   stop: () => void;
+  setVolume: (value: number) => void;
 }
 
 // Safari 호환 AudioContext 타입
@@ -52,11 +54,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [volume, setVolumeState] = useState(1); // 0~1 범위
 
   // refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const combinedBufferRef = useRef<AudioBuffer | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null); // 볼륨 조절용
   const startTimeRef = useRef<number>(0); // AudioContext.currentTime at play start
   const pauseOffsetRef = useRef<number>(0); // 일시정지 시 위치
   const animationFrameRef = useRef<number | null>(null);
@@ -80,9 +84,14 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     if (!audioContextRef.current) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       audioContextRef.current = new AudioContextClass();
+
+      // GainNode 생성 (볼륨 조절용)
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.connect(audioContextRef.current.destination);
+      gainNodeRef.current.gain.value = volume;
     }
     return audioContextRef.current;
-  }, []);
+  }, [volume]);
 
   /**
    * URL에서 AudioBuffer 로드
@@ -377,7 +386,12 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     // 새 sourceNode 생성
     const source = context.createBufferSource();
     source.buffer = combinedBufferRef.current;
-    source.connect(context.destination);
+    // GainNode를 통해 연결 (볼륨 조절 가능)
+    if (gainNodeRef.current) {
+      source.connect(gainNodeRef.current);
+    } else {
+      source.connect(context.destination);
+    }
 
     // 재생 완료 시 처리 (ref 기반) - 반복 재생
     source.onended = () => {
@@ -395,7 +409,12 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         if (ctx && buffer) {
           const newSource = ctx.createBufferSource();
           newSource.buffer = buffer;
-          newSource.connect(ctx.destination);
+          // GainNode를 통해 연결
+          if (gainNodeRef.current) {
+            newSource.connect(gainNodeRef.current);
+          } else {
+            newSource.connect(ctx.destination);
+          }
 
           // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
           newSource.onended = source.onended;
@@ -483,7 +502,12 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       const context = audioContextRef.current;
       const source = context.createBufferSource();
       source.buffer = combinedBufferRef.current;
-      source.connect(context.destination);
+      // GainNode를 통해 연결 (볼륨 조절 가능)
+      if (gainNodeRef.current) {
+        source.connect(gainNodeRef.current);
+      } else {
+        source.connect(context.destination);
+      }
 
       source.onended = () => {
         // ref로 현재 상태 확인 (클로저 문제 방지) - 반복 재생
@@ -500,7 +524,12 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
           if (ctx && buffer) {
             const newSource = ctx.createBufferSource();
             newSource.buffer = buffer;
-            newSource.connect(ctx.destination);
+            // GainNode를 통해 연결
+            if (gainNodeRef.current) {
+              newSource.connect(gainNodeRef.current);
+            } else {
+              newSource.connect(ctx.destination);
+            }
 
             // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
             newSource.onended = source.onended;
@@ -543,6 +572,25 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     console.log('🎵 [stop] 완료');
   }, []);
 
+  /**
+   * 볼륨 설정 (0~1 범위)
+   */
+  const setVolume = useCallback((value: number) => {
+    const clampedVolume = Math.max(0, Math.min(1, value));
+    setVolumeState(clampedVolume);
+
+    // GainNode에 즉시 반영 (부드러운 전환)
+    if (gainNodeRef.current && audioContextRef.current) {
+      gainNodeRef.current.gain.setTargetAtTime(
+        clampedVolume,
+        audioContextRef.current.currentTime,
+        0.015 // 15ms 전환 시간
+      );
+    }
+
+    console.log('🎵 [setVolume]', clampedVolume);
+  }, []);
+
   // currentTime 업데이트 effect
   useEffect(() => {
     if (isPlaying) {
@@ -562,25 +610,50 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
   // 컴포넌트 언마운트 시 리소스 정리
   useEffect(() => {
     return () => {
+      console.log('🎵 [useWebAudio] Cleanup on unmount...');
+
+      // animationFrame 정리 (먼저)
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+
       // sourceNode 정리
       if (sourceNodeRef.current) {
         try {
+          sourceNodeRef.current.onended = null;
           sourceNodeRef.current.stop();
           sourceNodeRef.current.disconnect();
         } catch {
           // 이미 정지됨
         }
+        sourceNodeRef.current = null;
       }
 
-      // AudioContext 정리
+      // GainNode 정리
+      if (gainNodeRef.current) {
+        try {
+          gainNodeRef.current.disconnect();
+        } catch {
+          // 이미 연결 해제됨
+        }
+        gainNodeRef.current = null;
+      }
+
+      // AudioContext 정리 (마지막)
       if (audioContextRef.current) {
-        audioContextRef.current.close();
+        try {
+          audioContextRef.current.close();
+        } catch {
+          // 이미 닫힘
+        }
+        audioContextRef.current = null;
       }
 
-      // animationFrame 정리
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      // 버퍼 초기화
+      combinedBufferRef.current = null;
+
+      console.log('🎵 [useWebAudio] Cleanup complete');
     };
   }, []);
 
@@ -590,11 +663,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     isPlaying,
     currentTime,
     duration,
+    volume,
     loadAudio,
     play,
     pause,
     seek,
     stop,
+    setVolume,
   };
 }
 

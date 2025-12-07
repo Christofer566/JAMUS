@@ -971,7 +971,11 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
                 <span>{currentSectionLabel} - {globalMeasure}/{totalMeasures} 마디</span>
               </div>
               <button
-                onClick={() => router.push('/single')}
+                onClick={() => {
+                  // Feed 오디오 완전 정지 후 Single로 이동
+                  webAudio.stop();
+                  router.push('/single');
+                }}
                 className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
               >
                 이 JAM에 참여하기
