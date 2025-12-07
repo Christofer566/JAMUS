@@ -197,6 +197,7 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const pendingRangeRef = useRef<{ startTime: number; startMeasure: number } | null>(null);
     const playPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+    const recordingActualStartRef = useRef<number>(0); // 실제 녹음 시작 시점 (performance.now)
 
     // Computed: recorded measures from all segments
     const recordedMeasures = segments.flatMap(seg => {
@@ -314,11 +315,20 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                 }
             };
 
+            // 실제 녹음 시작 시점 기록 (동기화 디버깅용)
+            const startTimestamp = performance.now();
+            recordingActualStartRef.current = startTimestamp;
+
             mediaRecorder.start(100);
             setState('recording');
             setError(null);
 
-            console.log('🎤 Recording started at', startTime, 'measure', startMeasure);
+            console.log('🎤 Recording started:', {
+                targetTime: startTime,
+                measure: startMeasure,
+                actualTimestamp: startTimestamp,
+                hint: '동기화 테스트: 메트로놈에 맞춰 손뼉을 치고, 재생 시 메트로놈과 손뼉이 일치하는지 확인'
+            });
             return true;
         } catch (err) {
             console.error('Start recording error:', err);
@@ -356,11 +366,24 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     const startMeasure = pendingRangeRef.current?.startMeasure || 1;
 
                     // 녹음 시작 지연 보정 (MediaRecorder 초기화 + 버퍼링 지연)
-                    // 약 0.3초 정도의 지연이 발생하므로 silence padding을 줄임
-                    const RECORDING_LATENCY_COMPENSATION = 0.3;
+                    // 이 값을 조절하여 동기화를 맞춤:
+                    // - 재생 시 녹음이 빠르게 들리면: 값을 줄임 (silence padding 증가)
+                    // - 재생 시 녹음이 늦게 들리면: 값을 늘림 (silence padding 감소)
+                    // 테스트: 메트로놈에 맞춰 손뼉 녹음 후, 재생 시 메트로놈과 비교
+                    const RECORDING_LATENCY_COMPENSATION = 0.20; // 초 단위
                     const adjustedStartTime = Math.max(0, startTime - RECORDING_LATENCY_COMPENSATION);
 
-                    console.log('🎤 Adding silence padding:', adjustedStartTime, 'seconds (original:', startTime, ', compensation:', RECORDING_LATENCY_COMPENSATION, ')');
+                    // 실제 녹음 시간과 예상 시간 비교 (디버깅용)
+                    const recordingDuration = performance.now() - recordingActualStartRef.current;
+                    const expectedDuration = (endTime - startTime) * 1000; // ms
+
+                    console.log('🎤 Recording sync debug:', {
+                        expectedDuration: `${expectedDuration.toFixed(0)}ms`,
+                        actualDuration: `${recordingDuration.toFixed(0)}ms`,
+                        difference: `${(recordingDuration - expectedDuration).toFixed(0)}ms`,
+                        latencyCompensation: `${RECORDING_LATENCY_COMPENSATION * 1000}ms`,
+                        adjustedStartTime: `${adjustedStartTime.toFixed(3)}s`
+                    });
                     const paddedBlob = await addSilencePadding(rawBlob, adjustedStartTime);
 
                     const url = URL.createObjectURL(paddedBlob);
@@ -376,19 +399,54 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                         endMeasure
                     };
 
-                    // Add to segments (replacing overlapping ones)
+                    // Add to segments (trimming overlapping ones instead of removing)
                     setSegments(prev => {
-                        // Remove segments that overlap with new one
-                        const filtered = prev.filter(seg => {
+                        const result: RecordingSegment[] = [];
+
+                        for (const seg of prev) {
                             const overlaps = !(endMeasure < seg.startMeasure || startMeasure > seg.endMeasure);
-                            if (overlaps) {
-                                URL.revokeObjectURL(seg.url);
-                                audioElementsRef.current.get(seg.id)?.pause();
-                                audioElementsRef.current.delete(seg.id);
+
+                            if (!overlaps) {
+                                // No overlap, keep as-is
+                                result.push(seg);
+                            } else {
+                                // Overlap detected - trim instead of delete
+                                // Case 1: New recording starts after existing segment start
+                                // Keep the part before the new recording
+                                if (seg.startMeasure < startMeasure) {
+                                    // Trim existing segment to end before new recording starts
+                                    const trimmedSeg: RecordingSegment = {
+                                        ...seg,
+                                        endMeasure: startMeasure - 1,
+                                        endTime: startTime // Use new recording's start time as end
+                                    };
+                                    console.log('🎤 Trimming segment', seg.id, 'from', seg.startMeasure, '-', seg.endMeasure, 'to', trimmedSeg.startMeasure, '-', trimmedSeg.endMeasure);
+                                    result.push(trimmedSeg);
+                                }
+                                // Case 2: New recording ends before existing segment end
+                                // Keep the part after the new recording (less common case)
+                                else if (seg.endMeasure > endMeasure) {
+                                    // Trim existing segment to start after new recording ends
+                                    const trimmedSeg: RecordingSegment = {
+                                        ...seg,
+                                        startMeasure: endMeasure + 1,
+                                        startTime: endTime // Use new recording's end time as start
+                                    };
+                                    console.log('🎤 Trimming segment', seg.id, 'from', seg.startMeasure, '-', seg.endMeasure, 'to', trimmedSeg.startMeasure, '-', trimmedSeg.endMeasure);
+                                    result.push(trimmedSeg);
+                                }
+                                // Case 3: New recording completely covers existing segment
+                                else {
+                                    // Remove entirely
+                                    console.log('🎤 Removing completely overlapped segment', seg.id);
+                                    URL.revokeObjectURL(seg.url);
+                                    audioElementsRef.current.get(seg.id)?.pause();
+                                    audioElementsRef.current.delete(seg.id);
+                                }
                             }
-                            return !overlaps;
-                        });
-                        return [...filtered, newSegment];
+                        }
+
+                        return [...result, newSegment];
                     });
 
                     setState('recorded');
@@ -440,15 +498,12 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     // Play Recordings At Time
     // ========================================
     const playRecordingsAtTime = useCallback((fromTime: number) => {
-        console.log('🎤 playRecordingsAtTime called', { fromTime, segmentCount: segments.length });
-
         // Find segments that include this time
         const activeSegments = segments.filter(seg =>
             fromTime >= seg.startTime && fromTime <= seg.endTime
         );
 
         if (activeSegments.length === 0) {
-            console.log('🎤 No segments at time', fromTime);
             return;
         }
 
@@ -463,14 +518,12 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             }
 
             audioEl.currentTime = fromTime;
-            console.log('🎤 Playing segment', seg.id, 'from', fromTime);
 
             const playPromise = audioEl.play();
             playPromisesRef.current.set(seg.id, playPromise);
 
             playPromise
                 .then(() => {
-                    console.log('🎤 Segment playback started:', seg.id);
                     playPromisesRef.current.delete(seg.id);
                 })
                 .catch((err) => {

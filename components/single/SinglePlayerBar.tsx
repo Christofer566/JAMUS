@@ -1,7 +1,7 @@
 'use client';
 
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 
 interface Section {
   id: string;
@@ -47,13 +47,10 @@ export default function SinglePlayerBar({
     onTimeChange(value[0]);
   };
 
-  // 복수 녹음 범위 스타일 계산
   const getRecordedRangeStyle = (range: RecordedRange) => {
     if (duration === 0) return { display: 'none' };
-
     const left = (range.start / duration) * 100;
     const width = ((range.end - range.start) / duration) * 100;
-
     return {
       left: `${left}%`,
       width: `${width}%`,
@@ -69,17 +66,9 @@ export default function SinglePlayerBar({
             {sections.map((section, index) => {
               const position = Math.max(0, Math.min((section.startTime / duration) * 100, 99));
               const color = section.isJamSection ? CORAL_COLOR : BLUE_COLOR;
-
               return (
-                <div
-                  key={index}
-                  className="absolute bottom-0 flex flex-col items-center"
-                  style={{ left: `${position}%` }}
-                >
-                  <div
-                    className="rounded px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap text-white"
-                    style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}80` }}
-                  >
+                <div key={index} className="absolute bottom-0 flex flex-col items-center" style={{ left: `${position}%` }}>
+                  <div className="rounded px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap text-white" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}80` }}>
                     {section.label}
                   </div>
                   <div className="w-0.5 h-2" style={{ backgroundColor: color }} />
@@ -97,11 +86,13 @@ export default function SinglePlayerBar({
           className="relative flex w-full select-none items-center touch-none"
         >
           <SliderPrimitive.Track className="relative h-3 w-full grow overflow-hidden rounded-full bg-[#FFFFFF]/10">
+            {/* Radix Range - 실시간 업데이트 */}
             <SliderPrimitive.Range
-              className="absolute h-full transition-colors duration-300"
-              style={{ backgroundColor: currentColor }}
+              className="absolute h-full"
+              style={{
+                backgroundColor: currentColor,
+              }}
             />
-            {/* --- START: 녹음 구간 표시 (복수 지원) --- */}
             {recordedRanges.map((range, index) => (
               <div
                 key={`recorded-range-${index}`}
@@ -113,7 +104,6 @@ export default function SinglePlayerBar({
                 }}
               />
             ))}
-            {/* --- END: 녹음 구간 표시 --- */}
           </SliderPrimitive.Track>
           <SliderPrimitive.Thumb
             className="block size-4 shrink-0 rounded-full shadow-sm transition-all duration-300 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"

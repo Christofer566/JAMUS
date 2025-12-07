@@ -2,7 +2,6 @@
 
 import { Play, Pause, RotateCcw, RotateCw, ChevronDown, Save } from "lucide-react";
 
-// Props가 spec에 따라 변경됨
 interface SingleControllerProps {
   isPlaying: boolean;
   onPlayPause: () => void;
@@ -42,29 +41,33 @@ export default function SingleController({
   hasRecording = false,
 }: SingleControllerProps) {
 
-  // isJamming 상태에 따른 스타일 동적 변경
   const jamButtonBg = isJamming ? CORAL_COLOR : JAMUS_BLUE;
   const jamButtonShadow = isJamming ? `0 4px 14px ${CORAL_COLOR}30` : `0 4px 14px ${JAMUS_BLUE}30`;
   const pillClasses = isJamming 
     ? 'text-white' 
     : 'bg-white text-[#1B1C26] group-hover:bg-gray-100';
 
+  const buttonFeedbackStyle = "transition-all duration-150 active:scale-95 active:brightness-110";
+  // Reusable style for shortcut labels
+  const shortcutLabelStyle = "absolute -bottom-5 text-[10px] font-medium text-gray-400";
+
+
   return (
     <div className="flex items-center justify-between gap-4">
-      {/* 좌측: Input/Output (변경 없음) */}
-      <div className="flex items-center gap-4 min-w-[280px]">
+      {/* 좌측: Input/Output */}
+      <div className="flex items-center gap-3">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] text-white font-medium uppercase tracking-wide">Input</span>
-          <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 hover:bg-[#FFFFFF]/10 transition-colors">
+          <button className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}>
             <span className="text-sm">🎹</span>
             <span className="text-xs text-[#E0E0E0] truncate">Grand Piano</span>
             <ChevronDown className="w-3 h-3 text-[#9B9B9B] ml-auto" />
           </button>
         </div>
-        <div className="w-px h-10 bg-[#FFFFFF]/10" />
+        <div className="w-px h-10 bg-white/10" />
         <div className="flex flex-col gap-1">
           <span className="text-[10px] text-white font-medium uppercase tracking-wide">Output</span>
-          <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 hover:bg-[#FFFFFF]/10 transition-colors">
+          <button className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}>
             <span className="text-sm">🔊</span>
             <span className="text-xs text-[#E0E0E0] truncate">Default Output</span>
             <ChevronDown className="w-3 h-3 text-[#9B9B9B] ml-auto" />
@@ -77,16 +80,16 @@ export default function SingleController({
         <button
           type="button"
           onClick={onSeekBackward}
-          className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-all duration-150 hover:bg-[#FFFFFF]/10 ${pressedKey === 'z' ? 'scale-90 bg-[#7BA7FF]/30 text-[#7BA7FF]' : ''}`}
+          className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-gray-400 hover:bg-white/10 ${buttonFeedbackStyle} ${pressedKey === 'KeyZ' ? 'ring-2 ring-white/50 scale-95 brightness-110' : ''}`}
           title="이전 마디 (Z)"
         >
           <RotateCcw className="h-4 w-4" />
-          <span className="absolute -bottom-4 text-[8px] font-medium text-[#9B9B9B]">Z</span>
+          <span className={shortcutLabelStyle}>Z</span>
         </button>
 
         {/* --- START: START JAM 버튼 (클릭 영역 분리) --- */}
         <div
-          className={`group flex items-center transition-all duration-200 cursor-pointer ${pressedKey === 'space' ? 'scale-95' : ''}`}
+          className={`group relative flex items-center transition-all duration-200 cursor-pointer ${buttonFeedbackStyle} ${pressedKey === 'Space' || pressedKey === 'KeyR' ? 'ring-2 ring-white/50 scale-95 brightness-110' : ''}`}
           title={isJamming ? "정지 (Space)" : "재생 및 JAM 시작 (Space)"}
         >
           <div
@@ -97,7 +100,7 @@ export default function SingleController({
             <div
               data-testid="jam-play-area"
               onClick={onPlayPause}
-              className="flex h-full items-center justify-center pl-1.5 pr-2"
+              className="relative flex h-full items-center justify-center pl-1.5 pr-2"
             >
               <div
                 className="flex h-11 w-11 items-center justify-center rounded-full text-white shadow-lg transition-all duration-200"
@@ -105,15 +108,17 @@ export default function SingleController({
               >
                 {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
               </div>
+              <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>Space</span>
             </div>
             
             {/* 오른쪽 클릭 영역 (텍스트) */}
             <div
               data-testid="jam-toggle-area"
               onClick={onToggleJam}
-              className="flex h-full items-center justify-center pr-5 pl-2"
+              className="relative flex h-full items-center justify-center pr-5 pl-2"
             >
               {isJamming ? 'STOP JAM' : 'START JAM'}
+              <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>R</span>
             </div>
           </div>
         </div>
@@ -122,37 +127,35 @@ export default function SingleController({
         <button
           type="button"
           onClick={onSeekForward}
-          className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-[#FFFFFF]/5 text-[#9B9B9B] transition-all duration-150 hover:bg-[#FFFFFF]/10 ${pressedKey === 'x' ? 'scale-90 bg-[#7BA7FF]/30 text-[#7BA7FF]' : ''}`}
+          className={`relative flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-gray-400 hover:bg-white/10 ${buttonFeedbackStyle} ${pressedKey === 'KeyX' ? 'ring-2 ring-white/50 scale-95 brightness-110' : ''}`}
           title="다음 마디 (X)"
         >
           <RotateCw className="h-4 w-4" />
-          <span className="absolute -bottom-4 text-[8px] font-medium text-[#9B9B9B]">X</span>
+          <span className={shortcutLabelStyle}>X</span>
         </button>
       </div>
 
-      {/* 우측: 옵션 (변경 없음) */}
+      {/* 우측: 옵션 */}
       <div className="flex items-center gap-2 min-w-[280px] justify-end">
         <button
             onClick={() => onToggleMetronome(!metronomeOn)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${metronomeOn ? 'bg-[#FFD166] text-black' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+            className={`relative px-3 py-1.5 rounded-lg text-sm font-medium ${buttonFeedbackStyle} ${metronomeOn ? 'bg-[#FFD166] text-black ring-2 ring-yellow-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyD' ? 'scale-95 brightness-110' : ''}`}
         >
             ♪ 메트로놈
+            <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>D</span>
         </button>
         <button
             onClick={() => onToggleJamOnly(!jamOnlyMode)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${jamOnlyMode ? 'bg-[#7BA7FF] text-black' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+            className={`relative px-3 py-1.5 rounded-lg text-sm font-medium ${buttonFeedbackStyle} ${jamOnlyMode ? 'bg-[#7BA7FF] text-black ring-2 ring-blue-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyF' ? 'scale-95 brightness-110' : ''}`}
         >
             JAM만 듣기
+            <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>F</span>
         </button>
         <button
           type="button"
           onClick={onSave}
           disabled={isSaving || !hasRecording}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 transition-all ${
-            hasRecording && !isSaving
-              ? 'hover:bg-[#7BA7FF]/10 cursor-pointer'
-              : 'opacity-50 cursor-not-allowed'
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 ${buttonFeedbackStyle} ${hasRecording && !isSaving ? 'hover:bg-[#7BA7FF]/10 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
           style={{ borderColor: JAMUS_BLUE, color: JAMUS_BLUE }}
           title={hasRecording ? '저장' : '녹음이 없습니다'}
         >

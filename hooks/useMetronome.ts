@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useCallback, useEffect } from 'react';
-import * as Tone from 'tone';
+import { useRef, useCallback, useEffect, useState } from 'react';
+import { getSharedAudioContext, resumeAudioContext } from './useAudioContext';
 
 export interface UseMetronomeOptions {
     bpm: number;
@@ -13,130 +13,195 @@ export interface UseMetronomeReturn {
     stop: () => void;
     setBpm: (bpm: number) => void;
     setMuted: (muted: boolean) => void;
+    seekTo: (audioTime: number) => void; // 음원 시간에 동기화
     isMuted: boolean;
     isRunning: boolean;
 }
 
 /**
- * Tone.js 기반 메트로놈 훅
+ * AudioContext 기반 메트로놈 훅 (음원과 동기화)
  *
  * 원리:
- * 1. Tone.Transport를 BPM에 맞춰 설정
- * 2. Tone.Loop로 매 박자마다 신디사이저 트리거
- * 3. 첫 박(다운비트)은 높은 음, 나머지는 낮은 음
+ * 1. 공유 AudioContext를 사용하여 음원과 동일한 타임라인 유지
+ * 2. requestAnimationFrame 기반 스케줄링으로 정밀한 박자 유지
+ * 3. seekTo로 음원 이동 시 메트로놈도 동기화
+ * 4. 기본 음소거 상태 (D키로 토글)
  *
  * @param options - bpm, timeSignature
  */
 export function useMetronome(options: UseMetronomeOptions): UseMetronomeReturn {
     const { bpm, timeSignature = 4 } = options;
 
+    // State
+    const [isMuted, setIsMutedState] = useState(true); // 기본값: 음소거
+    const [isRunning, setIsRunning] = useState(false);
+
     // Refs
-    const synthRef = useRef<Tone.Synth | null>(null);
-    const loopRef = useRef<Tone.Loop | null>(null);
-    const beatCountRef = useRef(0);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null);
     const isRunningRef = useRef(false);
-    const isMutedRef = useRef(true); // 기본값: 음소거
+    const isMutedRef = useRef(true);
+    const bpmRef = useRef(bpm);
+    const timeSignatureRef = useRef(timeSignature);
 
-    // 신디사이저 초기화 (컴포넌트 마운트 시 한 번)
+    // 동기화를 위한 refs
+    const audioStartTimeRef = useRef(0); // 음원 재생 시작 시간 (초)
+    const contextStartTimeRef = useRef(0); // AudioContext 기준 시작 시간
+    const schedulerIdRef = useRef<number | null>(null);
+    const lastScheduledBeatRef = useRef(-1);
+
+    // BPM/timeSignature 변경 시 ref 업데이트
     useEffect(() => {
-        // 메트로놈용 짧은 클릭 소리 신디사이저
-        synthRef.current = new Tone.Synth({
-            oscillator: { type: 'triangle' },
-            envelope: {
-                attack: 0.001,
-                decay: 0.1,
-                sustain: 0,
-                release: 0.1
-            }
-        }).toDestination();
-
-        // 볼륨 조절 (너무 크지 않게)
-        synthRef.current.volume.value = -10;
-
-        return () => {
-            // 클린업
-            if (loopRef.current) {
-                loopRef.current.stop();
-                loopRef.current.dispose();
-            }
-            if (synthRef.current) {
-                synthRef.current.dispose();
-            }
-        };
-    }, []);
-
-    // BPM 변경 시 Transport 업데이트
-    useEffect(() => {
-        Tone.Transport.bpm.value = bpm;
+        bpmRef.current = bpm;
     }, [bpm]);
 
+    useEffect(() => {
+        timeSignatureRef.current = timeSignature;
+    }, [timeSignature]);
+
+    // 클릭 사운드 생성
+    const playClick = useCallback((isDownbeat: boolean) => {
+        if (!audioContextRef.current || !gainNodeRef.current) return;
+        if (isMutedRef.current) return;
+
+        const ctx = audioContextRef.current;
+        const now = ctx.currentTime;
+
+        // 오실레이터 생성
+        const oscillator = ctx.createOscillator();
+        const clickGain = ctx.createGain();
+
+        oscillator.type = 'triangle';
+        oscillator.frequency.value = isDownbeat ? 1000 : 800; // 다운비트: 높은 음
+
+        // 짧은 클릭 엔벨로프
+        clickGain.gain.setValueAtTime(0.3, now);
+        clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+        oscillator.connect(clickGain);
+        clickGain.connect(gainNodeRef.current);
+
+        oscillator.start(now);
+        oscillator.stop(now + 0.05);
+    }, []);
+
+    // 스케줄러: 현재 음원 시간 기준으로 박자 체크
+    const scheduler = useCallback(() => {
+        if (!isRunningRef.current || !audioContextRef.current) return;
+
+        const ctx = audioContextRef.current;
+        const currentContextTime = ctx.currentTime;
+
+        // 현재 음원 시간 계산 (AudioContext 시간 기준)
+        const elapsed = currentContextTime - contextStartTimeRef.current;
+        const currentAudioTime = audioStartTimeRef.current + elapsed;
+
+        // BPM 기반 박자 계산
+        const secondsPerBeat = 60 / bpmRef.current;
+        const currentBeat = Math.floor(currentAudioTime / secondsPerBeat);
+
+        // 새로운 박자에 도달했으면 클릭
+        if (currentBeat > lastScheduledBeatRef.current && currentBeat >= 0) {
+            lastScheduledBeatRef.current = currentBeat;
+            const isDownbeat = currentBeat % timeSignatureRef.current === 0;
+            playClick(isDownbeat);
+        }
+
+        schedulerIdRef.current = requestAnimationFrame(scheduler);
+    }, [playClick]);
+
     /**
-     * 메트로놈 시작
+     * 메트로놈 시작 (음원 시간과 동기화)
      */
     const start = useCallback(async () => {
         if (isRunningRef.current) return;
 
-        // Tone.js는 사용자 인터랙션 후 시작 필요 (Safari 정책)
-        await Tone.start();
+        // AudioContext 초기화
+        audioContextRef.current = getSharedAudioContext();
+        await resumeAudioContext();
 
-        // 기존 루프 정리
-        if (loopRef.current) {
-            loopRef.current.stop();
-            loopRef.current.dispose();
+        // GainNode 생성 (볼륨 제어용)
+        if (!gainNodeRef.current) {
+            gainNodeRef.current = audioContextRef.current.createGain();
+            gainNodeRef.current.connect(audioContextRef.current.destination);
+            gainNodeRef.current.gain.value = 0.5;
         }
 
-        // BPM 설정
-        Tone.Transport.bpm.value = bpm;
-        beatCountRef.current = 0;
+        // 시작 시간 기록
+        contextStartTimeRef.current = audioContextRef.current.currentTime;
+        lastScheduledBeatRef.current = Math.floor(audioStartTimeRef.current / (60 / bpmRef.current)) - 1;
 
-        // 매 박자마다 실행되는 루프
-        loopRef.current = new Tone.Loop((time) => {
-            if (!synthRef.current) return;
-
-            // 음소거 상태가 아닐 때만 소리 재생
-            if (!isMutedRef.current) {
-                // 첫 박(다운비트) vs 나머지 박
-                const isDownbeat = beatCountRef.current % timeSignature === 0;
-                const note = isDownbeat ? 'C5' : 'G4'; // 높은 음 vs 낮은 음
-                const duration = '32n'; // 짧은 클릭
-
-                synthRef.current.triggerAttackRelease(note, duration, time);
-            }
-
-            beatCountRef.current++;
-        }, '4n'); // 4분음표 간격
-
-        // 시작
-        loopRef.current.start(0);
-        Tone.Transport.start();
         isRunningRef.current = true;
-    }, [bpm, timeSignature]);
+        setIsRunning(true);
+
+        // 스케줄러 시작
+        schedulerIdRef.current = requestAnimationFrame(scheduler);
+
+        console.log('🥁 [Metronome] Started at audio time:', audioStartTimeRef.current);
+    }, [scheduler]);
+
+    /**
+     * 메트로놈 정지
+     */
+    const stop = useCallback(() => {
+        if (schedulerIdRef.current) {
+            cancelAnimationFrame(schedulerIdRef.current);
+            schedulerIdRef.current = null;
+        }
+
+        isRunningRef.current = false;
+        setIsRunning(false);
+        lastScheduledBeatRef.current = -1;
+
+        console.log('🥁 [Metronome] Stopped');
+    }, []);
+
+    /**
+     * 음원 시간에 동기화 (seek 시 호출)
+     */
+    const seekTo = useCallback((audioTime: number) => {
+        audioStartTimeRef.current = audioTime;
+
+        if (audioContextRef.current) {
+            contextStartTimeRef.current = audioContextRef.current.currentTime;
+        }
+
+        // 현재 박자 위치 재계산
+        const secondsPerBeat = 60 / bpmRef.current;
+        lastScheduledBeatRef.current = Math.floor(audioTime / secondsPerBeat) - 1;
+
+        console.log('🥁 [Metronome] Seeked to:', audioTime, 'beat:', lastScheduledBeatRef.current + 1);
+    }, []);
 
     /**
      * 음소거 설정
      */
     const setMuted = useCallback((muted: boolean) => {
         isMutedRef.current = muted;
-    }, []);
-
-    /**
-     * 메트로놈 정지
-     */
-    const stop = useCallback(() => {
-        if (loopRef.current) {
-            loopRef.current.stop();
-        }
-        Tone.Transport.stop();
-        Tone.Transport.position = 0;
-        beatCountRef.current = 0;
-        isRunningRef.current = false;
+        setIsMutedState(muted);
+        console.log('🥁 [Metronome] Muted:', muted);
     }, []);
 
     /**
      * BPM 변경
      */
     const setBpm = useCallback((newBpm: number) => {
-        Tone.Transport.bpm.value = newBpm;
+        bpmRef.current = newBpm;
+        // 박자 위치 재계산
+        if (audioContextRef.current && isRunningRef.current) {
+            const secondsPerBeat = 60 / newBpm;
+            lastScheduledBeatRef.current = Math.floor(audioStartTimeRef.current / secondsPerBeat) - 1;
+        }
+        console.log('🥁 [Metronome] BPM changed to:', newBpm);
+    }, []);
+
+    // 클린업
+    useEffect(() => {
+        return () => {
+            if (schedulerIdRef.current) {
+                cancelAnimationFrame(schedulerIdRef.current);
+            }
+        };
     }, []);
 
     return {
@@ -144,8 +209,9 @@ export function useMetronome(options: UseMetronomeOptions): UseMetronomeReturn {
         stop,
         setBpm,
         setMuted,
-        isMuted: isMutedRef.current,
-        isRunning: isRunningRef.current
+        seekTo,
+        isMuted,
+        isRunning
     };
 }
 

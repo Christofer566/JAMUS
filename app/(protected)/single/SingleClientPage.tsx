@@ -6,11 +6,13 @@ import { ChevronLeft } from 'lucide-react';
 import SingleScore from '@/components/single/SingleScore';
 import SinglePlayerBar from '@/components/single/SinglePlayerBar';
 import SingleController from '@/components/single/SingleController';
+import RecordingCompleteModal from '@/components/single/RecordingCompleteModal';
 import { useWebAudio } from '@/hooks/useWebAudio';
 import { useMetronome } from '@/hooks/useMetronome';
 import { useRecorder } from '@/hooks/useRecorder';
 import { useToast } from '@/contexts/ToastContext';
 import { uploadJamRecording } from '@/lib/jamStorage';
+import { getSharedAudioContext, resumeAudioContext } from '@/hooks/useAudioContext';
 
 const TEST_AUDIO_URLS = {
     intro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3",
@@ -49,10 +51,19 @@ export default function SingleClientPage() {
     const [pressedKey, setPressedKey] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
+    // START JAM 관련 상태
+    const [isCountingDown, setIsCountingDown] = useState(false);
+    const [countdown, setCountdown] = useState<number | null>(null);
+    const originalPositionRef = useRef<number>(0); // R키 누르기 전 위치 저장
+    const countdownAnimationRef = useRef<number | null>(null);
+
+    // 곡 종료 시 모달 상태
+    const [showCompleteModal, setShowCompleteModal] = useState(false);
+
     // Recording state from useRecorder
     const recorder = useRecorder({
         onError: (error) => showToast('error', error),
-        onStateChange: (state) => console.log('🎤 Recording state:', state)
+        onStateChange: () => {} // 디버그 로그 제거
     });
 
     const webAudio = useWebAudio({ chorusRepeat: 1 });
@@ -153,32 +164,85 @@ export default function SingleClientPage() {
     }, [isJamming, showToast]);
 
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
-    useEffect(() => { if (webAudio.isPlaying) setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime, webAudio.isPlaying]);
+    // webAudio.currentTime이 변경될 때마다 항상 반영 (재생 중이든 아니든)
+    useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
 
-    // 재생 중 녹음 구간 진입 시 녹음 재생 시작 + 볼륨 조절
-    const prevHasRecordingRef = useRef(false);
+    // 곡 종료 감지: 녹음이 있으면 모달 표시
+    // JAM Only 모드: Chorus 끝에서 종료
+    // 일반 모드: Outro 끝에서 종료
+    const prevCurrentTimeRef = useRef(0);
     useEffect(() => {
-        if (!webAudio.isPlaying || recorder.state !== 'recorded' || recorder.segments.length === 0) {
-            prevHasRecordingRef.current = false;
+        if (!webAudio.isPlaying || isJamming || isCountingDown) {
+            prevCurrentTimeRef.current = currentTime;
             return;
         }
 
-        const hasRecording = recorder.hasRecordingAt(currentTime);
+        const hasRecording = recorder.state === 'recorded' && recorder.segments.length > 0;
+        if (!hasRecording) {
+            prevCurrentTimeRef.current = currentTime;
+            return;
+        }
 
-        // 녹음 구간에 처음 진입했을 때만 재생 시작
-        if (hasRecording && !prevHasRecordingRef.current) {
-            console.log('🎵 Entered recording range, starting playback at', currentTime);
+        // JAM Only 모드: Chorus 끝에 도달
+        if (jamOnlyMode) {
+            const chorusEndTime = jamSectionRange.endTime;
+            const reachedChorusEnd = prevCurrentTimeRef.current < chorusEndTime && currentTime >= chorusEndTime - 0.1;
+
+            if (reachedChorusEnd) {
+                console.log('🎵 [JAM Only 종료] Chorus 끝 도달 - 모달 표시');
+                webAudio.pause();
+                metronome.stop();
+                setIsPlaying(false);
+                setShowCompleteModal(true);
+            }
+        } else {
+            // 일반 모드: 곡 끝에 도달
+            const reachedEnd = webAudio.duration > 0 &&
+                              prevCurrentTimeRef.current < webAudio.duration - 0.5 &&
+                              currentTime >= webAudio.duration - 0.5;
+
+            if (reachedEnd) {
+                console.log('🎵 [곡 종료] Outro 끝 도달 - 모달 표시');
+                webAudio.pause();
+                metronome.stop();
+                setIsPlaying(false);
+                setShowCompleteModal(true);
+            }
+        }
+
+        prevCurrentTimeRef.current = currentTime;
+    }, [webAudio, currentTime, recorder.state, recorder.segments.length, isJamming, isCountingDown, metronome, jamOnlyMode, jamSectionRange.endTime]);
+
+    // 재생 중 녹음 구간 진입/전환 시 녹음 재생 시작 + 볼륨 조절
+    const prevSegmentIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!webAudio.isPlaying || recorder.state !== 'recorded' || recorder.segments.length === 0) {
+            prevSegmentIdRef.current = null;
+            return;
+        }
+
+        // 현재 시간에 해당하는 세그먼트 찾기
+        const currentSegment = recorder.segments.find(
+            seg => currentTime >= seg.startTime && currentTime <= seg.endTime
+        );
+        const currentSegmentId = currentSegment?.id || null;
+
+        // 세그먼트 진입 또는 전환 감지
+        if (currentSegmentId && currentSegmentId !== prevSegmentIdRef.current) {
+            console.log('🎵 Segment change:', prevSegmentIdRef.current, '→', currentSegmentId, 'at', currentTime);
+            // 이전 세그먼트 재생 중지 후 새 세그먼트 재생
+            recorder.pauseRecordings();
             webAudio.setVolume(0.3); // 원곡 볼륨 낮춤
             recorder.playRecordingsAtTime(currentTime);
         }
-        // 녹음 구간을 벗어났을 때 정지
-        else if (!hasRecording && prevHasRecordingRef.current) {
-            console.log('🎵 Left recording range, pausing playback');
+        // 모든 녹음 구간을 벗어났을 때 정지
+        else if (!currentSegmentId && prevSegmentIdRef.current) {
+            console.log('🎵 Left all recording ranges, pausing playback');
             webAudio.setVolume(1.0); // 원곡 볼륨 복구
             recorder.pauseRecordings();
         }
 
-        prevHasRecordingRef.current = hasRecording;
+        prevSegmentIdRef.current = currentSegmentId;
     }, [currentTime, webAudio, recorder]);
 
     // Recording ranges derived from recorder segments (복수 녹음 지원)
@@ -209,16 +273,22 @@ export default function SingleClientPage() {
             setIsPlaying(false);
         } else {
             await webAudio.play();
-            if(metronomeOn) await metronome.start();
+            // 메트로놈: 항상 시작하되 현재 위치로 동기화, 음소거 상태 유지
+            metronome.seekTo(currentTime);
+            await metronome.start();
             // 녹음이 완료된 상태이고, 현재 시간이 녹음 구간 내라면 녹음도 재생
-            if (recorder.state === 'recorded' && recorder.hasRecordingAt(currentTime)) {
-                console.log('🎵 Starting recording playback at', currentTime);
+            const currentSegment = recorder.segments.find(
+                seg => currentTime >= seg.startTime && currentTime <= seg.endTime
+            );
+            if (recorder.state === 'recorded' && currentSegment) {
+                console.log('🎵 Starting recording playback at', currentTime, 'segment:', currentSegment.id);
                 webAudio.setVolume(0.3);
                 recorder.playRecordingsAtTime(currentTime);
+                prevSegmentIdRef.current = currentSegment.id; // 현재 세그먼트 ID 저장
             }
             setIsPlaying(true);
         }
-    }, [webAudio, metronome, metronomeOn, recorder, currentTime]);
+    }, [webAudio, metronome, recorder, currentTime]);
 
     const handleToggleJam = useCallback(async () => {
         console.log('🎤 handleToggleJam called', { isJamming, isInJamSection, currentTime, jamSectionRange });
@@ -252,10 +322,10 @@ export default function SingleClientPage() {
             const overlapping = recorder.getOverlappingSegment(globalMeasure, globalMeasure);
             if (overlapping) {
                 const confirmed = window.confirm(
-                    `마디 ${overlapping.startMeasure}-${overlapping.endMeasure}에 기존 녹음이 있습니다. 덮어쓰시겠습니까?`
+                    `마디 ${globalMeasure}부터 녹음합니다. 기존 녹음(${overlapping.startMeasure}-${overlapping.endMeasure})은 마디 ${globalMeasure}부터 덮어씁니다.`
                 );
                 if (!confirmed) return;
-                // 새 녹음이 기존 겹치는 녹음을 자동으로 대체함
+                // 새 녹음이 기존 겹치는 부분만 덮어쓰고, 이전 마디는 유지됨
             }
 
             // 권한 요청
@@ -278,10 +348,12 @@ export default function SingleClientPage() {
             setCurrentTime(currentMeasureStartTime);
             webAudio.setVolume(0.3);
             await webAudio.play();
-            if (metronomeOn) await metronome.start();
+            // 메트로놈: 항상 시작하되 현재 위치로 동기화
+            metronome.seekTo(currentMeasureStartTime);
+            await metronome.start();
             setIsPlaying(true);
         }
-    }, [isJamming, recorder, currentTime, currentMeasureStartTime, measureDuration, globalMeasure, jamSectionRange, isInJamSection, webAudio, metronome, metronomeOn, showToast]);
+    }, [isJamming, recorder, currentTime, currentMeasureStartTime, measureDuration, globalMeasure, jamSectionRange, isInJamSection, webAudio, metronome, showToast]);
 
     const handleTimeChange = useCallback((newTime: number) => {
         // 녹음 중에는 seek 차단
@@ -289,7 +361,17 @@ export default function SingleClientPage() {
             showToast('warning', '녹음 중에는 이동할 수 없습니다');
             return;
         }
-        const clampedTime = Math.max(0, Math.min(newTime, duration));
+
+        let clampedTime = Math.max(0, Math.min(newTime, duration));
+
+        // JAM Only 모드: Chorus 범위로 제한
+        if (jamOnlyMode) {
+            if (clampedTime < jamSectionRange.startTime || clampedTime >= jamSectionRange.endTime) {
+                showToast('info', 'JAM만 듣기를 선택했습니다');
+                // 범위 밖 클릭 시 현재 위치 유지 (이동하지 않음)
+                return;
+            }
+        }
 
         // 녹음 재생 중이면 일시정지 후 새 위치에서 재시작
         if (recorder.state === 'recorded') {
@@ -309,8 +391,9 @@ export default function SingleClientPage() {
         }
 
         webAudio.seek(clampedTime);
+        metronome.seekTo(clampedTime); // 메트로놈도 동기화
         setCurrentTime(clampedTime);
-    }, [duration, webAudio, isJamming, showToast, recorder]);
+    }, [duration, webAudio, isJamming, showToast, recorder, metronome, jamOnlyMode, jamSectionRange]);
 
     const handleSeekByMeasures = useCallback((offset: number) => {
         // 녹음 중에는 seek 차단
@@ -343,10 +426,13 @@ export default function SingleClientPage() {
 
     const handleToggleMetronome = useCallback((enabled: boolean) => {
         setMetronomeOn(enabled);
+        // 음소거만 토글 (메트로놈은 재생 중일 때 이미 실행 중)
         metronome.setMuted(!enabled);
-        if(enabled && isPlaying) metronome.start();
-        else metronome.stop();
-    }, [metronome, isPlaying]);
+        // 재생 중이 아닐 때 메트로놈 켜면 현재 위치로 동기화
+        if (enabled && !metronome.isRunning) {
+            metronome.seekTo(currentTime);
+        }
+    }, [metronome, currentTime]);
 
     const handleSave = useCallback(async () => {
         if (!recorder.audioBlob || !recorder.recordingRange) {
@@ -389,6 +475,193 @@ export default function SingleClientPage() {
         }
     }, [recorder, showToast]);
 
+    // ==========================================
+    // START JAM (R키) 플로우 - AudioContext 기반 카운트다운
+    // ==========================================
+
+    /**
+     * 2마디 전 마디 번호 계산 (무조건 2마디 전, 최소 1번 마디)
+     */
+    const calculateTwoMeasuresBackMeasure = useCallback((measure: number): number => {
+        return Math.max(1, measure - 2);
+    }, []);
+
+    /**
+     * START JAM 시작 (R키 누를 때)
+     * 1. 현재 위치 저장
+     * 2. 2마디 전으로 이동
+     * 3. AudioContext 기반 3,2,1 카운트다운
+     * 4. 녹음 시작
+     */
+    const handleStartJam = useCallback(async () => {
+        // 현재 시간을 기반으로 마디 번호 직접 계산 (state 지연 문제 방지)
+        const currentMeasureNum = Math.floor(currentTime / measureDuration) + 1;
+
+        console.log('🎤 [handleStartJam] 시작', { currentMeasureNum, currentTime, globalMeasure, jamSectionRange });
+
+        // JAM 섹션인지 확인 (현재 마디 기준, 2마디 전으로 이동해도 괜찮음)
+        const isCurrentMeasureInJam = currentMeasureNum >= jamSectionRange.startMeasure &&
+                                       currentMeasureNum <= jamSectionRange.endMeasure;
+        console.log('🎤 [handleStartJam] JAM 체크:', { isCurrentMeasureInJam, currentMeasureNum, startMeasure: jamSectionRange.startMeasure, endMeasure: jamSectionRange.endMeasure });
+
+        if (!isCurrentMeasureInJam) {
+            showToast('warning', 'JAM 섹션에서만 녹음할 수 있습니다');
+            return;
+        }
+
+        // 권한 요청
+        const hasPermission = await recorder.requestPermission();
+        console.log('🎤 [handleStartJam] 권한:', hasPermission);
+        if (!hasPermission) return;
+
+        // 현재 마디에 겹치는 기존 녹음이 있는지 확인
+        const overlapping = recorder.getOverlappingSegment(currentMeasureNum, currentMeasureNum);
+        if (overlapping) {
+            const confirmed = window.confirm(
+                `마디 ${currentMeasureNum}부터 녹음합니다. 기존 녹음(${overlapping.startMeasure}-${overlapping.endMeasure})은 마디 ${currentMeasureNum}부터 덮어씁니다.`
+            );
+            if (!confirmed) return;
+        }
+
+        // AudioContext 초기화
+        await resumeAudioContext();
+        const audioContext = getSharedAudioContext();
+
+        // 1. 현재 위치 저장
+        originalPositionRef.current = currentTime;
+
+        // 2. 2마디 전으로 이동 (마디 경계에 맞춤)
+        const targetMeasure = calculateTwoMeasuresBackMeasure(currentMeasureNum);
+        const startPos = (targetMeasure - 1) * measureDuration;
+
+        console.log(`🎤 [START JAM] 2마디 전으로 이동: 현재마디=${currentMeasureNum}, 목표마디=${targetMeasure}, 현재시간=${currentTime.toFixed(2)}, 이동위치=${startPos.toFixed(2)}`);
+
+        webAudio.seek(startPos);
+        metronome.seekTo(startPos);
+        setCurrentTime(startPos);
+
+        // 3. 음원 + 메트로놈 재생 시작 (메트로놈은 기존 상태 유지)
+        webAudio.setVolume(0.3);
+        await webAudio.play();
+        await metronome.start();
+        setIsPlaying(true);
+        // 메트로놈 ON/OFF는 기존 metronomeOn 상태 유지
+        metronome.setMuted(!metronomeOn);
+
+        // 4. AudioContext 기반 카운트다운 시작
+        setIsCountingDown(true);
+        const countdownStartTime = audioContext.currentTime;
+        const secondsPerBeat = 60 / MOCK_SONG.bpm;
+
+        // 녹음 시작 시간 계산 (마디 경계) - 현재 마디 기준
+        const recordStartMeasure = currentMeasureNum;
+        const recordStartTime = (recordStartMeasure - 1) * measureDuration;
+
+        // 실제 이동한 마디 수 계산
+        const measuresBack = currentMeasureNum - targetMeasure;
+        const totalBeatsToWait = measuresBack * 4; // 4/4 박자 기준
+
+        console.log(`🎤 [START JAM] 녹음 시작 예정: 녹음시작마디=${recordStartMeasure}, 녹음시작시간=${recordStartTime.toFixed(2)}, 목표마디=${targetMeasure}, 이동마디수=${measuresBack}, 대기박자=${totalBeatsToWait}`);
+
+        const updateCountdown = () => {
+            const elapsed = audioContext.currentTime - countdownStartTime;
+            const beatsElapsed = elapsed / secondsPerBeat;
+            const beatsRemaining = totalBeatsToWait - beatsElapsed;
+
+            // 마지막 4박을 4,3,2,1로 표시 (또는 남은 박자만큼)
+            if (beatsRemaining > 4) {
+                // 카운트다운 표시 안함 (아직 마지막 마디 아님)
+                setCountdown(null);
+            } else if (beatsRemaining > 3) {
+                setCountdown(Math.min(4, Math.ceil(beatsRemaining)));
+            } else if (beatsRemaining > 2) {
+                setCountdown(3);
+            } else if (beatsRemaining > 1) {
+                setCountdown(2);
+            } else if (beatsRemaining > 0) {
+                setCountdown(1);
+            } else {
+                // 카운트다운 완료 → 녹음 시작
+                setCountdown(null);
+                setIsCountingDown(false);
+                setIsJamming(true);
+
+                // 녹음 시작 (마디 경계에서)
+                recorder.startRecording(recordStartTime, recordStartMeasure);
+                showToast('info', '녹음이 시작되었습니다');
+
+                console.log('🎤 [START JAM] 녹음 시작:', {
+                    recordStartTime,
+                    recordStartMeasure
+                });
+                return;
+            }
+
+            countdownAnimationRef.current = requestAnimationFrame(updateCountdown);
+        };
+
+        countdownAnimationRef.current = requestAnimationFrame(updateCountdown);
+    }, [
+        jamSectionRange, recorder, globalMeasure, currentTime, currentMeasureStartTime,
+        measureDuration, webAudio, metronome, showToast, metronomeOn,
+        calculateTwoMeasuresBackMeasure
+    ]);
+
+    /**
+     * START JAM 취소 (카운트다운 중 R키 다시 누를 때)
+     */
+    const handleCancelStartJam = useCallback(() => {
+        // 카운트다운 취소
+        if (countdownAnimationRef.current) {
+            cancelAnimationFrame(countdownAnimationRef.current);
+            countdownAnimationRef.current = null;
+        }
+
+        setIsCountingDown(false);
+        setCountdown(null);
+
+        // 재생 정지
+        webAudio.pause();
+        metronome.stop();
+        setIsPlaying(false);
+
+        // 원래 위치로 복귀
+        webAudio.seek(originalPositionRef.current);
+        metronome.seekTo(originalPositionRef.current);
+        setCurrentTime(originalPositionRef.current);
+        webAudio.setVolume(1.0);
+
+        showToast('info', '녹음이 취소되었습니다');
+        console.log('🎤 [START JAM] 취소됨, 원래 위치로 복귀:', originalPositionRef.current);
+    }, [webAudio, metronome, showToast]);
+
+    /**
+     * R키 핸들러 (상태에 따라 분기)
+     */
+    const handleRKey = useCallback(async () => {
+        if (isJamming) {
+            // 녹음 중 → 녹음 종료
+            const currentMeasureEndTime = currentMeasureStartTime + measureDuration;
+            setIsJamming(false);
+            await recorder.stopRecording(currentMeasureEndTime, globalMeasure);
+            webAudio.pause();
+            webAudio.setVolume(1);
+            metronome.stop();
+            setIsPlaying(false);
+            showToast('success', '녹음이 완료되었습니다');
+        } else if (isCountingDown) {
+            // 카운트다운 중 → 취소
+            handleCancelStartJam();
+        } else {
+            // 대기 중 → START JAM 시작
+            await handleStartJam();
+        }
+    }, [
+        isJamming, isCountingDown, currentMeasureStartTime, measureDuration,
+        globalMeasure, recorder, webAudio, metronome, showToast,
+        handleStartJam, handleCancelStartJam
+    ]);
+
     // 녹음 일시정지/재개 핸들러
     const handlePauseResumeJamming = useCallback(() => {
         if (recorder.isPaused) {
@@ -413,8 +686,11 @@ export default function SingleClientPage() {
             switch (e.code) {
                 case 'Space':
                     e.preventDefault();
-                    // 녹음 중이면 일시정지/재개
-                    if (isJamming) {
+                    // 녹음 중이면 일시정지/재개, 카운트다운 중이면 무시
+                    if (isCountingDown) {
+                        // 카운트다운 중에는 Space 무시
+                        return;
+                    } else if (isJamming) {
                         handlePauseResumeJamming();
                     } else {
                         await handlePlayPause();
@@ -422,8 +698,18 @@ export default function SingleClientPage() {
                     break;
                 case 'KeyZ': e.preventDefault(); handleSeekByMeasures(-1); break;
                 case 'KeyX': e.preventDefault(); handleSeekByMeasures(1); break;
-                case 'KeyS': e.preventDefault(); handleToggleJamOnly(!jamOnlyMode); break;
-                case 'KeyM': e.preventDefault(); handleToggleMetronome(!metronomeOn); break;
+                case 'KeyD': // D키 - 메트로놈 ON/OFF
+                    e.preventDefault();
+                    handleToggleMetronome(!metronomeOn);
+                    break;
+                case 'KeyF': // F키 - JAM만 듣기 토글
+                    e.preventDefault();
+                    handleToggleJamOnly(!jamOnlyMode);
+                    break;
+                case 'KeyR': // R키 - START JAM (녹음 시작/종료/취소)
+                    e.preventDefault();
+                    await handleRKey();
+                    break;
             }
         };
         const handleKeyUp = () => setPressedKey(null);
@@ -433,9 +719,18 @@ export default function SingleClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handlePauseResumeJamming, handleSeekByMeasures, handleToggleJamOnly, handleToggleMetronome, jamOnlyMode, metronomeOn, isJamming]);
+    }, [handlePlayPause, handlePauseResumeJamming, handleSeekByMeasures, handleToggleJamOnly, handleToggleMetronome, handleRKey, jamOnlyMode, metronomeOn, isJamming, isCountingDown]);
 
-    useEffect(() => () => { webAudioRef.current.stop(); }, []);
+    // 클린업
+    useEffect(() => {
+        return () => {
+            webAudioRef.current.stop();
+            // 카운트다운 애니메이션 정리
+            if (countdownAnimationRef.current) {
+                cancelAnimationFrame(countdownAnimationRef.current);
+            }
+        };
+    }, []);
 
     // 페이지 이탈 경고 (녹음 중 또는 저장되지 않은 녹음이 있을 때)
     useEffect(() => {
@@ -461,6 +756,26 @@ export default function SingleClientPage() {
         }
         router.back();
     }, [isJamming, recorder.audioBlob, router]);
+
+    // 모달: "네" 버튼 - 처음으로 리셋하고 다시 재생
+    const handleModalReplay = useCallback(() => {
+        setShowCompleteModal(false);
+        webAudio.seek(0);
+        metronome.seekTo(0);
+        setCurrentTime(0);
+        webAudio.setVolume(1.0);
+        // 바로 재생 시작
+        webAudio.play();
+        metronome.seekTo(0);
+        metronome.start();
+        setIsPlaying(true);
+    }, [webAudio, metronome]);
+
+    // 모달: "아니요(저장)" 버튼 - 저장 실행
+    const handleModalSave = useCallback(() => {
+        setShowCompleteModal(false);
+        handleSave();
+    }, [handleSave]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden">
@@ -498,13 +813,18 @@ export default function SingleClientPage() {
                                         처리 중...
                                     </div>
                                 )}
+                                {isCountingDown && countdown !== null && (
+                                    <div className="text-2xl font-bold text-[#FFD166] animate-pulse">
+                                        {countdown}
+                                    </div>
+                                )}
                                 {isJamming && (
                                     <div className={`text-sm font-bold flex items-center gap-2 text-[#FF7B7B] ${recorder.isPaused ? '' : 'animate-pulse'}`}>
                                         <div className="w-2 h-2 rounded-full bg-[#FF7B7B]" />
                                         {recorder.isPaused ? 'PAUSED' : 'JAMMING'}
                                     </div>
                                 )}
-                                {recorder.state === 'recorded' && !isJamming && (
+                                {recorder.state === 'recorded' && !isJamming && !isCountingDown && (
                                     <div className="text-sm flex items-center gap-2 text-green-400">
                                         <div className="w-2 h-2 rounded-full bg-green-400" />
                                         녹음 완료
@@ -539,8 +859,8 @@ export default function SingleClientPage() {
                     <SingleController
                         isPlaying={isPlaying}
                         onPlayPause={handlePlayPause}
-                        onToggleJam={handleToggleJam}
-                        isJamming={isJamming}
+                        onToggleJam={handleRKey}
+                        isJamming={isJamming || isCountingDown}
                         onSeekBackward={() => handleSeekByMeasures(-1)}
                         onSeekForward={() => handleSeekByMeasures(1)}
                         jamOnlyMode={jamOnlyMode}
@@ -556,6 +876,13 @@ export default function SingleClientPage() {
                     />
                 </div>
             </div>
+
+            {/* 녹음 완료 모달 */}
+            <RecordingCompleteModal
+                isOpen={showCompleteModal}
+                onReplay={handleModalReplay}
+                onSave={handleModalSave}
+            />
         </div>
     );
 }

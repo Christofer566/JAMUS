@@ -179,24 +179,40 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
 
   /**
    * 현재 재생 시간 업데이트 (requestAnimationFrame)
+   * ref 기반으로 stale closure 문제 해결
    */
   const updateCurrentTime = useCallback(() => {
-    if (!audioContextRef.current || !isPlaying) return;
+    // 재생 중이 아니면 루프 중단
+    if (!isPlayingRef.current) {
+      console.log('🎵 [updateCurrentTime] 중단: isPlayingRef.current = false');
+      return;
+    }
+
+    if (!audioContextRef.current) {
+      // context가 없으면 다음 프레임에서 재시도
+      console.log('🎵 [updateCurrentTime] context 없음, 재시도');
+      animationFrameRef.current = requestAnimationFrame(updateCurrentTime);
+      return;
+    }
 
     const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
     const newTime = pauseOffsetRef.current + elapsed;
 
-    // duration을 넘지 않도록 제한
-    if (newTime >= duration && duration > 0) {
-      setCurrentTime(duration);
+    // duration을 넘지 않도록 제한 (ref 사용)
+    const dur = durationRef.current;
+    if (newTime >= dur && dur > 0) {
+      console.log('🎵 [updateCurrentTime] 곡 끝 도달:', { newTime, dur });
+      setCurrentTime(dur);
       setIsPlaying(false);
+      isPlayingRef.current = false;
       pauseOffsetRef.current = 0;
       return;
     }
 
     setCurrentTime(newTime);
+    // 다음 프레임 예약
     animationFrameRef.current = requestAnimationFrame(updateCurrentTime);
-  }, [isPlaying, duration]);
+  }, []); // 의존성 없음 - ref 사용
 
   /**
    * 오디오 파일 로드 및 합성
@@ -433,9 +449,45 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     sourceNodeRef.current = source;
     console.log('🎵 [play] Playback started at offset:', pauseOffsetRef.current.toFixed(2) + 's');
 
-    setIsPlaying(true);
+    // ref를 먼저 설정해야 updateCurrentTime에서 즉시 참조 가능
     isPlayingRef.current = true;
-  }, []); // 의존성 제거 - ref 사용
+    setIsPlaying(true);
+
+    // 애니메이션 루프 직접 시작 - 인라인 함수로 정의
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    const tick = () => {
+      if (!isPlayingRef.current) {
+        return;
+      }
+
+      const ctx = audioContextRef.current;
+      if (!ctx) {
+        animationFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const elapsed = ctx.currentTime - startTimeRef.current;
+      const newTime = pauseOffsetRef.current + elapsed;
+      const dur = durationRef.current;
+
+      if (newTime >= dur && dur > 0) {
+        setCurrentTime(dur);
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+        pauseOffsetRef.current = 0;
+        return;
+      }
+
+      setCurrentTime(newTime);
+      animationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(tick);
+    console.log('🎵 [play] Animation loop started');
+  }, []); // 의존성 없음
 
   /**
    * 일시정지 (더 안전하게)
