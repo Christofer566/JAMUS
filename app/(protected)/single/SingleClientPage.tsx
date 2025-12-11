@@ -49,7 +49,6 @@ export default function SingleClientPage() {
     const [jamOnlyMode, setJamOnlyMode] = useState(false);
     const [metronomeOn, setMetronomeOn] = useState(false);
     const [pressedKey, setPressedKey] = useState<string | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
 
     // START JAM 관련 상태
     const [isCountingDown, setIsCountingDown] = useState(false);
@@ -434,46 +433,15 @@ export default function SingleClientPage() {
         }
     }, [metronome, currentTime]);
 
-    const handleSave = useCallback(async () => {
-        if (!recorder.audioBlob || !recorder.recordingRange) {
-            showToast('warning', '저장할 녹음이 없습니다');
+    // 종료(Feedback) 버튼 - 저장 없이 바로 Feedback 페이지로 이동
+    const handleFinish = useCallback(() => {
+        if (recorder.state !== 'recorded' || recorder.segments.length === 0) {
+            showToast('warning', '녹음이 없습니다');
             return;
         }
-
-        // 디버깅: 저장할 데이터 출력
-        console.log('🎵 [handleSave] recordingRange:', recorder.recordingRange);
-        console.log('🎵 [handleSave] segments:', recorder.segments);
-
-        setIsSaving(true);
-        try {
-            const saveParams = {
-                songId: MOCK_SONG.id,
-                audioBlob: recorder.audioBlob,
-                startMeasure: recorder.recordingRange.startMeasure,
-                endMeasure: recorder.recordingRange.endMeasure,
-                startTime: recorder.recordingRange.startTime,
-                endTime: recorder.recordingRange.endTime
-            };
-            console.log('🎵 [handleSave] uploadJamRecording params:', {
-                ...saveParams,
-                audioBlob: `Blob(${saveParams.audioBlob.size} bytes)`
-            });
-
-            const result = await uploadJamRecording(saveParams);
-
-            if (result.success) {
-                showToast('success', 'JAM이 저장되었습니다!');
-                recorder.resetRecording();
-            } else {
-                showToast('error', result.error || '저장에 실패했습니다');
-            }
-        } catch (error) {
-            console.error('Save error:', error);
-            showToast('error', '저장 중 오류가 발생했습니다');
-        } finally {
-            setIsSaving(false);
-        }
-    }, [recorder, showToast]);
+        // 바로 Feedback 페이지로 이동
+        router.push('/single/feedback');
+    }, [recorder, showToast, router]);
 
     // ==========================================
     // START JAM (R키) 플로우 - AudioContext 기반 카운트다운
@@ -771,11 +739,12 @@ export default function SingleClientPage() {
         setIsPlaying(true);
     }, [webAudio, metronome]);
 
-    // 모달: "아니요(저장)" 버튼 - 저장 실행
+    // 모달: "아니요(저장)" 버튼 - 저장 없이 바로 Feedback 페이지로 이동
     const handleModalSave = useCallback(() => {
         setShowCompleteModal(false);
-        handleSave();
-    }, [handleSave]);
+        // 바로 Feedback 페이지로 이동
+        router.push('/single/feedback');
+    }, [router]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden">
@@ -867,11 +836,10 @@ export default function SingleClientPage() {
                         onToggleJamOnly={handleToggleJamOnly}
                         metronomeOn={metronomeOn}
                         onToggleMetronome={handleToggleMetronome}
-                        onSave={handleSave}
+                        onFinish={handleFinish}
                         currentTime={currentTime}
                         duration={duration}
                         pressedKey={pressedKey}
-                        isSaving={isSaving}
                         hasRecording={recorder.state === 'recorded'}
                     />
                 </div>

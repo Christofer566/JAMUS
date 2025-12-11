@@ -1,6 +1,6 @@
 'use client';
 
-import { Play, Pause, RotateCcw, RotateCw, ChevronDown, Save } from "lucide-react";
+import { Play, Pause, RotateCcw, RotateCw, ChevronDown } from "lucide-react";
 
 interface SingleControllerProps {
   isPlaying: boolean;
@@ -13,11 +13,11 @@ interface SingleControllerProps {
   onToggleJamOnly: (enabled: boolean) => void;
   metronomeOn: boolean;
   onToggleMetronome: (enabled: boolean) => void | Promise<void>;
-  onSave: () => void;
+  onFinish: () => void;
   currentTime: number;
   duration: number;
   pressedKey: string | null;
-  isSaving?: boolean;
+  isFinishing?: boolean;
   hasRecording?: boolean;
 }
 
@@ -35,9 +35,9 @@ export default function SingleController({
   onToggleJamOnly,
   metronomeOn,
   onToggleMetronome,
-  onSave,
+  onFinish,
   pressedKey = null,
-  isSaving = false,
+  isFinishing = false,
   hasRecording = false,
 }: SingleControllerProps) {
 
@@ -115,7 +115,7 @@ export default function SingleController({
             <div
               data-testid="jam-toggle-area"
               onClick={onToggleJam}
-              className="relative flex h-full items-center justify-center pr-5 pl-2"
+              className="relative flex h-full items-center justify-center pr-5 pl-2 whitespace-nowrap"
             >
               {isJamming ? 'STOP JAM' : 'START JAM'}
               <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>R</span>
@@ -136,35 +136,30 @@ export default function SingleController({
       </div>
 
       {/* 우측: 옵션 */}
-      <div className="flex items-center gap-2 min-w-[280px] justify-end">
+      <div className="flex items-center gap-2 min-w-[340px] justify-end">
         <button
             onClick={() => onToggleMetronome(!metronomeOn)}
-            className={`relative px-3 py-1.5 rounded-lg text-sm font-medium ${buttonFeedbackStyle} ${metronomeOn ? 'bg-[#FFD166] text-black ring-2 ring-yellow-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyD' ? 'scale-95 brightness-110' : ''}`}
+            className={`relative px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${buttonFeedbackStyle} ${metronomeOn ? 'bg-[#FFD166] text-black ring-2 ring-yellow-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyD' ? 'scale-95 brightness-110' : ''}`}
         >
             ♪ 메트로놈
             <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>D</span>
         </button>
         <button
             onClick={() => onToggleJamOnly(!jamOnlyMode)}
-            className={`relative px-3 py-1.5 rounded-lg text-sm font-medium ${buttonFeedbackStyle} ${jamOnlyMode ? 'bg-[#7BA7FF] text-black ring-2 ring-blue-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyF' ? 'scale-95 brightness-110' : ''}`}
+            className={`relative px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${buttonFeedbackStyle} ${jamOnlyMode ? 'bg-[#7BA7FF] text-black ring-2 ring-blue-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'} ${pressedKey === 'KeyF' ? 'scale-95 brightness-110' : ''}`}
         >
             JAM만 듣기
             <span className={`left-1/2 -translate-x-1/2 ${shortcutLabelStyle}`}>F</span>
         </button>
         <button
           type="button"
-          onClick={onSave}
-          disabled={isSaving || !hasRecording}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 ${buttonFeedbackStyle} ${hasRecording && !isSaving ? 'hover:bg-[#7BA7FF]/10 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+          onClick={onFinish}
+          disabled={isFinishing || !hasRecording}
+          className={`px-3 py-1.5 rounded-lg border-2 text-sm font-medium whitespace-nowrap ${buttonFeedbackStyle} ${hasRecording && !isFinishing ? 'hover:bg-[#7BA7FF]/10 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
           style={{ borderColor: JAMUS_BLUE, color: JAMUS_BLUE }}
-          title={hasRecording ? '저장' : '녹음이 없습니다'}
+          title={hasRecording ? '종료하고 피드백 보기' : '녹음이 없습니다'}
         >
-          {isSaving ? (
-            <div className="w-4 h-4 border-2 border-[#7BA7FF] border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          <span className="text-xs font-medium">{isSaving ? 'Saving...' : 'Save'}</span>
+          {isFinishing ? '이동 중...' : '종료(Feedback)'}
         </button>
       </div>
     </div>
