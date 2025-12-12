@@ -35,12 +35,13 @@ export async function POST(request: any) { // request 타입 제거
     // ✅ 문서화 완료 버튼 처리 (Phase 3)
     // ========================================
     if (actionId === 'finish_documentation') {
-      const { taskNumber } = JSON.parse(action.value);
+      const { taskNumber, weekString: buttonWeekString } = JSON.parse(action.value);
       const channel = payload.channel.id;
       const user = payload.user.id;
 
-      // 현재 주차 자동 계산 (11월 10일 = W01 시작 기준)
+      // 버튼에서 전달된 weekString 사용, 없으면 현재 주차 계산
       const getWeekString = (): string => {
+        if (buttonWeekString) return buttonWeekString;
         const now = new Date();
         const startDate = new Date('2025-11-03'); // W01 시작일 (월요일)
         const diffTime = now.getTime() - startDate.getTime();
@@ -49,7 +50,7 @@ export async function POST(request: any) { // request 타입 제거
         return `W${weekNum.toString().padStart(2, '0')}`;
       };
       const weekString = getWeekString();
-      console.log(`📅 Current week: ${weekString}`);
+      console.log(`📅 Week filter: ${weekString} (from button: ${!!buttonWeekString})`);
 
       try {
         // 문서화 프로세스 실행 (동기 - await 사용)

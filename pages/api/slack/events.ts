@@ -115,8 +115,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           await kv.set(lockKey, Date.now(), { ex: 300 });
 
-          const { startDocumentationProcess } = await import('../../../lib/task-documenter.js');
-          const initialAnalysis = (await startDocumentationProcess(taskNumber)) as any;
+          const { startDocumentationProcess } = await import('../../../lib/task-documenter.js') as any;
+          const initialAnalysis = await startDocumentationProcess(taskNumber, weekString);
 
           const slackMessage = {
             text: `📝 Task ${taskNumber} 시간 추정 완료`,
@@ -141,7 +141,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     style: "primary",
                     action_id: "finish_documentation",
                     value: JSON.stringify({
-                        taskNumber: taskNumber
+                        taskNumber: taskNumber,
+                        weekString: weekString
                     })
                   }
                 ]

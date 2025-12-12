@@ -342,76 +342,67 @@ jobs:
           COMMIT_MESSAGE: ${{ steps.task.outputs.commit_message }}
           COMMIT_TIME: ${{ steps.commit.outputs.time }}
         run: |
-          echo "📊 Updating Codebase State table..."
+          echo "📊 Updating Codebase State (bulleted_list_item)..."
 
           # 현재 날짜 (배포일)
           DEPLOY_DATE=$(echo "$COMMIT_TIME" | cut -d' ' -f1)
           echo "Deploy date: $DEPLOY_DATE"
+
+          # 커밋 메시지에서 특수문자 이스케이프
+          ESCAPED_MSG=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | head -c 100)
+          echo "Commit message: $ESCAPED_MSG"
 
           # 페이지 블록들 조회
           BLOCKS_RESPONSE=$(curl -s -X GET "https://api.notion.com/v1/blocks/${CONTEXT_HUB_PAGE_ID}/children?page_size=100" \
             -H "Authorization: Bearer ${NOTION_API_KEY}" \
             -H "Notion-Version: 2022-06-28")
 
-          # table 블록 찾기
-          TABLE_ID=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.type == "table") | .id' | head -1)
+          UPDATED_COUNT=0
 
-          if [ -z "$TABLE_ID" ] || [ "$TABLE_ID" = "null" ]; then
-            echo "⚠️ Table block not found, skipping Codebase State update"
-            exit 0
-          fi
+          # bulleted_list_item에서 "마지막 커밋:" 찾기
+          COMMIT_BLOCK_ID=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.type == "bulleted_list_item") | select(.bulleted_list_item.rich_text[0].text.content | startswith("마지막 커밋:")) | .id' | head -1)
+          if [ -n "$COMMIT_BLOCK_ID" ] && [ "$COMMIT_BLOCK_ID" != "null" ]; then
+            echo "Found 마지막 커밋 block: $COMMIT_BLOCK_ID"
+            NEW_COMMIT_TEXT="마지막 커밋: ${ESCAPED_MSG}"
 
-          echo "Found table: $TABLE_ID"
-
-          # 테이블 자식 블록(행) 조회
-          TABLE_ROWS=$(curl -s -X GET "https://api.notion.com/v1/blocks/${TABLE_ID}/children?page_size=100" \
-            -H "Authorization: Bearer ${NOTION_API_KEY}" \
-            -H "Notion-Version: 2022-06-28")
-
-          # "마지막 커밋" 행 찾기 및 업데이트
-          COMMIT_ROW_ID=$(echo "$TABLE_ROWS" | jq -r '.results[] | select(.table_row.cells[0][0].text.content == "마지막 커밋") | .id')
-          if [ -n "$COMMIT_ROW_ID" ] && [ "$COMMIT_ROW_ID" != "null" ]; then
-            echo "Updating '마지막 커밋' row..."
-
-            # 커밋 메시지에서 특수문자 이스케이프
-            ESCAPED_MSG=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | head -c 100)
-
-            curl -s -X PATCH "https://api.notion.com/v1/blocks/${COMMIT_ROW_ID}" \
+            curl -s -X PATCH "https://api.notion.com/v1/blocks/${COMMIT_BLOCK_ID}" \
               -H "Authorization: Bearer ${NOTION_API_KEY}" \
               -H "Content-Type: application/json" \
               -H "Notion-Version: 2022-06-28" \
               -d '{
-                "table_row": {
-                  "cells": [
-                    [{"type": "text", "text": {"content": "마지막 커밋"}}],
-                    [{"type": "text", "text": {"content": "'"${ESCAPED_MSG}"'"}}]
-                  ]
+                "bulleted_list_item": {
+                  "rich_text": [{"type": "text", "text": {"content": "'"${NEW_COMMIT_TEXT}"'"}}]
                 }
               }' > /dev/null
             echo "✅ '마지막 커밋' updated"
+            UPDATED_COUNT=$((UPDATED_COUNT + 1))
             sleep 0.3
+          else
+            echo "⚠️ '마지막 커밋' block not found"
           fi
 
-          # "마지막 배포" 행 찾기 및 업데이트
-          DEPLOY_ROW_ID=$(echo "$TABLE_ROWS" | jq -r '.results[] | select(.table_row.cells[0][0].text.content == "마지막 배포") | .id')
-          if [ -n "$DEPLOY_ROW_ID" ] && [ "$DEPLOY_ROW_ID" != "null" ]; then
-            echo "Updating '마지막 배포' row..."
-            curl -s -X PATCH "https://api.notion.com/v1/blocks/${DEPLOY_ROW_ID}" \
+          # bulleted_list_item에서 "마지막 배포:" 찾기
+          DEPLOY_BLOCK_ID=$(echo "$BLOCKS_RESPONSE" | jq -r '.results[] | select(.type == "bulleted_list_item") | select(.bulleted_list_item.rich_text[0].text.content | startswith("마지막 배포:")) | .id' | head -1)
+          if [ -n "$DEPLOY_BLOCK_ID" ] && [ "$DEPLOY_BLOCK_ID" != "null" ]; then
+            echo "Found 마지막 배포 block: $DEPLOY_BLOCK_ID"
+            NEW_DEPLOY_TEXT="마지막 배포: ${DEPLOY_DATE}"
+
+            curl -s -X PATCH "https://api.notion.com/v1/blocks/${DEPLOY_BLOCK_ID}" \
               -H "Authorization: Bearer ${NOTION_API_KEY}" \
               -H "Content-Type: application/json" \
               -H "Notion-Version: 2022-06-28" \
               -d '{
-                "table_row": {
-                  "cells": [
-                    [{"type": "text", "text": {"content": "마지막 배포"}}],
-                    [{"type": "text", "text": {"content": "'"${DEPLOY_DATE}"'"}}]
-                  ]
+                "bulleted_list_item": {
+                  "rich_text": [{"type": "text", "text": {"content": "'"${NEW_DEPLOY_TEXT}"'"}}]
                 }
               }' > /dev/null
             echo "✅ '마지막 배포' updated"
+            UPDATED_COUNT=$((UPDATED_COUNT + 1))
+          else
+            echo "⚠️ '마지막 배포' block not found"
           fi
 
-          echo "📊 Codebase State update complete"
+          echo "📊 Codebase State update complete ($UPDATED_COUNT blocks updated)"
 
       - name: Send Slack Notification
         env:
