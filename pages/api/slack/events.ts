@@ -78,6 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       const blocks = message.blocks || [];
       let deployUrl = 'https://jamus.vercel.app';
+      let commitMessage = '';
       for (const block of blocks) {
         if (block.type === 'section' && block.fields) {
           for (const field of block.fields) {
@@ -86,6 +87,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               if (urlMatch) {
                 deployUrl = urlMatch[1];
               }
+            }
+            // 커밋 메시지에서 Week 추출용
+            if (field.text && field.text.includes('*메시지*')) {
+              commitMessage = field.text;
             }
           }
         }
@@ -110,8 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const weekNum = Math.floor(diffDays / 7) + 1;
           return `W${weekNum.toString().padStart(2, '0')}`;
         };
-        const weekString = getWeekString(message.text);
-        console.log(`Extracted week from commit: ${weekString}`);
+        // commitMessage (blocks에서 추출) 또는 message.text에서 Week 추출
+        const weekString = getWeekString(commitMessage || message.text);
+        console.log(`Extracted week from commit: ${weekString}, source: ${commitMessage ? 'blocks' : 'text'}`);
 
         try {
           const lockKey = `task-lock:${taskNumber}:${event.item.ts}`;
