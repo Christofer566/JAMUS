@@ -260,23 +260,36 @@ export default function FeedbackClientPage() {
         // 비동기 분석
         const performAnalysis = async () => {
             const pitchFrames = await analyzeAudio(storedAudioBlob);
-            const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
             const beatsPerMeasure = Number(MOCK_SONG.time_signature.split('/')[0]);
             const beatDuration = 60 / MOCK_SONG.bpm;
+            const measureDurationSec = beatDuration * beatsPerMeasure;
 
-            // silence padding 오프셋 보정
-            // useRecorder에서 RECORDING_LATENCY_COMPENSATION = 0 사용
-            const RECORDING_LATENCY_COMPENSATION = 0;
-            const silenceDuration = Math.max(0, storedRecordingRange.startTime - RECORDING_LATENCY_COMPENSATION);
-            const silenceBeats = silenceDuration / beatDuration;
+            // 16슬롯 그리드 기반 음표 변환
+            // measureIndex는 오디오 블롭 시작 기준 (0부터)
+            const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
 
-            // startBeat을 녹음 시작 기준으로 조정 (silence 제외)
+            // 오디오 블롭에 포함된 선행 시간 오프셋 계산
+            // storedRecordingRange.startTime = 곡 시작부터의 시간 (초)
+            // 이 시간만큼 오디오 블롭 앞에 데이터가 포함되어 있음
+            const prerollMeasures = Math.floor(storedRecordingRange.startTime / measureDurationSec);
+
+            console.log('[Pitch Analysis] 오프셋 계산:', {
+                startTime: storedRecordingRange.startTime,
+                measureDuration: measureDurationSec,
+                prerollMeasures,
+                startMeasure: storedRecordingRange.startMeasure
+            });
+
+            // measureIndex에서 prerollMeasures를 빼서 보정
+            // 예: startTime=16초, measureDuration=2초 → prerollMeasures=8
+            // note.measureIndex가 8이면 → 8 - 8 = 0 (녹음 시작 지점)
             const adjustedNotes = notes
+                .filter(note => !note.isRest)
                 .map(note => ({
                     ...note,
-                    startBeat: note.startBeat - silenceBeats
+                    measureIndex: note.measureIndex - prerollMeasures
                 }))
-                .filter(note => note.startBeat >= -0.5); // silence 영역 노트 제외
+                .filter(note => note.measureIndex >= 0); // 녹음 시작 전 데이터 제외
 
             const groupedNotes = distributeNotesToMeasures(adjustedNotes, {
                 bpm: MOCK_SONG.bpm,
@@ -288,7 +301,6 @@ export default function FeedbackClientPage() {
             console.log('[Pitch Analysis] 결과:', {
                 totalNotes: notes.length,
                 adjustedNotes: adjustedNotes.length,
-                beatDuration: beatDuration.toFixed(3) + 's',
                 groupedMeasures: Object.keys(groupedNotes).map(Number).sort((a, b) => a - b)
             });
 

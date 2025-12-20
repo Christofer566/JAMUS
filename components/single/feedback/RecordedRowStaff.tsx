@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Renderer, Stave, StaveNote, Voice, Formatter, Barline } from 'vexflow';
+import { Renderer, Stave, StaveNote, Voice, Formatter, Barline, Accidental } from 'vexflow';
 import { NoteData } from '@/types/note';
 
 interface RecordedRowStaffProps {
@@ -13,6 +13,13 @@ interface RecordedRowStaffProps {
   // 높이
   height?: number;
 }
+
+// Confidence에 따른 색상 정의
+const CONFIDENCE_COLORS = {
+  high: '#FFFFFF',    // 흰색 - 확실한 음표 (70%+)
+  medium: '#FFD700',  // 노란색 - 애매한 음표 (50-70%)
+  default: '#7BA7FF'  // 기본 파란색
+};
 
 const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
   notesPerMeasure,
@@ -45,7 +52,7 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
       console.log(`[RecordedRowStaff] 마디 ${rowStartMeasure}~${rowStartMeasure + 3} 렌더링:`, {
         총음표수: totalNotes,
         마디별: Object.entries(notesInRow).map(([m, notes]) =>
-          `M${m}: ${notes.map(n => `${n.pitch}(${n.duration})`).join(', ')}`
+          `M${m}: ${notes.map(n => `${n.pitch}(${n.duration}, slot${n.slotIndex})`).join(', ')}`
         )
       });
     }
@@ -58,13 +65,9 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
       renderer.resize(actualWidth, height);
       const context = renderer.getContext();
 
-      // 파란색 (#7BA7FF)
-      context.setStrokeStyle('#7BA7FF');
-      context.setFillStyle('#7BA7FF');
-
       // 오선지 크기 및 위치 조정
-      const staveHeight = 50; // 더 크게
-      const staveY = -5; // 더 위로 (음수값으로 위쪽)
+      const staveHeight = 50;
+      const staveY = -5;
       const measureWidth = actualWidth / 4;
 
       // 4개 마디의 Stave 생성 및 연결
@@ -73,8 +76,9 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
       for (let i = 0; i < 4; i++) {
         const x = i * measureWidth;
         const stave = new Stave(x, staveY, measureWidth);
+        stave.setStyle({ strokeStyle: '#7BA7FF', fillStyle: '#7BA7FF' });
 
-        // 첫 마디에만 clef 없음, 마지막 마디에 끝 바라인
+        // 마지막 마디에 끝 바라인
         if (i === 3) {
           stave.setEndBarType(Barline.type.SINGLE);
         }
@@ -84,7 +88,7 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
         staves.push(stave);
       }
 
-      // 각 마디에 노트 렌더링 (startBeat 기반 위치 - playhead와 동일한 좌표계)
+      // 각 마디에 노트 렌더링 (slotIndex 기반 위치)
       for (let i = 0; i < 4; i++) {
         const measureNumber = rowStartMeasure + i;
         const notes = notesPerMeasure[measureNumber];
@@ -92,9 +96,9 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
         if (!notes || notes.length === 0) continue;
 
         const stave = staves[i];
-        const beatsPerMeasure = 4;
+        const slotsPerMeasure = 16;
 
-        // 각 음표를 개별적으로 startBeat 위치에 렌더링
+        // 각 음표를 개별적으로 slotIndex 위치에 렌더링
         notes.forEach(n => {
           if (n.isRest) return; // 쉼표는 건너뜀
 
@@ -111,11 +115,28 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
             clef: 'treble'
           });
 
-          // startBeat 기반 x 위치 계산 (playhead와 동일한 선형 좌표계)
-          // playhead: (measureInRow + measureProgress) * 25% = (i + beat/4) * 25%
-          // 따라서 음표도: (i + startBeat/4) / 4 * actualWidth
-          const beatRatio = (n.startBeat || 0) / beatsPerMeasure; // 0~1 (마디 내 위치)
-          const rowProgress = (i + beatRatio) / 4; // 0~1 (전체 row 내 위치)
+          // Accidental 추가
+          if (accidental === '#') {
+            staveNote.addModifier(new Accidental('#'));
+          } else if (accidental === 'b') {
+            staveNote.addModifier(new Accidental('b'));
+          }
+
+          // confidence에 따른 색상 적용
+          const noteColor = n.confidence === 'high'
+            ? CONFIDENCE_COLORS.high
+            : n.confidence === 'medium'
+              ? CONFIDENCE_COLORS.medium
+              : CONFIDENCE_COLORS.default;
+
+          staveNote.setStyle({
+            fillStyle: noteColor,
+            strokeStyle: noteColor
+          });
+
+          // slotIndex 기반 x 위치 계산 (16슬롯 = 1마디)
+          const slotRatio = n.slotIndex / slotsPerMeasure; // 0~1 (마디 내 위치)
+          const rowProgress = (i + slotRatio) / 4; // 0~1 (전체 row 내 위치)
           const noteX = rowProgress * actualWidth;
 
           // Voice 생성 및 렌더링

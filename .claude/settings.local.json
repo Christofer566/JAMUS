@@ -16,7 +16,9 @@
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npm search:*)",
+      "Bash(npm view:*)"
     ],
     "deny": [],
     "ask": []
