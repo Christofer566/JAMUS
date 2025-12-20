@@ -43,3 +43,9 @@ automation/.env
 
 # Security: Contains sensitive Google OAuth credentials
 scripts/get-google-token.js
+
+# Local settings
+.claude/settings.local.json
+
+# Backup files
+*.backup.ts
