@@ -94,8 +94,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (taskNumber !== null) {
         console.log(`Starting documentation for Task ${taskNumber} (Part 1)...`);
 
-        // 현재 주차 자동 계산 (11월 11일 = W01 시작 기준)
-        const getWeekString = (): string => {
+        // 커밋 메시지에서 Week 추출 (예: [W06] Task 2: ...)
+        // 날짜 기반 계산 대신 실제 커밋의 Week을 사용
+        const getWeekString = (messageText: string): string => {
+          // 메시지에서 [WXX] 패턴 추출
+          const weekMatch = messageText.match(/\[W(\d+)\]/);
+          if (weekMatch) {
+            return `W${weekMatch[1].padStart(2, '0')}`;
+          }
+          // 없으면 현재 날짜 기반으로 계산 (fallback)
           const now = new Date();
           const startDate = new Date('2025-11-03'); // W01 시작일 (월요일)
           const diffTime = now.getTime() - startDate.getTime();
@@ -103,8 +110,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const weekNum = Math.floor(diffDays / 7) + 1;
           return `W${weekNum.toString().padStart(2, '0')}`;
         };
-        const weekString = getWeekString();
-        console.log(`Current week: ${weekString}`);
+        const weekString = getWeekString(message.text);
+        console.log(`Extracted week from commit: ${weekString}`);
 
         try {
           const lockKey = `task-lock:${taskNumber}:${event.item.ts}`;
