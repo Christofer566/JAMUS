@@ -123,18 +123,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     const sampleRate = intro.sampleRate;
     const numberOfChannels = Math.max(intro.numberOfChannels, chorus.numberOfChannels, outro.numberOfChannels);
 
-    // 🧪 디버깅 로그
-    console.log('🎵 [combineBuffers] Buffer info:', {
-      intro: { length: intro.length, duration: intro.duration.toFixed(2) + 's' },
-      chorus: { length: chorus.length, duration: chorus.duration.toFixed(2) + 's' },
-      outro: { length: outro.length, duration: outro.duration.toFixed(2) + 's' },
-      totalLength,
-      chorusRepeat,
-      expectedTotal: intro.length + (chorus.length * chorusRepeat) + outro.length,
-      numberOfChannels,
-      sampleRate,
-    });
-
     // 새 버퍼 생성
     const combined = context.createBuffer(numberOfChannels, totalLength, sampleRate);
 
@@ -149,7 +137,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       const introData = channel < intro.numberOfChannels
         ? intro.getChannelData(channel)
         : intro.getChannelData(0);
-      console.log(`🎵 [combineBuffers] Ch${channel} - Intro: offset=${offset}, length=${introData.length}`);
       outputData.set(introData, offset);
       offset += intro.length;
 
@@ -158,7 +145,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         ? chorus.getChannelData(channel)
         : chorus.getChannelData(0);
       for (let i = 0; i < chorusRepeat; i++) {
-        console.log(`🎵 [combineBuffers] Ch${channel} - Chorus[${i}]: offset=${offset}, length=${chorusData.length}`);
         outputData.set(chorusData, offset);
         offset += chorus.length;
       }
@@ -167,11 +153,8 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       const outroData = channel < outro.numberOfChannels
         ? outro.getChannelData(channel)
         : outro.getChannelData(0);
-      console.log(`🎵 [combineBuffers] Ch${channel} - Outro: offset=${offset}, length=${outroData.length}`);
       outputData.set(outroData, offset);
       offset += outro.length;
-
-      console.log(`🎵 [combineBuffers] Ch${channel} - Final offset=${offset}, totalLength=${totalLength}`);
     }
 
     return combined;
@@ -182,26 +165,18 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
    * ref 기반으로 stale closure 문제 해결
    */
   const updateCurrentTime = useCallback(() => {
-    // 재생 중이 아니면 루프 중단
-    if (!isPlayingRef.current) {
-      console.log('🎵 [updateCurrentTime] 중단: isPlayingRef.current = false');
-      return;
-    }
+    if (!isPlayingRef.current) return;
 
     if (!audioContextRef.current) {
-      // context가 없으면 다음 프레임에서 재시도
-      console.log('🎵 [updateCurrentTime] context 없음, 재시도');
       animationFrameRef.current = requestAnimationFrame(updateCurrentTime);
       return;
     }
 
     const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
     const newTime = pauseOffsetRef.current + elapsed;
-
-    // duration을 넘지 않도록 제한 (ref 사용)
     const dur = durationRef.current;
+
     if (newTime >= dur && dur > 0) {
-      console.log('🎵 [updateCurrentTime] 곡 끝 도달:', { newTime, dur });
       setCurrentTime(dur);
       setIsPlaying(false);
       isPlayingRef.current = false;
@@ -210,16 +185,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     }
 
     setCurrentTime(newTime);
-    // 다음 프레임 예약
     animationFrameRef.current = requestAnimationFrame(updateCurrentTime);
-  }, []); // 의존성 없음 - ref 사용
+  }, []);
 
   /**
    * 오디오 파일 로드 및 합성
    */
   const loadAudio = useCallback(async (urls: AudioUrls): Promise<void> => {
-    console.log('🎵 [loadAudio] Starting audio load...', urls);
-
     setIsLoading(true);
     setIsReady(false);
     setCurrentTime(0);
@@ -231,7 +203,7 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     // 이전 재생 완전 정지 및 버퍼 초기화
     if (sourceNodeRef.current) {
       try {
-        sourceNodeRef.current.onended = null; // 콜백 제거
+        sourceNodeRef.current.onended = null;
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
       } catch {
@@ -239,124 +211,39 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       }
       sourceNodeRef.current = null;
     }
-
-    // 이전 버퍼 초기화 (중요: 새 곡 로드 전 기존 버퍼 제거)
     combinedBufferRef.current = null;
-    console.log('🎵 [loadAudio] 이전 버퍼 초기화 완료');
 
     try {
-      // Step 1: AudioContext 초기화
-      console.log('🎵 [loadAudio] Step 1: Getting AudioContext...');
       const context = getAudioContext();
-      console.log('🎵 [loadAudio] AudioContext state:', context.state, 'sampleRate:', context.sampleRate);
 
-      // AudioContext가 suspended 상태여도 진행 (파일 로드/디코딩은 가능)
-      // resume은 play() 시점에 처리
-      if (context.state === 'suspended') {
-        console.log('🎵 [loadAudio] AudioContext is suspended - will resume on play()');
-      }
-
-      // Step 2: 파일 fetch
-      console.log('🎵 [loadAudio] Step 2: Fetching audio files...');
-
-      let introResponse: Response, chorusResponse: Response, outroResponse: Response;
-      try {
-        [introResponse, chorusResponse, outroResponse] = await Promise.all([
-          fetch(urls.intro),
-          fetch(urls.chorus),
-          fetch(urls.outro),
-        ]);
-        console.log('🎵 [loadAudio] Fetch results:', {
-          intro: { ok: introResponse.ok, status: introResponse.status, size: introResponse.headers.get('content-length') },
-          chorus: { ok: chorusResponse.ok, status: chorusResponse.status, size: chorusResponse.headers.get('content-length') },
-          outro: { ok: outroResponse.ok, status: outroResponse.status, size: outroResponse.headers.get('content-length') },
-        });
-      } catch (fetchError) {
-        console.error('🔴 [loadAudio] Fetch failed:', fetchError);
-        throw fetchError;
-      }
+      const [introResponse, chorusResponse, outroResponse] = await Promise.all([
+        fetch(urls.intro),
+        fetch(urls.chorus),
+        fetch(urls.outro),
+      ]);
 
       if (!introResponse.ok || !chorusResponse.ok || !outroResponse.ok) {
-        const errorMsg = `Fetch failed: intro=${introResponse.status}, chorus=${chorusResponse.status}, outro=${outroResponse.status}`;
-        console.error('🔴 [loadAudio]', errorMsg);
-        throw new Error(errorMsg);
+        throw new Error(`Fetch failed: intro=${introResponse.status}, chorus=${chorusResponse.status}, outro=${outroResponse.status}`);
       }
 
-      // Step 3: ArrayBuffer 변환
-      console.log('🎵 [loadAudio] Step 3: Converting to ArrayBuffer...');
-      let introArrayBuffer: ArrayBuffer, chorusArrayBuffer: ArrayBuffer, outroArrayBuffer: ArrayBuffer;
-      try {
-        [introArrayBuffer, chorusArrayBuffer, outroArrayBuffer] = await Promise.all([
-          introResponse.arrayBuffer(),
-          chorusResponse.arrayBuffer(),
-          outroResponse.arrayBuffer(),
-        ]);
-        console.log('🎵 [loadAudio] ArrayBuffer sizes:', {
-          intro: (introArrayBuffer.byteLength / 1024).toFixed(1) + 'KB',
-          chorus: (chorusArrayBuffer.byteLength / 1024).toFixed(1) + 'KB',
-          outro: (outroArrayBuffer.byteLength / 1024).toFixed(1) + 'KB',
-        });
-      } catch (bufferError) {
-        console.error('🔴 [loadAudio] ArrayBuffer conversion failed:', bufferError);
-        throw bufferError;
-      }
+      const [introArrayBuffer, chorusArrayBuffer, outroArrayBuffer] = await Promise.all([
+        introResponse.arrayBuffer(),
+        chorusResponse.arrayBuffer(),
+        outroResponse.arrayBuffer(),
+      ]);
 
-      // Step 4: AudioBuffer 디코딩
-      console.log('🎵 [loadAudio] Step 4: Decoding audio data...');
-      let introBuffer: AudioBuffer, chorusBuffer: AudioBuffer, outroBuffer: AudioBuffer;
-      try {
-        [introBuffer, chorusBuffer, outroBuffer] = await Promise.all([
-          context.decodeAudioData(introArrayBuffer),
-          context.decodeAudioData(chorusArrayBuffer),
-          context.decodeAudioData(outroArrayBuffer),
-        ]);
-        console.log('🎵 [loadAudio] Decoded AudioBuffers:', {
-          intro: { duration: introBuffer.duration.toFixed(2) + 's', channels: introBuffer.numberOfChannels, sampleRate: introBuffer.sampleRate },
-          chorus: { duration: chorusBuffer.duration.toFixed(2) + 's', channels: chorusBuffer.numberOfChannels, sampleRate: chorusBuffer.sampleRate },
-          outro: { duration: outroBuffer.duration.toFixed(2) + 's', channels: outroBuffer.numberOfChannels, sampleRate: outroBuffer.sampleRate },
-        });
-      } catch (decodeError) {
-        console.error('🔴 [loadAudio] decodeAudioData failed:', decodeError);
-        throw decodeError;
-      }
+      const [introBuffer, chorusBuffer, outroBuffer] = await Promise.all([
+        context.decodeAudioData(introArrayBuffer),
+        context.decodeAudioData(chorusArrayBuffer),
+        context.decodeAudioData(outroArrayBuffer),
+      ]);
 
-      // Step 5: 버퍼 합성
-      console.log(`🎵 [loadAudio] Step 5: Combining buffers (intro + chorus×${chorusRepeat} + outro)...`);
-      let combined: AudioBuffer;
-      try {
-        combined = combineBuffers(context, introBuffer, chorusBuffer, outroBuffer);
-        console.log('🎵 [loadAudio] Combined buffer:', {
-          duration: combined.duration.toFixed(2) + 's',
-          channels: combined.numberOfChannels,
-          length: combined.length,
-          sampleRate: combined.sampleRate,
-        });
-      } catch (combineError) {
-        console.error('🔴 [loadAudio] Buffer combining failed:', combineError);
-        throw combineError;
-      }
-
+      const combined = combineBuffers(context, introBuffer, chorusBuffer, outroBuffer);
       combinedBufferRef.current = combined;
-
-      // duration 설정 (초 단위)
       setDuration(combined.duration);
       setIsReady(true);
-
-      console.log('✅ [loadAudio] Audio load complete!', {
-        intro: introBuffer.duration.toFixed(2) + 's',
-        chorus: chorusBuffer.duration.toFixed(2) + `s × ${chorusRepeat}`,
-        outro: outroBuffer.duration.toFixed(2) + 's',
-        total: combined.duration.toFixed(2) + 's',
-      });
     } catch (error) {
-      console.error('🔴 [loadAudio] Failed to load audio:', error);
-      if (error instanceof Error) {
-        console.error('🔴 [loadAudio] Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-        });
-      }
+      console.error('[loadAudio] Failed:', error);
       setIsReady(false);
     } finally {
       setIsLoading(false);
@@ -367,22 +254,15 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
    * 재생 시작 (async - AudioContext resume 대기, ref 기반)
    */
   const play = useCallback(async () => {
-    if (!combinedBufferRef.current || !audioContextRef.current) {
-      console.warn('🔴 [play] Audio not ready');
-      return;
-    }
+    if (!combinedBufferRef.current || !audioContextRef.current) return;
 
     const context = audioContextRef.current;
-    console.log('🎵 [play] Starting playback, AudioContext state:', context.state);
 
-    // AudioContext가 suspended 상태면 resume (사용자 인터랙션 필요)
     if (context.state === 'suspended') {
-      console.log('🎵 [play] Resuming suspended AudioContext...');
       try {
         await context.resume();
-        console.log('🎵 [play] AudioContext resumed, state:', context.state);
       } catch (error) {
-        console.error('🔴 [play] Failed to resume AudioContext:', error);
+        console.error('[play] Failed to resume AudioContext:', error);
         return;
       }
     }
@@ -390,7 +270,7 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     // 이전 sourceNode 정리
     if (sourceNodeRef.current) {
       try {
-        sourceNodeRef.current.onended = null; // 콜백 제거
+        sourceNodeRef.current.onended = null;
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
       } catch {
@@ -402,66 +282,48 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     // 새 sourceNode 생성
     const source = context.createBufferSource();
     source.buffer = combinedBufferRef.current;
-    // GainNode를 통해 연결 (볼륨 조절 가능)
     if (gainNodeRef.current) {
       source.connect(gainNodeRef.current);
     } else {
       source.connect(context.destination);
     }
 
-    // 재생 완료 시 처리 (ref 기반) - 반복 재생
+    // 재생 완료 시 반복 재생 처리
     source.onended = () => {
-      // ref로 현재 상태 확인 (클로저 문제 방지)
       if (isPlayingRef.current && sourceNodeRef.current === source) {
-        console.log('🎵 [play:onended] 재생 완료 → 반복 재생');
-
-        // 처음부터 다시 재생
         pauseOffsetRef.current = 0;
         setCurrentTime(0);
 
-        // 새 source 생성하여 반복 재생
         const ctx = audioContextRef.current;
         const buffer = combinedBufferRef.current;
         if (ctx && buffer) {
           const newSource = ctx.createBufferSource();
           newSource.buffer = buffer;
-          // GainNode를 통해 연결
           if (gainNodeRef.current) {
             newSource.connect(gainNodeRef.current);
           } else {
             newSource.connect(ctx.destination);
           }
-
-          // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
           newSource.onended = source.onended;
-
           startTimeRef.current = ctx.currentTime;
           newSource.start(0, 0);
           sourceNodeRef.current = newSource;
-          console.log('🎵 [play:onended] 반복 재생 시작');
         }
       }
     };
 
-    // 현재 위치에서 재생 시작
     startTimeRef.current = context.currentTime;
     source.start(0, pauseOffsetRef.current);
     sourceNodeRef.current = source;
-    console.log('🎵 [play] Playback started at offset:', pauseOffsetRef.current.toFixed(2) + 's');
-
-    // ref를 먼저 설정해야 updateCurrentTime에서 즉시 참조 가능
     isPlayingRef.current = true;
     setIsPlaying(true);
 
-    // 애니메이션 루프 직접 시작 - 인라인 함수로 정의
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
 
     const tick = () => {
-      if (!isPlayingRef.current) {
-        return;
-      }
+      if (!isPlayingRef.current) return;
 
       const ctx = audioContextRef.current;
       if (!ctx) {
@@ -486,31 +348,22 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     };
 
     animationFrameRef.current = requestAnimationFrame(tick);
-    console.log('🎵 [play] Animation loop started');
-  }, []); // 의존성 없음
+  }, []);
 
   /**
    * 일시정지 (더 안전하게)
    */
   const pause = useCallback(() => {
-    console.log('🎵 [pause] 호출됨, isPlaying:', isPlayingRef.current);
+    if (!audioContextRef.current) return;
 
-    if (!audioContextRef.current) {
-      console.log('🎵 [pause] AudioContext 없음');
-      return;
-    }
-
-    // 현재 위치 저장
     if (isPlayingRef.current) {
       const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
       pauseOffsetRef.current += elapsed;
-      console.log('🎵 [pause] 저장된 위치:', pauseOffsetRef.current.toFixed(2) + 's');
     }
 
-    // sourceNode 정지
     if (sourceNodeRef.current) {
       try {
-        sourceNodeRef.current.onended = null; // 콜백 제거
+        sourceNodeRef.current.onended = null;
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
       } catch {
@@ -521,7 +374,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
 
     setIsPlaying(false);
     isPlayingRef.current = false;
-    console.log('🎵 [pause] 완료');
   }, []);
 
   /**
@@ -531,17 +383,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     const dur = durationRef.current;
     const clampedTime = Math.max(0, Math.min(time, dur));
 
-    console.log('🎵 [seek]', { time, clampedTime, isPlaying: isPlayingRef.current });
-
     pauseOffsetRef.current = clampedTime;
     setCurrentTime(clampedTime);
 
-    // 재생 중이면 새 위치에서 재시작
     if (isPlayingRef.current && combinedBufferRef.current && audioContextRef.current) {
-      // 현재 재생 중지
       if (sourceNodeRef.current) {
         try {
-          sourceNodeRef.current.onended = null; // 콜백 제거 (중복 호출 방지)
+          sourceNodeRef.current.onended = null;
           sourceNodeRef.current.stop();
           sourceNodeRef.current.disconnect();
         } catch {
@@ -550,11 +398,9 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         sourceNodeRef.current = null;
       }
 
-      // 새 위치에서 재생
       const context = audioContextRef.current;
       const source = context.createBufferSource();
       source.buffer = combinedBufferRef.current;
-      // GainNode를 통해 연결 (볼륨 조절 가능)
       if (gainNodeRef.current) {
         source.connect(gainNodeRef.current);
       } else {
@@ -562,34 +408,24 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       }
 
       source.onended = () => {
-        // ref로 현재 상태 확인 (클로저 문제 방지) - 반복 재생
         if (isPlayingRef.current && sourceNodeRef.current === source) {
-          console.log('🎵 [seek:onended] 재생 완료 → 반복 재생');
-
-          // 처음부터 다시 재생
           pauseOffsetRef.current = 0;
           setCurrentTime(0);
 
-          // 새 source 생성하여 반복 재생
           const ctx = audioContextRef.current;
           const buffer = combinedBufferRef.current;
           if (ctx && buffer) {
             const newSource = ctx.createBufferSource();
             newSource.buffer = buffer;
-            // GainNode를 통해 연결
             if (gainNodeRef.current) {
               newSource.connect(gainNodeRef.current);
             } else {
               newSource.connect(ctx.destination);
             }
-
-            // 새 source에도 같은 onended 핸들러 연결 (재귀적 반복)
             newSource.onended = source.onended;
-
             startTimeRef.current = ctx.currentTime;
             newSource.start(0, 0);
             sourceNodeRef.current = newSource;
-            console.log('🎵 [seek:onended] 반복 재생 시작');
           }
         }
       };
@@ -598,17 +434,15 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
       source.start(0, clampedTime);
       sourceNodeRef.current = source;
     }
-  }, []); // 의존성 없음 - ref 사용
+  }, []);
 
   /**
    * 정지 + 처음으로 (더 안전하게)
    */
   const stop = useCallback(() => {
-    console.log('🎵 [stop] 호출됨');
-
     if (sourceNodeRef.current) {
       try {
-        sourceNodeRef.current.onended = null; // 콜백 제거
+        sourceNodeRef.current.onended = null;
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
       } catch {
@@ -621,7 +455,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     setCurrentTime(0);
     setIsPlaying(false);
     isPlayingRef.current = false;
-    console.log('🎵 [stop] 완료');
   }, []);
 
   /**
@@ -631,16 +464,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
     const clampedVolume = Math.max(0, Math.min(1, value));
     setVolumeState(clampedVolume);
 
-    // GainNode에 즉시 반영 (부드러운 전환)
     if (gainNodeRef.current && audioContextRef.current) {
       gainNodeRef.current.gain.setTargetAtTime(
         clampedVolume,
         audioContextRef.current.currentTime,
-        0.015 // 15ms 전환 시간
+        0.015
       );
     }
-
-    console.log('🎵 [setVolume]', clampedVolume);
   }, []);
 
   // currentTime 업데이트 effect
@@ -662,15 +492,11 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
   // 컴포넌트 언마운트 시 리소스 정리
   useEffect(() => {
     return () => {
-      console.log('🎵 [useWebAudio] Cleanup on unmount...');
-
-      // animationFrame 정리 (먼저)
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
 
-      // sourceNode 정리
       if (sourceNodeRef.current) {
         try {
           sourceNodeRef.current.onended = null;
@@ -682,7 +508,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         sourceNodeRef.current = null;
       }
 
-      // GainNode 정리
       if (gainNodeRef.current) {
         try {
           gainNodeRef.current.disconnect();
@@ -692,7 +517,6 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         gainNodeRef.current = null;
       }
 
-      // AudioContext 정리 (마지막)
       if (audioContextRef.current) {
         try {
           audioContextRef.current.close();
@@ -702,10 +526,7 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         audioContextRef.current = null;
       }
 
-      // 버퍼 초기화
       combinedBufferRef.current = null;
-
-      console.log('🎵 [useWebAudio] Cleanup complete');
     };
   }, []);
 
