@@ -12,8 +12,11 @@ import { usePitchAnalyzer } from '@/hooks/usePitchAnalyzer';
 import { convertToNotes } from '@/utils/pitchToNote';
 import { distributeNotesToMeasures } from '@/utils/distributeNotesToMeasures';
 import { useRecordingStore } from '@/stores/recordingStore';
+import { useFeedbackStore } from '@/stores/feedbackStore';
 import { NoteData } from '@/types/note';
 import { GRADE_COLORS, GRADE_EMOJIS } from '@/types/feedback';
+import EditToolPanel from '@/components/single/feedback/EditToolPanel';
+import { ChevronRight } from 'lucide-react';
 
 const TEST_AUDIO_URLS = {
     intro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3",
@@ -50,6 +53,8 @@ export default function FeedbackClientPage() {
     const [pressedKey, setPressedKey] = useState<string | null>(null);
     const [jamOnlyMode, setJamOnlyMode] = useState(false);
     const [myRecordingOnlyMode, setMyRecordingOnlyMode] = useState(false);
+    const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
+    const [isEditingNotes, setIsEditingNotes] = useState(false);
 
     // Pitch Analysis State
     const [recordedNotesByMeasure, setRecordedNotesByMeasure] = useState<Record<number, NoteData[]>>({});
@@ -57,6 +62,27 @@ export default function FeedbackClientPage() {
 
     // Zustand store에서 녹음 데이터 가져오기
     const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, clearRecording } = useRecordingStore();
+
+    // 편집 모드 스토어
+    const {
+        isEditMode,
+        showEditPanel,
+        selectedNoteIndices,
+        undoStack,
+        redoStack,
+        setEditMode,
+        toggleEditPanel,
+        updateNotePitch,
+        updateNotePosition,
+        updateSelectedNotesDuration,
+        deleteSelectedNotes,
+        clearSelection,
+        undo,
+        redo,
+        reset,
+        initializeNotes,
+        editedNotes
+    } = useFeedbackStore();
 
 
     // User recording playback
@@ -305,10 +331,19 @@ export default function FeedbackClientPage() {
             });
 
             setRecordedNotesByMeasure(groupedNotes);
+
+            // 편집 스토어 초기화 - 모든 음표를 flat array로 변환
+            const allNotes: NoteData[] = [];
+            Object.entries(groupedNotes).forEach(([measureNum, notes]) => {
+                notes.forEach(note => {
+                    allNotes.push(note);
+                });
+            });
+            initializeNotes(allNotes);
         };
 
         performAnalysis();
-    }, [storedAudioBlob, storedRecordingRange, analyzeAudio]);
+    }, [storedAudioBlob, storedRecordingRange, analyzeAudio, initializeNotes]);
 
     // Helper to create a WAV blob from an AudioBuffer (for mocking)
     function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -359,6 +394,70 @@ export default function FeedbackClientPage() {
         const handleKeyDown = async (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             setPressedKey(e.code);
+
+            // 편집 모드 키보드 단축키
+            if (isEditMode) {
+                console.log('[Keyboard] Edit mode key:', e.code);
+                switch (e.code) {
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        console.log('[Keyboard] Pitch up');
+                        updateNotePitch('up');
+                        return;
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        console.log('[Keyboard] Pitch down');
+                        updateNotePitch('down');
+                        return;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            console.log('[Keyboard] Duration decrease (Shift+Left)');
+                            updateSelectedNotesDuration('decrease');
+                        } else {
+                            console.log('[Keyboard] Move left');
+                            updateNotePosition('left');
+                        }
+                        return;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            console.log('[Keyboard] Duration increase (Shift+Right)');
+                            updateSelectedNotesDuration('increase');
+                        } else {
+                            console.log('[Keyboard] Move right');
+                            updateNotePosition('right');
+                        }
+                        return;
+                    case 'Delete':
+                    case 'Backspace':
+                        e.preventDefault();
+                        console.log('[Keyboard] Delete pressed');
+                        deleteSelectedNotes();
+                        return;
+                    case 'Escape':
+                        e.preventDefault();
+                        console.log('[Keyboard] Escape - clear selection');
+                        clearSelection();
+                        return;
+                    case 'KeyZ':
+                        if (e.ctrlKey || e.metaKey) {
+                            e.preventDefault();
+                            undo();
+                            return;
+                        }
+                        break;
+                    case 'KeyX':
+                        if (e.ctrlKey || e.metaKey) {
+                            e.preventDefault();
+                            redo();
+                            return;
+                        }
+                        break;
+                }
+            }
+
+            // 기본 재생 단축키
             switch (e.code) {
                 case 'Space':
                     e.preventDefault();
@@ -383,7 +482,7 @@ export default function FeedbackClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode]);
+    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo]);
     
     const [isUserAudioReady, setIsUserAudioReady] = useState(false);
     const audioCreatedRef = useRef(false);
@@ -426,6 +525,35 @@ export default function FeedbackClientPage() {
 
     const handleShare = () => console.log('공유하기 클릭');
     const handleReJam = () => router.push('/single');
+
+    // 편집 확정: editedNotes를 recordedNotesByMeasure에 반영
+    const handleConfirmEdit = useCallback(() => {
+        // editedNotes를 measure별로 그룹화 (쉼표 제외)
+        const newNotesByMeasure: Record<number, NoteData[]> = {};
+
+        editedNotes.forEach(note => {
+            // 쉼표(삭제된 음표)는 제외
+            if (note.isRest) return;
+
+            const measureIndex = note.measureIndex;
+            if (!newNotesByMeasure[measureIndex]) {
+                newNotesByMeasure[measureIndex] = [];
+            }
+            newNotesByMeasure[measureIndex].push(note);
+        });
+
+        console.log('[Edit Confirm] editedNotes:', editedNotes.length, 'non-rest notes:', Object.values(newNotesByMeasure).flat().length);
+        console.log('[Edit Confirm] newNotesByMeasure:', newNotesByMeasure);
+
+        // recordedNotesByMeasure 업데이트
+        setRecordedNotesByMeasure(newNotesByMeasure);
+
+        // 편집 모드 종료
+        setIsEditPanelOpen(false);
+        setEditMode(false);
+
+        showToast('success', '편집이 확정되었습니다');
+    }, [editedNotes, setEditMode, showToast]);
 
     // AI 로딩 화면
     if (isFeedbackLoading) {
@@ -487,7 +615,7 @@ export default function FeedbackClientPage() {
                     </div>
                 </div>
 
-                <div className="flex-1 mt-4 relative min-h-0">
+                <div className="flex-1 mt-3 relative min-h-0">
                     <div className="absolute -top-0 left-0 right-0 z-10 px-4 py-3 rounded-t-xl border border-b-0 border-gray-700 bg-[#0F172A]">
                         <div className="flex justify-between items-center text-white">
                             <div className="flex gap-6 text-sm font-mono text-gray-300">
@@ -509,24 +637,54 @@ export default function FeedbackClientPage() {
                             onMeasureClick={handleMeasureClick}
                             recordedMeasures={recordedMeasures}
                             recordedNotes={recordedNotesByMeasure}
+                            isEditMode={isEditMode}
                         />
                     </div>
                 </div>
 
                 {/* New Layout Sections */}
-                <div className="mt-4 flex flex-col gap-4">
-                    {/* 영역 2: 평가 - 새 카드 */}
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
-                        <p className="text-sm text-gray-400">Total Score</p>
-                        <div className="flex items-center justify-center gap-4 mt-2">
-                           <p className="text-6xl font-bold" style={{ color: gradeColor }}>{displayFeedback.score}</p>
-                           <div className="flex items-center">
-                               <span className="text-xl font-semibold" style={{ color: gradeColor }}>{displayFeedback.grade}</span>
-                               <span className="ml-2 text-xl">{GRADE_EMOJIS[displayFeedback.grade]}</span>
-                           </div>
+                <div className="mt-3 flex flex-col gap-3">
+                    {/* 영역 2: 평가 또는 편집 도구 */}
+                    {isEditMode ? (
+                        /* 편집 도구 패널 (인라인) */
+                        <EditToolPanel
+                            onClose={() => {
+                                setIsEditPanelOpen(false);
+                                setEditMode(false);
+                            }}
+                            onUndo={undo}
+                            onRedo={redo}
+                            onReset={reset}
+                            onConfirm={handleConfirmEdit}
+                            canUndo={undoStack.length > 0}
+                            canRedo={redoStack.length > 0}
+                        />
+                    ) : (
+                        /* 평가 카드 (컴팩트) */
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-5">
+                                <div className="text-center">
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">Score</p>
+                                    <p className="text-4xl font-bold" style={{ color: gradeColor }}>{displayFeedback.score}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl font-semibold" style={{ color: gradeColor }}>{displayFeedback.grade}</span>
+                                    <span className="text-xl">{GRADE_EMOJIS[displayFeedback.grade]}</span>
+                                </div>
+                                <p className="text-base text-gray-400 italic hidden sm:block">"{displayFeedback.comment}"</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsEditPanelOpen(true);
+                                    setEditMode(true);
+                                }}
+                                className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                            >
+                                <span className="text-sm">편집모드</span>
+                                <ChevronRight size={16} />
+                            </button>
                         </div>
-                        <p className="mt-4 text-gray-400">"{displayFeedback.comment}"</p>
-                    </div>
+                    )}
 
                     {/* 영역 3: 버튼 - 별도 영역 */}
                     <div className="flex gap-4">

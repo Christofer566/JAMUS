@@ -26,6 +26,7 @@ interface SingleScoreProps {
   onMeasureClick?: (globalMeasureIndex: number) => void;
   recordedMeasures?: number[];
   recordedNotes?: Record<number, NoteData[]>;
+  isEditMode?: boolean;
 }
 
 const SINGLE_COLOR = '#7BA7FF';
@@ -41,6 +42,7 @@ export default function SingleScore({
   onMeasureClick,
   recordedMeasures = [],
   recordedNotes = {},
+  isEditMode = false,
 }: SingleScoreProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const currentRowRef = useRef<HTMLDivElement>(null);
@@ -106,10 +108,10 @@ export default function SingleScore({
         <div
           key={localIndex}
           data-testid={`recorded-measure-${globalMeasureIndex}`}
-          className="relative flex flex-1 items-center justify-start hover:bg-white/5 transition-colors"
-          onClick={handleMeasureClick(globalMeasureIndex)}
+          className={`relative flex flex-1 items-center justify-start transition-colors ${!isEditMode ? 'hover:bg-white/5' : ''}`}
+          onClick={isEditMode ? undefined : handleMeasureClick(globalMeasureIndex)}
           style={{
-            cursor: 'pointer',
+            cursor: isEditMode ? 'default' : 'pointer',
             backgroundColor: isRecorded ? 'rgba(255, 123, 123, 0.15)' : 'transparent',
           }}
         >
@@ -175,11 +177,17 @@ export default function SingleScore({
 
                 {/* 녹음된 노트가 있는 줄에 오선지 표시 */}
                 {hasNotesInRow && (
-                  <RecordedRowStaff
-                    notesPerMeasure={recordedNotes}
-                    rowStartMeasure={rowStartMeasure}
-                    height={112}
-                  />
+                  <div
+                    className="absolute inset-0"
+                    style={{ zIndex: isEditMode ? 25 : 'auto' }}
+                  >
+                    <RecordedRowStaff
+                      notesPerMeasure={recordedNotes}
+                      rowStartMeasure={rowStartMeasure}
+                      height={112}
+                      isEditMode={isEditMode}
+                    />
+                  </div>
                 )}
 
                 {isCurrentRow && (
@@ -187,7 +195,10 @@ export default function SingleScore({
                     <div className="h-full w-1" style={{ backgroundColor: sectionColor, boxShadow: `0 0 10px ${sectionColor}, 0 0 20px ${sectionColor}99` }} />
                 </div>
                 )}
-                <div className="relative z-20 flex h-full w-full">
+                <div
+                  className="relative z-20 flex h-full w-full"
+                  style={{ pointerEvents: isEditMode ? 'none' : 'auto' }}
+                >
                 {rowMeasures.map((measure, measureIndex) => renderMeasure(measure, rowStartIndex + measureIndex, hasNotesInRow))}
                 <div className="absolute right-0 top-0 bottom-0 w-1" style={{ backgroundColor: `${sectionColor}40` }} />
                 </div>
