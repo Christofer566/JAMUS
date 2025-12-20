@@ -8,6 +8,11 @@ import SinglePlayerBar from '@/components/single/SinglePlayerBar';
 import { useWebAudio } from '@/hooks/useWebAudio';
 import { useToast } from '@/contexts/ToastContext';
 import { useFeedbackLoader } from '@/hooks/useFeedbackLoader';
+import { usePitchAnalyzer } from '@/hooks/usePitchAnalyzer';
+import { convertToNotes } from '@/utils/pitchToNote';
+import { distributeNotesToMeasures } from '@/utils/distributeNotesToMeasures';
+import { useRecordingStore } from '@/stores/recordingStore';
+import { NoteData } from '@/types/note';
 import { GRADE_COLORS, GRADE_EMOJIS } from '@/types/feedback';
 
 const TEST_AUDIO_URLS = {
@@ -44,6 +49,19 @@ export default function FeedbackClientPage() {
     const [currentTime, setCurrentTime] = useState(0);
     const [pressedKey, setPressedKey] = useState<string | null>(null);
     const [jamOnlyMode, setJamOnlyMode] = useState(false);
+    const [myRecordingOnlyMode, setMyRecordingOnlyMode] = useState(false);
+
+    // Pitch Analysis State
+    const [recordedNotesByMeasure, setRecordedNotesByMeasure] = useState<Record<number, NoteData[]>>({});
+    const { analyzeAudio, isAnalyzing: isAnalyzingPitch, error: pitchError } = usePitchAnalyzer();
+
+    // Zustand store에서 녹음 데이터 가져오기
+    const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, clearRecording } = useRecordingStore();
+
+
+    // User recording playback
+    const userAudioRef = useRef<HTMLAudioElement | null>(null);
+    const [userAudioUrl, setUserAudioUrl] = useState<string | null>(null);
 
     // AI 피드백 로더 (3.5초 로딩 후 Mock 데이터 표시)
     const { isLoading: isFeedbackLoading, feedback } = useFeedbackLoader();
@@ -118,55 +136,206 @@ export default function FeedbackClientPage() {
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
 
-    // feedback 데이터에서 녹음 구간 가져오기
-    const recordedRanges = useMemo(() => {
-        if (!feedback?.recordedSegments || feedback.recordedSegments.length === 0) return [];
-        return feedback.recordedSegments.map(seg => ({
-            start: seg.startTime,
-            end: seg.endTime
-        }));
-    }, [feedback]);
+    // 재생 중 녹음 범위 진입/이탈 감지
+    const isInRecordingRange = useMemo(() => {
+        if (!storedRecordingRange) return false;
+        return currentTime >= storedRecordingRange.startTime &&
+               currentTime < storedRecordingRange.endTime;
+    }, [currentTime, storedRecordingRange]);
 
-    // recordedMeasures 계산 (악보에 표시용)
+    // 녹음 범위 진입/이탈 시에만 재생/정지 (isInRecordingRange 변경 시)
+    const wasInRangeRef = useRef(false);
+
+    useEffect(() => {
+        const userAudio = userAudioRef.current;
+        if (!userAudio || !storedRecordingRange || !isPlaying) {
+            wasInRangeRef.current = false;
+            return;
+        }
+
+        const justEnteredRange = isInRecordingRange && !wasInRangeRef.current;
+        const justLeftRange = !isInRecordingRange && wasInRangeRef.current;
+
+        if (justEnteredRange) {
+            // 범위 진입 시 - 곡 시간 기준으로 재생
+            userAudio.currentTime = currentTime;
+            userAudio.play().catch(() => {});
+        } else if (justLeftRange) {
+            userAudio.pause();
+        }
+
+        wasInRangeRef.current = isInRecordingRange;
+    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange]);
+
+    // 실제 녹음 범위에서 구간 가져오기 (Zustand store 사용)
+    const recordedRanges = useMemo(() => {
+        if (!storedRecordingRange) return [];
+        return [{
+            start: storedRecordingRange.startTime,
+            end: storedRecordingRange.endTime
+        }];
+    }, [storedRecordingRange]);
+
+    // recordedMeasures 계산 (악보에 표시용) - 실제 녹음 범위 사용
     const recordedMeasures = useMemo(() => {
-        if (!feedback?.recordedSegments || feedback.recordedSegments.length === 0 || !measureDuration) return [];
+        if (!storedRecordingRange || !measureDuration) return [];
         const measures: number[] = [];
-        feedback.recordedSegments.forEach(seg => {
-            const startMeasure = Math.floor(seg.startTime / measureDuration) + 1;
-            const endMeasure = Math.ceil(seg.endTime / measureDuration);
-            for (let m = startMeasure; m <= endMeasure; m++) {
-                if (!measures.includes(m)) measures.push(m);
+        for (let m = storedRecordingRange.startMeasure; m <= storedRecordingRange.endMeasure; m++) {
+            measures.push(m);
+        }
+        return measures;
+    }, [storedRecordingRange, measureDuration]);
+
+    // 녹음 오디오 동기화 헬퍼 함수
+    const syncUserAudio = useCallback((songTime: number, shouldPlay: boolean) => {
+        const userAudio = userAudioRef.current;
+        if (!userAudio || !storedRecordingRange) return;
+
+        const isInRange = songTime >= storedRecordingRange.startTime &&
+                          songTime < storedRecordingRange.endTime;
+
+        if (isInRange) {
+            userAudio.currentTime = songTime;
+            if (shouldPlay && userAudio.paused) {
+                userAudio.play().catch(() => {});
             }
-        });
-        return measures.sort((a, b) => a - b);
-    }, [feedback, measureDuration]);
+        } else if (!userAudio.paused) {
+            userAudio.pause();
+        }
+    }, [storedRecordingRange]);
 
     const handlePlayPause = useCallback(async () => {
-        if (webAudio.isPlaying) {
+        const userAudio = userAudioRef.current;
+        if (isPlaying) {
             webAudio.pause();
+            userAudio?.pause();
             setIsPlaying(false);
         } else {
+            if (myRecordingOnlyMode) {
+                webAudio.setVolume(0);
+            } else {
+                webAudio.setVolume(1);
+            }
             await webAudio.play();
+
+            // 녹음 오디오 동기화
+            syncUserAudio(webAudio.currentTime, true);
             setIsPlaying(true);
         }
-    }, [webAudio]);
+    }, [webAudio, isPlaying, myRecordingOnlyMode, syncUserAudio]);
 
     const handleTimeChange = useCallback((newTime: number) => {
         let clampedTime = Math.max(0, Math.min(newTime, duration));
         webAudio.seek(clampedTime);
+        syncUserAudio(clampedTime, isPlaying);
         setCurrentTime(clampedTime);
-    }, [duration, webAudio]);
+    }, [duration, webAudio, syncUserAudio, isPlaying]);
 
     const handleSeekByMeasures = useCallback((offset: number) => {
-        const newTime = webAudio.currentTime + (offset * measureDuration);
+        const newTime = currentTime + (offset * measureDuration);
         handleTimeChange(newTime);
-    }, [webAudio, measureDuration, handleTimeChange]);
+    }, [currentTime, measureDuration, handleTimeChange]);
 
     const handleMeasureClick = useCallback((globalMeasureIndex: number) => {
         const targetTime = globalMeasureIndex * measureDuration;
         handleTimeChange(targetTime);
     }, [measureDuration, handleTimeChange]);
     
+    // ============================================
+    // Pitch Analysis & Note Grouping
+    // ============================================
+    // 녹음 데이터 분석 (ref로 중복 실행 방지)
+    const audioUrlCreatedRef = useRef(false);
+
+    useEffect(() => {
+        if (!storedAudioBlob || !storedRecordingRange) return;
+        if (audioUrlCreatedRef.current) return;
+
+        audioUrlCreatedRef.current = true;
+
+        // 녹음 재생용 URL 생성
+        const url = URL.createObjectURL(storedAudioBlob);
+        setUserAudioUrl(url);
+
+        // 비동기 분석
+        const performAnalysis = async () => {
+            const pitchFrames = await analyzeAudio(storedAudioBlob);
+            const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
+            const beatsPerMeasure = Number(MOCK_SONG.time_signature.split('/')[0]);
+            const beatDuration = 60 / MOCK_SONG.bpm;
+
+            // silence padding 오프셋 보정
+            // useRecorder에서 RECORDING_LATENCY_COMPENSATION = 0 사용
+            const RECORDING_LATENCY_COMPENSATION = 0;
+            const silenceDuration = Math.max(0, storedRecordingRange.startTime - RECORDING_LATENCY_COMPENSATION);
+            const silenceBeats = silenceDuration / beatDuration;
+
+            // startBeat을 녹음 시작 기준으로 조정 (silence 제외)
+            const adjustedNotes = notes
+                .map(note => ({
+                    ...note,
+                    startBeat: note.startBeat - silenceBeats
+                }))
+                .filter(note => note.startBeat >= -0.5); // silence 영역 노트 제외
+
+            const groupedNotes = distributeNotesToMeasures(adjustedNotes, {
+                bpm: MOCK_SONG.bpm,
+                beatsPerMeasure,
+                startMeasure: storedRecordingRange.startMeasure
+            });
+
+            // 디버그 로그
+            console.log('[Pitch Analysis] 결과:', {
+                totalNotes: notes.length,
+                adjustedNotes: adjustedNotes.length,
+                beatDuration: beatDuration.toFixed(3) + 's',
+                groupedMeasures: Object.keys(groupedNotes).map(Number).sort((a, b) => a - b)
+            });
+
+            setRecordedNotesByMeasure(groupedNotes);
+        };
+
+        performAnalysis();
+    }, [storedAudioBlob, storedRecordingRange, analyzeAudio]);
+
+    // Helper to create a WAV blob from an AudioBuffer (for mocking)
+    function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const format = 1;
+        const bitDepth = 16;
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = numChannels * bytesPerSample;
+        const dataLength = buffer.length * blockAlign;
+        const bufferLength = 44 + dataLength;
+        const arrayBuffer = new ArrayBuffer(bufferLength);
+        const view = new DataView(arrayBuffer);
+        const writeString = (offset: number, str: string) => {
+            for (let i = 0; i < str.length; i++) {
+                view.setUint8(offset + i, str.charCodeAt(i));
+            }
+        };
+        writeString(0, 'RIFF'); view.setUint32(4, bufferLength - 8, true); writeString(8, 'WAVE');
+        writeString(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * blockAlign, true); view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true); writeString(36, 'data'); view.setUint32(40, dataLength, true);
+        let offset = 44;
+        for (let i = 0; i < buffer.length; i++) {
+            for (let channel = 0; channel < numChannels; channel++) {
+                const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+                const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                view.setInt16(offset, intSample, true); offset += 2;
+            }
+        }
+        return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    const handleToggleMyRecordingOnly = useCallback((enabled: boolean) => {
+        setMyRecordingOnlyMode(enabled);
+        webAudio.setVolume(enabled ? 0 : 1);
+    }, [webAudio]);
+
     const handleToggleJamOnly = useCallback((enabled: boolean) => {
         setJamOnlyMode(enabled);
         if (enabled && webAudio.currentTime < introEndTime) {
@@ -185,9 +354,13 @@ export default function FeedbackClientPage() {
                     break;
                 case 'KeyZ': e.preventDefault(); handleSeekByMeasures(-1); break;
                 case 'KeyX': e.preventDefault(); handleSeekByMeasures(1); break;
-                case 'KeyF': // F키 - JAM만 듣기 토글
+                case 'KeyF':
                     e.preventDefault();
                     handleToggleJamOnly(!jamOnlyMode);
+                    break;
+                case 'KeyS':
+                    e.preventDefault();
+                    handleToggleMyRecordingOnly(!myRecordingOnlyMode);
                     break;
             }
         };
@@ -198,10 +371,39 @@ export default function FeedbackClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode]);
+    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode]);
+    
+    const [isUserAudioReady, setIsUserAudioReady] = useState(false);
+    const audioCreatedRef = useRef(false);
+
+    useEffect(() => {
+        if (!userAudioUrl) return;
+        if (audioCreatedRef.current) return;
+
+        audioCreatedRef.current = true;
+
+        const audio = new Audio(userAudioUrl);
+        audio.volume = 1.0;
+        audio.preload = 'auto';
+
+        audio.addEventListener('canplaythrough', () => {
+            setIsUserAudioReady(true);
+        });
+
+        audio.addEventListener('error', (e) => {
+            console.error('User audio error:', audio.error?.message);
+        });
+
+        audio.load();
+        userAudioRef.current = audio;
+    }, [userAudioUrl]);
 
     useEffect(() => {
         return () => {
+            // 컴포넌트 완전 언마운트 시에만 정리
+            if (userAudioRef.current) {
+                userAudioRef.current.pause();
+            }
             webAudioRef.current.stop();
         };
     }, []);
@@ -294,6 +496,7 @@ export default function FeedbackClientPage() {
                             onSelectionChange={handleSelectionChange}
                             onMeasureClick={handleMeasureClick}
                             recordedMeasures={recordedMeasures}
+                            recordedNotes={recordedNotesByMeasure}
                         />
                     </div>
                 </div>
@@ -330,8 +533,18 @@ export default function FeedbackClientPage() {
                         />
                         {/* Feed 스타일의 컨트롤러 영역 */}
                         <div className="flex items-center justify-between pt-4">
-                            {/* Left spacer for balance */}
-                            <div className="min-w-[120px]"></div>
+                            {/* 내 녹음만 듣기 Toggle - 좌측 정렬 */}
+                            <button
+                                type="button"
+                                onClick={() => handleToggleMyRecordingOnly(!myRecordingOnlyMode)}
+                                className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
+                                    myRecordingOnlyMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                }`}
+                                title="내 녹음만 듣기 (S)"
+                            >
+                                내 녹음만 듣기
+                                <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
+                            </button>
 
                             {/* 중앙: 재생 컨트롤 */}
                             <div className="flex items-center gap-3">

@@ -370,7 +370,7 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     // - 재생 시 녹음이 빠르게 들리면: 값을 줄임 (silence padding 증가)
                     // - 재생 시 녹음이 늦게 들리면: 값을 늘림 (silence padding 감소)
                     // 테스트: 메트로놈에 맞춰 손뼉 녹음 후, 재생 시 메트로놈과 비교
-                    const RECORDING_LATENCY_COMPENSATION = 0.20; // 초 단위
+                    const RECORDING_LATENCY_COMPENSATION = 0.12; // 녹음이 늦게 재생되어 보정
                     const adjustedStartTime = Math.max(0, startTime - RECORDING_LATENCY_COMPENSATION);
 
                     // 실제 녹음 시간과 예상 시간 비교 (디버깅용)

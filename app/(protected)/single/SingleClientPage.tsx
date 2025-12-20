@@ -13,6 +13,7 @@ import { useRecorder } from '@/hooks/useRecorder';
 import { useToast } from '@/contexts/ToastContext';
 import { uploadJamRecording } from '@/lib/jamStorage';
 import { getSharedAudioContext, resumeAudioContext } from '@/hooks/useAudioContext';
+import { useRecordingStore } from '@/stores/recordingStore';
 
 const TEST_AUDIO_URLS = {
     intro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3",
@@ -163,6 +164,17 @@ export default function SingleClientPage() {
     }, [isJamming, showToast]);
 
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
+
+    // 컴포넌트 마운트 시 이전 녹음 데이터 초기화 (Feedback 페이지에서 돌아올 때)
+    useEffect(() => {
+        // 이전 녹음이 있으면 초기화
+        if (recorder.segments.length > 0 || recorder.state !== 'idle') {
+            console.log('🎤 [Single Mount] 이전 녹음 데이터 초기화');
+            recorder.resetRecording();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // 마운트 시 1회만 실행
+
     // webAudio.currentTime이 변경될 때마다 항상 반영 (재생 중이든 아니든)
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
 
@@ -433,15 +445,25 @@ export default function SingleClientPage() {
         }
     }, [metronome, currentTime]);
 
-    // 종료(Feedback) 버튼 - 저장 없이 바로 Feedback 페이지로 이동
+    // Zustand store에서 setRecording 가져오기
+    const setRecording = useRecordingStore((state) => state.setRecording);
+
+    // 종료(Feedback) 버튼 - store에 녹음 저장 후 Feedback 페이지로 이동
     const handleFinish = useCallback(() => {
         if (recorder.state !== 'recorded' || recorder.segments.length === 0) {
             showToast('warning', '녹음이 없습니다');
             return;
         }
-        // 바로 Feedback 페이지로 이동
+
+        // 녹음 데이터를 store에 저장
+        const firstSegment = recorder.segments[0];
+        if (firstSegment && recorder.recordingRange) {
+            setRecording(firstSegment.blob, recorder.recordingRange);
+        }
+
+        // Feedback 페이지로 이동
         router.push('/single/feedback');
-    }, [recorder, showToast, router]);
+    }, [recorder, showToast, router, setRecording]);
 
     // ==========================================
     // START JAM (R키) 플로우 - AudioContext 기반 카운트다운
@@ -554,13 +576,18 @@ export default function SingleClientPage() {
                 setIsCountingDown(false);
                 setIsJamming(true);
 
-                // 녹음 시작 (마디 경계에서)
+                // 녹음 시작: 의도한 마디(recordStartMeasure)와 시간(recordStartTime) 사용
+                // actualAudioTime은 참고용 로그만 (마디 계산에 사용하면 Intro 등 잘못된 마디가 기록됨)
+                const actualAudioTime = webAudioRef.current.currentTime;
+
                 recorder.startRecording(recordStartTime, recordStartMeasure);
                 showToast('info', '녹음이 시작되었습니다');
 
                 console.log('🎤 [START JAM] 녹음 시작:', {
-                    recordStartTime,
-                    recordStartMeasure
+                    녹음시작시간: recordStartTime.toFixed(3),
+                    녹음시작마디: recordStartMeasure,
+                    실제오디오시간: actualAudioTime.toFixed(3),
+                    차이: (actualAudioTime - recordStartTime).toFixed(3) + 's'
                 });
                 return;
             }
@@ -739,12 +766,19 @@ export default function SingleClientPage() {
         setIsPlaying(true);
     }, [webAudio, metronome]);
 
-    // 모달: "아니요(저장)" 버튼 - 저장 없이 바로 Feedback 페이지로 이동
+    // 모달: "아니요(저장)" 버튼 - store에 녹음 저장 후 Feedback 페이지로 이동
     const handleModalSave = useCallback(() => {
         setShowCompleteModal(false);
-        // 바로 Feedback 페이지로 이동
+
+        // 녹음 데이터를 store에 저장
+        const firstSegment = recorder.segments[0];
+        if (firstSegment && recorder.recordingRange) {
+            setRecording(firstSegment.blob, recorder.recordingRange);
+        }
+
+        // Feedback 페이지로 이동
         router.push('/single/feedback');
-    }, [router]);
+    }, [router, recorder, setRecording]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden">
