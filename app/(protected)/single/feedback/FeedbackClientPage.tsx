@@ -295,20 +295,28 @@ export default function FeedbackClientPage() {
             // measureIndex는 오디오 블롭 시작 기준 (0부터)
             const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
 
-            // 오디오 블롭은 녹음 시작 2마디 전부터 시작됨 (START JAM 로직)
-            // 따라서 prerollMeasures = 2 (오디오 시작 → 녹음 시작까지의 마디 수)
-            const LEAD_IN_MEASURES = 2;
-            const prerollMeasures = LEAD_IN_MEASURES;
+            // 오디오 블롭은 addSilencePadding으로 startTime만큼 무음이 앞에 추가됨
+            // 따라서 Grid 시간 = 곡 시간 (무음 패딩으로 정렬됨)
+            // prerollMeasures = startTime을 마디로 변환한 값
+            const prerollMeasures = Math.floor(storedRecordingRange.startTime / measureDurationSec);
 
-            // 디버그용: 오디오 시작 마디 = 녹음 시작 마디 - 2
-            const audioStartMeasure = storedRecordingRange.startMeasure - LEAD_IN_MEASURES;
+            // 디버그: 원본 음표들의 measureIndex 분포 확인
+            const originalMeasureIndices = notes
+                .filter(n => !n.isRest)
+                .map(n => n.measureIndex);
+            const uniqueOriginalMeasures = [...new Set(originalMeasureIndices)].sort((a, b) => a - b);
 
-            console.log('[Pitch Analysis] 오프셋 계산:', {
-                startTime: storedRecordingRange.startTime,
-                measureDuration: measureDurationSec,
-                audioStartMeasure,
+            console.log('[Pitch Analysis] 상세 오프셋 계산:', {
+                bpm: MOCK_SONG.bpm,
+                measureDurationSec: measureDurationSec.toFixed(3),
+                startTime: storedRecordingRange.startTime.toFixed(3),
+                startMeasure: storedRecordingRange.startMeasure,
                 prerollMeasures,
-                startMeasure: storedRecordingRange.startMeasure
+                expectedFirstMeasure: prerollMeasures,
+                originalMeasureRange: uniqueOriginalMeasures.length > 0
+                    ? `${uniqueOriginalMeasures[0]} ~ ${uniqueOriginalMeasures[uniqueOriginalMeasures.length - 1]}`
+                    : 'none',
+                calculation: `originalMeasure - ${prerollMeasures} + ${storedRecordingRange.startMeasure} = finalMeasure`
             });
 
             // measureIndex에서 prerollMeasures를 빼서 보정
@@ -328,12 +336,33 @@ export default function FeedbackClientPage() {
                 startMeasure: storedRecordingRange.startMeasure
             });
 
-            // 디버그 로그
-            console.log('[Pitch Analysis] 결과:', {
-                totalNotes: notes.length,
+            // 디버그 로그: 변환 결과
+            const adjustedMeasureIndices = adjustedNotes.map(n => n.measureIndex);
+            const uniqueAdjustedMeasures = [...new Set(adjustedMeasureIndices)].sort((a, b) => a - b);
+            const finalMeasures = Object.keys(groupedNotes).map(Number).sort((a, b) => a - b);
+
+            console.log('[Pitch Analysis] 변환 결과:', {
+                totalNotes: notes.filter(n => !n.isRest).length,
                 adjustedNotes: adjustedNotes.length,
-                groupedMeasures: Object.keys(groupedNotes).map(Number).sort((a, b) => a - b)
+                adjustedMeasureRange: uniqueAdjustedMeasures.length > 0
+                    ? `${uniqueAdjustedMeasures[0]} ~ ${uniqueAdjustedMeasures[uniqueAdjustedMeasures.length - 1]}`
+                    : 'none',
+                finalMeasureRange: finalMeasures.length > 0
+                    ? `${finalMeasures[0]} ~ ${finalMeasures[finalMeasures.length - 1]}`
+                    : 'none',
+                finalMeasures
             });
+
+            // 첫 3개 음표의 상세 변환 과정
+            if (notes.filter(n => !n.isRest).length > 0) {
+                const firstThreeNotes = notes.filter(n => !n.isRest).slice(0, 3);
+                console.log('[Pitch Analysis] 첫 3개 음표 변환 과정:');
+                firstThreeNotes.forEach((note, i) => {
+                    const adjusted = note.measureIndex - prerollMeasures;
+                    const final = adjusted + storedRecordingRange.startMeasure;
+                    console.log(`  [${i}] ${note.pitch}: original=${note.measureIndex} - preroll=${prerollMeasures} = adjusted=${adjusted} + startMeasure=${storedRecordingRange.startMeasure} = final=${final}`);
+                });
+            }
 
             setRecordedNotesByMeasure(groupedNotes);
 
