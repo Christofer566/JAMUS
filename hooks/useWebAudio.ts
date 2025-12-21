@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { getSharedAudioContext, resumeAudioContext } from '@/utils/sharedAudioContext';
 
 // AudioUrls 타입 정의
 export interface AudioUrls {
@@ -28,16 +29,6 @@ export interface UseWebAudioReturn {
   seek: (time: number) => void;
   stop: () => void;
   setVolume: (value: number) => void;
-}
-
-// Safari 호환 AudioContext 타입
-type AudioContextType = AudioContext | typeof window.webkitAudioContext;
-
-// window 타입 확장 (Safari용)
-declare global {
-  interface Window {
-    webkitAudioContext: typeof AudioContext;
-  }
 }
 
 /**
@@ -78,14 +69,13 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
   }, [duration]);
 
   /**
-   * AudioContext 초기화 (Safari 폴백 포함)
+   * 공유 AudioContext 획득 (싱글톤)
    */
   const getAudioContext = useCallback((): AudioContext => {
     if (!audioContextRef.current) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
+      audioContextRef.current = getSharedAudioContext();
 
-      // GainNode 생성 (볼륨 조절용)
+      // GainNode 생성 (볼륨 조절용) - 이 훅 전용
       gainNodeRef.current = audioContextRef.current.createGain();
       gainNodeRef.current.connect(audioContextRef.current.destination);
       gainNodeRef.current.gain.value = volume;
@@ -517,14 +507,8 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         gainNodeRef.current = null;
       }
 
-      if (audioContextRef.current) {
-        try {
-          audioContextRef.current.close();
-        } catch {
-          // 이미 닫힘
-        }
-        audioContextRef.current = null;
-      }
+      // 공유 AudioContext는 닫지 않음 - ref만 초기화
+      audioContextRef.current = null;
 
       combinedBufferRef.current = null;
     };

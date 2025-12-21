@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { PitchFrame } from '@/types/pitch';
+import { getSharedAudioContext } from '@/utils/sharedAudioContext';
 
 interface UsePitchAnalyzerReturn {
   isAnalyzing: boolean;
@@ -26,8 +27,8 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
     const startTime = performance.now();
 
     try {
-      // 1. AudioContext 생성 및 오디오 디코딩
-      const audioContext = new AudioContext();
+      // 1. 공유 AudioContext 사용 및 오디오 디코딩
+      const audioContext = getSharedAudioContext();
       const arrayBuffer = await blob.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
@@ -65,6 +66,15 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
       let minFreq = Infinity;
       let maxFreq = 0;
 
+      // 디버깅: 앞부분 0~5초 구간 상세 로그
+      const debugFrames: Array<{
+        time: number;
+        rms: number;
+        freq: number;
+        conf: number;
+        reason: string;
+      }> = [];
+
       for (let i = 0; i + frameSize < channelData.length; i += hopSize) {
         const frame = channelData.slice(i, i + frameSize);
         const time = i / sampleRate;
@@ -76,9 +86,15 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         }
         rms = Math.sqrt(rms / frame.length);
 
+        // 디버깅: 0~5초 구간 데이터 수집
+        const isDebugRange = time < 5;
+
         if (rms < 0.005) { // 적절한 민감도
           frames.push({ time, frequency: 0, confidence: 0 });
           rmsFilteredCount++;
+          if (isDebugRange) {
+            debugFrames.push({ time, rms, freq: 0, conf: 0, reason: 'RMS < 0.005 (무음)' });
+          }
           continue;
         }
 
@@ -96,10 +112,48 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
           freqSum += result.frequency;
           minFreq = Math.min(minFreq, result.frequency);
           maxFreq = Math.max(maxFreq, result.frequency);
+
+          if (isDebugRange) {
+            debugFrames.push({ time, rms, freq: result.frequency, conf: result.confidence, reason: '유효' });
+          }
         } else {
           frames.push({ time, frequency: 0, confidence: 0 });
+          if (isDebugRange) {
+            let reason = '';
+            if (result.frequency <= 80) reason = `주파수 너무 낮음 (${result.frequency.toFixed(0)}Hz < 80)`;
+            else if (result.frequency >= 2000) reason = `주파수 너무 높음 (${result.frequency.toFixed(0)}Hz > 2000)`;
+            else if (result.confidence <= 0.2) reason = `신뢰도 낮음 (${result.confidence.toFixed(2)} < 0.2)`;
+            else reason = `알 수 없음 (freq=${result.frequency.toFixed(0)}, conf=${result.confidence.toFixed(2)})`;
+            debugFrames.push({ time, rms, freq: result.frequency, conf: result.confidence, reason });
+          }
         }
       }
+
+      // 디버깅: 0~5초 구간 로그 출력
+      console.log('[MacLeod] 🔍 앞부분 0~5초 디버깅 (총 ' + debugFrames.length + '개 프레임):');
+      // 0.5초 간격으로 샘플링하여 출력
+      const sampleInterval = 0.5;
+      let lastSampleTime = -sampleInterval;
+      debugFrames.forEach((d, idx) => {
+        if (d.time >= lastSampleTime + sampleInterval) {
+          console.log(`  [${d.time.toFixed(2)}s] RMS=${d.rms.toFixed(4)}, freq=${d.freq.toFixed(0)}Hz, conf=${d.conf.toFixed(2)} → ${d.reason}`);
+          lastSampleTime = d.time;
+        }
+      });
+
+      // 앞부분 통계
+      const first5secFrames = debugFrames;
+      const first5secValid = first5secFrames.filter(d => d.reason === '유효').length;
+      const first5secRmsFiltered = first5secFrames.filter(d => d.reason.includes('무음')).length;
+      const first5secLowFreq = first5secFrames.filter(d => d.reason.includes('너무 낮음')).length;
+      const first5secLowConf = first5secFrames.filter(d => d.reason.includes('신뢰도')).length;
+      console.log('[MacLeod] 🔍 앞부분 0~5초 통계:', {
+        총프레임: first5secFrames.length,
+        유효: first5secValid,
+        RMS무음: first5secRmsFiltered,
+        주파수낮음: first5secLowFreq,
+        신뢰도낮음: first5secLowConf
+      });
 
       const avgFreq = validFreqCount > 0 ? freqSum / validFreqCount : 0;
       const passRatio = frames.length > 0
@@ -119,34 +173,22 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         소요시간: `${elapsedTime.toFixed(0)}ms`
       });
 
-      // MediaRecorder 지연 보정 (prerollDuration > 0일 때만)
-      // prerollDuration이 0이면 이미 트리밍된 상태이므로 보정 불필요
-      // 사용자가 늦게 시작한 것은 "쉼표"로 표시되어야 함
-      if (prerollDuration > 0) {
-        // 첫 유효 프레임 찾기 (MediaRecorder 지연 보정용)
-        const firstValidFrameIdx = frames.findIndex(f => f.frequency > 0 && f.confidence > 0.2);
-        const firstValidFrame = firstValidFrameIdx >= 0 ? frames[firstValidFrameIdx] : null;
-        const mediaRecorderDelay = firstValidFrame?.time || 0;
+      // ========================================
+      // 지연 보정 로직 제거됨 (2024.12)
+      // ========================================
+      // 이전: "첫 소리 감지" 기준으로 시간 이동 (RMS 기반)
+      // 문제: 같은 타이밍으로 녹음해도 결과가 다름, 의도적인 쉼표가 사라짐
+      //
+      // 현재: useRecorder.ts에서 카운트다운 시간만큼 정확히 트리밍
+      // 결과:
+      // - blob 0초 = 녹음 시작 마디의 0박
+      // - 사용자가 늦게 시작하면 → 앞부분이 쉼표로 표시됨
+      // - 반박자 쉬고 들어가면 → 반박자 쉼표 + 음표 (일관된 결과)
+      //
+      // prerollDuration 파라미터는 더 이상 사용되지 않음 (하위 호환성 유지)
+      console.log('[MacLeod] 지연 보정 없음 (카운트다운 기준 트리밍 완료)');
 
-        console.log('[MacLeod] MediaRecorder 지연 감지:', {
-          첫유효프레임인덱스: firstValidFrameIdx,
-          지연시간: mediaRecorderDelay.toFixed(3) + 's',
-          주파수: firstValidFrame?.frequency.toFixed(0) + 'Hz'
-        });
-
-        // MediaRecorder 지연 보정: 모든 프레임 시간에서 지연 시간 빼기
-        // 이렇게 하면 첫 유효 프레임이 time=0이 됨
-        if (mediaRecorderDelay > 0.1) { // 100ms 이상 지연 시 보정
-          console.log(`[MacLeod] 지연 보정 적용: 모든 프레임 시간에서 ${mediaRecorderDelay.toFixed(3)}s 빼기`);
-          frames.forEach(f => {
-            f.time = Math.max(0, f.time - mediaRecorderDelay);
-          });
-        }
-      } else {
-        console.log('[MacLeod] preroll=0이므로 지연 보정 생략 (트리밍 완료된 상태)');
-      }
-
-      await audioContext.close();
+      // 공유 AudioContext는 닫지 않음
       return frames;
 
     } catch (err) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { getSharedAudioContext, resumeAudioContext } from './useAudioContext';
+import { getSharedAudioContext, resumeAudioContext } from '@/utils/sharedAudioContext';
 
 export interface UseMetronomeOptions {
     bpm: number;

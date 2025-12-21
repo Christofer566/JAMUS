@@ -22,8 +22,7 @@ export function distributeNotesToMeasures(
   const result: Record<number, NoteData[]> = {};
 
   for (const note of notes) {
-    // 쉼표는 제외
-    if (note.isRest) continue;
+    // 쉼표도 포함 (처음부터 쉼표 표시)
 
     // measureIndex (상대값 0부터) + startMeasure = 실제 마디 번호
     const measureNumber = note.measureIndex + startMeasure;

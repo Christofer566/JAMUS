@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { getSharedAudioContext } from '@/utils/sharedAudioContext';
 
 // ============================================
 // Types
@@ -76,7 +77,7 @@ async function addSilencePadding(
     audioBlob: Blob,
     silenceDuration: number
 ): Promise<Blob> {
-    const audioContext = new AudioContext();
+    const audioContext = getSharedAudioContext();
 
     try {
         const arrayBuffer = await audioBlob.arrayBuffer();
@@ -118,7 +119,7 @@ async function addSilencePadding(
 
         return wavBlob;
     } finally {
-        await audioContext.close();
+        // 공유 AudioContext는 닫지 않음
     }
 }
 
@@ -201,6 +202,8 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const mediaRecorderStartRef = useRef<number>(0); // MediaRecorder.start() 호출 시점
     const prerollDurationRef = useRef<number>(0); // preroll 시간 (초)
     const actualRecordingDurationRef = useRef<number>(0); // 실제 녹음 시간 (초, wall-clock)
+    const firstChunkTimeRef = useRef<number>(0); // 첫 번째 chunk 도착 시점
+    const chunkCountRef = useRef<number>(0); // chunk 카운트
 
     // Web Audio API 기반 재생 (정확한 타이밍 동기화)
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -246,10 +249,8 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             });
             sourceNodesRef.current.clear();
             audioBuffersRef.current.clear();
-            if (audioContextRef.current) {
-                audioContextRef.current.close();
-                audioContextRef.current = null;
-            }
+            // 공유 AudioContext는 닫지 않음 - ref만 초기화
+            audioContextRef.current = null;
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
@@ -330,8 +331,30 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             const mediaRecorder = new MediaRecorder(streamRef.current!, { mimeType });
             mediaRecorderRef.current = mediaRecorder;
 
+            // chunk 카운터 초기화
+            chunkCountRef.current = 0;
+            firstChunkTimeRef.current = 0;
+
             mediaRecorder.ondataavailable = (event) => {
+                const now = performance.now();
+                chunkCountRef.current++;
+
                 if (event.data.size > 0) {
+                    // 첫 번째 유효 chunk 시점 기록
+                    if (firstChunkTimeRef.current === 0) {
+                        firstChunkTimeRef.current = now;
+                        console.log('🎤 [Chunk] 첫 번째 chunk 도착:', {
+                            시점: now.toFixed(0) + 'ms',
+                            MediaRecorder시작후: ((now - mediaRecorderStartRef.current) / 1000).toFixed(3) + 's',
+                            size: event.data.size
+                        });
+                    }
+
+                    // 처음 5개 chunk만 로깅
+                    if (chunkCountRef.current <= 5) {
+                        console.log(`🎤 [Chunk ${chunkCountRef.current}] size=${event.data.size}, elapsed=${((now - mediaRecorderStartRef.current) / 1000).toFixed(2)}s`);
+                    }
+
                     chunksRef.current.push(event.data);
                 }
             };
@@ -344,7 +367,10 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             setState('recording');
             setError(null);
 
-            console.log('🎤 [Preroll] MediaRecorder started (warming up), timestamp:', mediaRecorderStartRef.current);
+            console.log('🎤 [Preroll] MediaRecorder.start() 호출:', {
+                timestamp: mediaRecorderStartRef.current.toFixed(0) + 'ms',
+                timeslice: '100ms'
+            });
             return true;
         } catch (err) {
             console.error('Prepare recording error:', err);
@@ -371,11 +397,18 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             recordingActualStartRef.current = now;
             pendingRangeRef.current = { startTime, startMeasure };
 
-            console.log('🎤 [Actual Start] Recording marked at:', {
-                targetTime: startTime,
-                measure: startMeasure,
-                prerollDuration: prerollDurationRef.current.toFixed(3) + 's',
-                hint: 'preroll 부분은 나중에 트리밍됨'
+            // 첫 chunk 도착 시점과 비교
+            const firstChunkDelay = firstChunkTimeRef.current > 0
+                ? ((firstChunkTimeRef.current - mediaRecorderStartRef.current) / 1000).toFixed(3) + 's'
+                : '아직 없음';
+            const chunksReceived = chunkCountRef.current;
+
+            console.log('🎤 [Actual Start] ⚠️ 타이밍 분석:', {
+                prepareRecording호출후: prerollDurationRef.current.toFixed(3) + 's',
+                첫ChunkDelay: firstChunkDelay,
+                받은Chunks: chunksReceived,
+                targetMeasure: startMeasure,
+                경고: chunksReceived < 10 ? '⚠️ chunk가 적음 - MediaRecorder 지연 가능성' : 'OK'
             });
             return true;
         }
@@ -554,8 +587,7 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                         try {
                             // AudioContext 생성 (없으면)
                             if (!audioContextRef.current) {
-                                const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-                                audioContextRef.current = new AudioContextClass();
+                                audioContextRef.current = getSharedAudioContext();
                                 gainNodeRef.current = audioContextRef.current.createGain();
                                 gainNodeRef.current.connect(audioContextRef.current.destination);
                             }
@@ -568,14 +600,63 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                             const blobDuration = audioBuffer.duration;
                             const actualRecordingDuration = actualRecordingDurationRef.current;
 
-                            // preroll = blob에서 실제 녹음 전 부분
-                            const prerollToTrim = Math.max(0, blobDuration - actualRecordingDuration);
+                            // ========================================
+                            // 트리밍 기준: 카운트다운 시간 (prepareRecording → startRecording)
+                            // ========================================
+                            // 이전 방식: blobDuration - actualRecordingDuration + 0.2s (불안정, RMS 의존)
+                            // 새 방식: prerollDurationRef.current 직접 사용 (카운트다운 시간)
+                            //
+                            // 결과:
+                            // - 트리밍 후 blob 0초 = 녹음 시작 마디의 0박
+                            // - 사용자가 늦게 시작하면 → 앞부분이 쉼표로 표시됨
+                            // - 의도적인 쉼표가 보존됨 (일관된 결과)
+                            const prerollToTrim = prerollDurationRef.current;
 
-                            console.log('🎤 AudioBuffer 트리밍:', {
-                                blobDuration: blobDuration.toFixed(2) + 's',
-                                actualRecordingDuration: actualRecordingDuration.toFixed(2) + 's',
-                                prerollToTrim: prerollToTrim.toFixed(3) + 's'
-                            });
+                            // 디버깅용: 이전 방식과 비교
+                            const oldBasePreroll = Math.max(0, blobDuration - actualRecordingDuration);
+                            const oldPrerollToTrim = oldBasePreroll + 0.2;
+
+                            // 첫 chunk delay 정보 추가
+                    const firstChunkDelay = firstChunkTimeRef.current > 0
+                        ? (firstChunkTimeRef.current - mediaRecorderStartRef.current) / 1000
+                        : 0;
+
+                    console.log('🎤 [TIMING DEBUG] 트리밍 분석:', {
+                        'blob_duration': blobDuration.toFixed(2) + 's',
+                        'actual_recording_duration': actualRecordingDuration.toFixed(2) + 's',
+                        '카운트다운_시간(새방식)': prerollToTrim.toFixed(3) + 's',
+                        '계산값(이전방식)': oldPrerollToTrim.toFixed(3) + 's',
+                        '차이': (prerollToTrim - oldPrerollToTrim).toFixed(3) + 's',
+                        '첫_chunk_delay': firstChunkDelay.toFixed(3) + 's'
+                    });
+
+                    // 문제 진단
+                    if (firstChunkDelay > 0.5) {
+                        console.warn('🎤 ⚠️ 첫 chunk delay가 500ms 이상! MediaRecorder 초기화 지연');
+                    }
+                    if (blobDuration > actualRecordingDuration + 1) {
+                        console.warn('🎤 ⚠️ blob이 예상보다 ' + (blobDuration - actualRecordingDuration).toFixed(2) + 's 김 - 추가 무음 포함 가능');
+                    }
+
+                    // 오디오 버퍼 앞부분 RMS 분석 (무음 구간 찾기)
+                    const channelData = audioBuffer.getChannelData(0);
+                    const sampleRateForAnalysis = audioBuffer.sampleRate;
+                    const analyzeSeconds = [0, 1, 2, 3, 4, 5, 6, 7, 8]; // 0~8초 분석
+                    const rmsResults: string[] = [];
+
+                    for (const sec of analyzeSeconds) {
+                        if (sec >= blobDuration) break;
+                        const startSample = Math.floor(sec * sampleRateForAnalysis);
+                        const endSample = Math.min(startSample + sampleRateForAnalysis, channelData.length);
+                        let sumSquares = 0;
+                        for (let i = startSample; i < endSample; i++) {
+                            sumSquares += channelData[i] * channelData[i];
+                        }
+                        const rms = Math.sqrt(sumSquares / (endSample - startSample));
+                        const status = rms < 0.005 ? '🔇무음' : rms < 0.02 ? '🔈약함' : '🔊정상';
+                        rmsResults.push(`${sec}s:${rms.toFixed(4)}${status}`);
+                    }
+                    console.log('🎤 [AUDIO RMS] 초별 RMS 분석 (트리밍 전):', rmsResults.join(' | '));
 
                             // preroll 부분을 잘라낸 새 AudioBuffer 생성
                             if (prerollToTrim > 0.1) {
@@ -708,8 +789,7 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
         // AudioContext 생성 (없으면)
         if (!audioContextRef.current) {
-            const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-            audioContextRef.current = new AudioContextClass();
+            audioContextRef.current = getSharedAudioContext();
             gainNodeRef.current = audioContextRef.current.createGain();
             gainNodeRef.current.connect(audioContextRef.current.destination);
         }

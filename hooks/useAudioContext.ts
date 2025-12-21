@@ -1,38 +1,16 @@
 'use client';
 
 import { useRef, useCallback, useEffect, useState } from 'react';
+import {
+    getSharedAudioContext,
+    resumeAudioContext,
+    getAudioContextState,
+    getAudioContextCurrentTime,
+    onAudioContextStateChange
+} from '@/utils/sharedAudioContext';
 
-// Safari 호환 AudioContext 타입
-declare global {
-    interface Window {
-        webkitAudioContext: typeof AudioContext;
-    }
-}
-
-// 싱글톤 AudioContext 인스턴스
-let sharedAudioContext: AudioContext | null = null;
-
-/**
- * AudioContext 싱글톤 획득
- * 페이지 전체에서 하나의 AudioContext를 공유
- */
-export function getSharedAudioContext(): AudioContext {
-    if (!sharedAudioContext) {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        sharedAudioContext = new AudioContextClass();
-    }
-    return sharedAudioContext;
-}
-
-/**
- * AudioContext 상태 resume (사용자 인터랙션 후 필요)
- */
-export async function resumeAudioContext(): Promise<void> {
-    const ctx = getSharedAudioContext();
-    if (ctx.state === 'suspended') {
-        await ctx.resume();
-    }
-}
+// Re-export for backward compatibility
+export { getSharedAudioContext, resumeAudioContext } from '@/utils/sharedAudioContext';
 
 /**
  * AudioContext 싱글톤 훅
@@ -45,17 +23,13 @@ export function useAudioContext() {
 
     useEffect(() => {
         contextRef.current = getSharedAudioContext();
-        setIsReady(contextRef.current.state === 'running');
+        setIsReady(getAudioContextState() === 'running');
 
-        const handleStateChange = () => {
-            setIsReady(contextRef.current?.state === 'running');
-        };
+        const unsubscribe = onAudioContextStateChange((state) => {
+            setIsReady(state === 'running');
+        });
 
-        contextRef.current.addEventListener('statechange', handleStateChange);
-
-        return () => {
-            contextRef.current?.removeEventListener('statechange', handleStateChange);
-        };
+        return unsubscribe;
     }, []);
 
     const resume = useCallback(async () => {
@@ -64,7 +38,7 @@ export function useAudioContext() {
     }, []);
 
     const getCurrentTime = useCallback((): number => {
-        return contextRef.current?.currentTime ?? 0;
+        return getAudioContextCurrentTime();
     }, []);
 
     return {

@@ -298,7 +298,9 @@ export default function FeedbackClientPage() {
                 note.measureIndex = Math.max(0, note.measureIndex - prerollMeasures);
             });
 
-            // 음표만 필터링 (쉼표 제외)
+            // 음표+쉼표 모두 포함 (처음부터 쉼표 표시)
+            const notesWithRests = notes;
+            // 디버그용: 음표만 필터링
             const noteOnly = notes.filter(note => !note.isRest);
 
             // 디버그: 보정 후 음표들의 measureIndex 분포 확인
@@ -316,7 +318,8 @@ export default function FeedbackClientPage() {
 
             // 무음 패딩 없음: measureIndex가 이미 0부터 시작하므로
             // distributeNotesToMeasures에서 startMeasure만 더하면 됨
-            const groupedNotes = distributeNotesToMeasures(noteOnly, {
+            // 쉼표 포함하여 전달
+            const groupedNotes = distributeNotesToMeasures(notesWithRests, {
                 bpm: SONG_META.bpm,
                 beatsPerMeasure,
                 startMeasure: storedRecordingRange.startMeasure
@@ -324,9 +327,11 @@ export default function FeedbackClientPage() {
 
             // 디버그 로그: 변환 결과
             const finalMeasures = Object.keys(groupedNotes).map(Number).sort((a, b) => a - b);
+            const totalRests = notesWithRests.filter(n => n.isRest).length;
 
             console.log('[Pitch Analysis] 변환 결과:', {
                 totalNotes: noteOnly.length,
+                totalRests,
                 finalMeasureRange: finalMeasures.length > 0
                     ? `${finalMeasures[0]} ~ ${finalMeasures[finalMeasures.length - 1]}`
                     : 'none',
