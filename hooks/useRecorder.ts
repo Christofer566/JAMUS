@@ -39,7 +39,7 @@ export interface UseRecorderReturn {
     stopRecording: (endTime: number, endMeasure: number) => Promise<void>;
     pauseJamming: () => void;
     resumeJamming: () => void;
-    playRecordingsAtTime: (fromTime: number) => void;
+    playRecordingsAtTime: (fromTime: number) => Promise<void>;
     pauseRecordings: () => void;
     resetRecording: () => void;
     hasRecordingAt: (time: number) => boolean;
@@ -194,10 +194,14 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const chunksRef = useRef<Blob[]>([]);
-    const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
     const pendingRangeRef = useRef<{ startTime: number; startMeasure: number } | null>(null);
-    const playPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
     const recordingActualStartRef = useRef<number>(0); // 실제 녹음 시작 시점 (performance.now)
+
+    // Web Audio API 기반 재생 (정확한 타이밍 동기화)
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const audioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+    const sourceNodesRef = useRef<Map<string, AudioBufferSourceNode>>(new Map());
+    const gainNodeRef = useRef<GainNode | null>(null);
 
     // Computed: recorded measures from all segments
     const recordedMeasures = segments.flatMap(seg => {
@@ -226,16 +230,26 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     useEffect(() => {
         return () => {
             segments.forEach(seg => URL.revokeObjectURL(seg.url));
-            audioElementsRef.current.forEach(el => {
-                el.pause();
-                el.src = '';
+            // Web Audio API 정리
+            sourceNodesRef.current.forEach(source => {
+                try {
+                    source.stop();
+                    source.disconnect();
+                } catch {
+                    // 이미 정지됨
+                }
             });
-            audioElementsRef.current.clear();
+            sourceNodesRef.current.clear();
+            audioBuffersRef.current.clear();
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+            }
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
         };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []); // eslint-disable-line react-hooks-exhaustive-deps
 
     // ========================================
     // Check/Request Permission
@@ -382,22 +396,44 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                         actualDuration: `${recordingDuration.toFixed(0)}ms`,
                         difference: `${(recordingDuration - expectedDuration).toFixed(0)}ms`,
                         latencyCompensation: `${RECORDING_LATENCY_COMPENSATION * 1000}ms`,
-                        adjustedStartTime: `${adjustedStartTime.toFixed(3)}s`
+                        adjustedStartTime: `${adjustedStartTime.toFixed(3)}s`,
+                        note: '무음 패딩 제거됨 - 순수 녹음 데이터만 저장'
                     });
-                    const paddedBlob = await addSilencePadding(rawBlob, adjustedStartTime);
-
-                    const url = URL.createObjectURL(paddedBlob);
+                    // 무음 패딩 제거: 순수 녹음 데이터만 저장
+                    // 재생 시 startTime 오프셋을 사용하여 동기화
+                    const url = URL.createObjectURL(rawBlob);
                     const segmentId = `seg-${Date.now()}`;
 
                     const newSegment: RecordingSegment = {
                         id: segmentId,
-                        blob: paddedBlob,
+                        blob: rawBlob,  // 무음 패딩 없이 순수 녹음 데이터
                         url,
                         startTime,
                         endTime,
                         startMeasure,
                         endMeasure
                     };
+
+                    // Web Audio API: Blob을 AudioBuffer로 디코딩 (정확한 타이밍 동기화)
+                    const decodeAudioBuffer = async () => {
+                        try {
+                            // AudioContext 생성 (없으면)
+                            if (!audioContextRef.current) {
+                                const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                                audioContextRef.current = new AudioContextClass();
+                                gainNodeRef.current = audioContextRef.current.createGain();
+                                gainNodeRef.current.connect(audioContextRef.current.destination);
+                            }
+
+                            const arrayBuffer = await rawBlob.arrayBuffer();
+                            const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+                            audioBuffersRef.current.set(segmentId, audioBuffer);
+                            console.log('🎤 AudioBuffer decoded for segment:', segmentId, 'duration:', audioBuffer.duration.toFixed(2) + 's');
+                        } catch (err) {
+                            console.error('🎤 Failed to decode audio buffer:', err);
+                        }
+                    };
+                    decodeAudioBuffer();
 
                     // Add to segments (trimming overlapping ones instead of removing)
                     setSegments(prev => {
@@ -440,8 +476,18 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                                     // Remove entirely
                                     console.log('🎤 Removing completely overlapped segment', seg.id);
                                     URL.revokeObjectURL(seg.url);
-                                    audioElementsRef.current.get(seg.id)?.pause();
-                                    audioElementsRef.current.delete(seg.id);
+                                    // Web Audio API 정리
+                                    const source = sourceNodesRef.current.get(seg.id);
+                                    if (source) {
+                                        try {
+                                            source.stop();
+                                            source.disconnect();
+                                        } catch {
+                                            // 이미 정지됨
+                                        }
+                                        sourceNodesRef.current.delete(seg.id);
+                                    }
+                                    audioBuffersRef.current.delete(seg.id);
                                 }
                             }
                         }
@@ -455,7 +501,8 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                         id: segmentId,
                         duration: endTime - startTime,
                         measures: `${startMeasure}-${endMeasure}`,
-                        blobSize: paddedBlob.size
+                        blobSize: rawBlob.size,
+                        note: '무음 패딩 없음'
                     });
                 } catch (err) {
                     console.error('Processing error:', err);
@@ -495,9 +542,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     }, [state, isPaused]);
 
     // ========================================
-    // Play Recordings At Time
+    // Play Recordings At Time (Web Audio API 기반 - 정확한 타이밍)
     // ========================================
-    const playRecordingsAtTime = useCallback((fromTime: number) => {
+    const playRecordingsAtTime = useCallback(async (fromTime: number) => {
         // Find segments that include this time
         const activeSegments = segments.filter(seg =>
             fromTime >= seg.startTime && fromTime <= seg.endTime
@@ -507,46 +554,88 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             return;
         }
 
-        // Play each active segment
-        activeSegments.forEach(seg => {
-            let audioEl = audioElementsRef.current.get(seg.id);
+        // AudioContext 생성 (없으면)
+        if (!audioContextRef.current) {
+            const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            audioContextRef.current = new AudioContextClass();
+            gainNodeRef.current = audioContextRef.current.createGain();
+            gainNodeRef.current.connect(audioContextRef.current.destination);
+        }
 
-            if (!audioEl) {
-                audioEl = new Audio(seg.url);
-                audioEl.volume = 1.0;
-                audioElementsRef.current.set(seg.id, audioEl);
+        const context = audioContextRef.current;
+
+        // suspended 상태면 resume (반드시 await!)
+        if (context.state === 'suspended') {
+            console.log('🎤 [Web Audio] Resuming suspended AudioContext');
+            await context.resume();
+        }
+
+        console.log('🎤 [Web Audio] AudioContext state:', context.state, 'gainNode:', gainNodeRef.current?.gain.value);
+
+        // Play each active segment using Web Audio API
+        activeSegments.forEach(seg => {
+            const audioBuffer = audioBuffersRef.current.get(seg.id);
+            if (!audioBuffer) {
+                console.warn('🎤 AudioBuffer not ready for segment:', seg.id);
+                return;
             }
 
-            audioEl.currentTime = fromTime;
+            // 기존 source node 정리
+            const existingSource = sourceNodesRef.current.get(seg.id);
+            if (existingSource) {
+                try {
+                    existingSource.stop();
+                    existingSource.disconnect();
+                } catch {
+                    // 이미 정지됨
+                }
+            }
 
-            const playPromise = audioEl.play();
-            playPromisesRef.current.set(seg.id, playPromise);
+            // 블롭 내 오프셋 계산 (무음 패딩 없음)
+            // 블롭 시간 0 = 곡 시간 startTime
+            const offset = Math.max(0, fromTime - seg.startTime);
 
-            playPromise
-                .then(() => {
-                    playPromisesRef.current.delete(seg.id);
-                })
-                .catch((err) => {
-                    if (err.name !== 'AbortError') {
-                        console.error('🎤 Segment play error:', seg.id, err);
-                    }
-                    playPromisesRef.current.delete(seg.id);
-                });
+            // 새 source node 생성
+            const source = context.createBufferSource();
+            source.buffer = audioBuffer;
+            if (gainNodeRef.current) {
+                source.connect(gainNodeRef.current);
+            } else {
+                source.connect(context.destination);
+            }
+
+            // 즉시 재생 (Web Audio API는 정확한 타이밍 보장)
+            source.start(0, offset);
+            sourceNodesRef.current.set(seg.id, source);
+
+            console.log('🎤 [Web Audio] 재생 시작:', {
+                segId: seg.id,
+                fromTime,
+                segStartTime: seg.startTime,
+                offset: offset.toFixed(3),
+                bufferDuration: audioBuffer.duration.toFixed(2)
+            });
+
+            // 재생 완료 시 정리
+            source.onended = () => {
+                sourceNodesRef.current.delete(seg.id);
+            };
         });
     }, [segments]);
 
     // ========================================
-    // Pause Recordings
+    // Pause Recordings (Web Audio API 기반)
     // ========================================
     const pauseRecordings = useCallback(() => {
-        audioElementsRef.current.forEach((audioEl, id) => {
-            const promise = playPromisesRef.current.get(id);
-            if (promise) {
-                promise.then(() => audioEl.pause()).catch(() => {});
-            } else {
-                audioEl.pause();
+        sourceNodesRef.current.forEach((source, id) => {
+            try {
+                source.stop();
+                source.disconnect();
+            } catch {
+                // 이미 정지됨
             }
         });
+        sourceNodesRef.current.clear();
     }, []);
 
     // ========================================
@@ -557,12 +646,17 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             mediaRecorderRef.current.stop();
         }
 
-        // Clean up all audio elements
-        audioElementsRef.current.forEach(el => {
-            el.pause();
-            el.src = '';
+        // Clean up Web Audio API
+        sourceNodesRef.current.forEach(source => {
+            try {
+                source.stop();
+                source.disconnect();
+            } catch {
+                // 이미 정지됨
+            }
         });
-        audioElementsRef.current.clear();
+        sourceNodesRef.current.clear();
+        audioBuffersRef.current.clear();
 
         // Revoke all URLs
         segments.forEach(seg => URL.revokeObjectURL(seg.url));
@@ -574,7 +668,6 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
         setError(null);
         chunksRef.current = [];
         pendingRangeRef.current = null;
-        playPromisesRef.current.clear();
 
         console.log('🎤 All recordings reset');
     }, [state, segments]);

@@ -184,8 +184,9 @@ export default function FeedbackClientPage() {
         const justLeftRange = !isInRecordingRange && wasInRangeRef.current;
 
         if (justEnteredRange) {
-            // 범위 진입 시 - 곡 시간 기준으로 재생
-            userAudio.currentTime = currentTime;
+            // 범위 진입 시 - 녹음 blob은 무음 패딩 없이 0부터 시작하므로 오프셋 적용
+            const recordingOffset = currentTime - storedRecordingRange.startTime;
+            userAudio.currentTime = Math.max(0, recordingOffset);
             userAudio.play().catch(() => {});
         } else if (justLeftRange) {
             userAudio.pause();
@@ -222,7 +223,9 @@ export default function FeedbackClientPage() {
                           songTime < storedRecordingRange.endTime;
 
         if (isInRange) {
-            userAudio.currentTime = songTime;
+            // 녹음 blob은 무음 패딩 없이 0부터 시작하므로 오프셋 적용
+            const recordingOffset = songTime - storedRecordingRange.startTime;
+            userAudio.currentTime = Math.max(0, recordingOffset);
             if (shouldPlay && userAudio.paused) {
                 userAudio.play().catch(() => {});
             }
@@ -288,65 +291,41 @@ export default function FeedbackClientPage() {
         const performAnalysis = async () => {
             const pitchFrames = await analyzeAudio(storedAudioBlob);
             const beatsPerMeasure = Number(MOCK_SONG.time_signature.split('/')[0]);
-            const beatDuration = 60 / MOCK_SONG.bpm;
-            const measureDurationSec = beatDuration * beatsPerMeasure;
 
             // 16슬롯 그리드 기반 음표 변환
-            // measureIndex는 오디오 블롭 시작 기준 (0부터)
+            // 무음 패딩 제거됨: measureIndex는 녹음 시작 기준 (0부터)
+            // startMeasure만 더하면 최종 마디 번호가 됨
             const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
 
-            // 오디오 블롭은 addSilencePadding으로 startTime만큼 무음이 앞에 추가됨
-            // 따라서 Grid 시간 = 곡 시간 (무음 패딩으로 정렬됨)
-            // prerollMeasures = startTime을 마디로 변환한 값
-            const prerollMeasures = Math.floor(storedRecordingRange.startTime / measureDurationSec);
+            // 음표만 필터링 (쉼표 제외)
+            const noteOnly = notes.filter(note => !note.isRest);
 
             // 디버그: 원본 음표들의 measureIndex 분포 확인
-            const originalMeasureIndices = notes
-                .filter(n => !n.isRest)
-                .map(n => n.measureIndex);
+            const originalMeasureIndices = noteOnly.map(n => n.measureIndex);
             const uniqueOriginalMeasures = [...new Set(originalMeasureIndices)].sort((a, b) => a - b);
 
-            console.log('[Pitch Analysis] 상세 오프셋 계산:', {
+            console.log('[Pitch Analysis] 무음 패딩 제거 - 단순 오프셋:', {
                 bpm: MOCK_SONG.bpm,
-                measureDurationSec: measureDurationSec.toFixed(3),
-                startTime: storedRecordingRange.startTime.toFixed(3),
                 startMeasure: storedRecordingRange.startMeasure,
-                prerollMeasures,
-                expectedFirstMeasure: prerollMeasures,
                 originalMeasureRange: uniqueOriginalMeasures.length > 0
                     ? `${uniqueOriginalMeasures[0]} ~ ${uniqueOriginalMeasures[uniqueOriginalMeasures.length - 1]}`
                     : 'none',
-                calculation: `originalMeasure - ${prerollMeasures} + ${storedRecordingRange.startMeasure} = finalMeasure`
+                calculation: `measureIndex + startMeasure = finalMeasure (prerollMeasures 계산 불필요)`
             });
 
-            // measureIndex에서 prerollMeasures를 빼서 보정
-            // 예: startTime=16초, measureDuration=2초 → prerollMeasures=8
-            // note.measureIndex가 8이면 → 8 - 8 = 0 (녹음 시작 지점)
-            const adjustedNotes = notes
-                .filter(note => !note.isRest)
-                .map(note => ({
-                    ...note,
-                    measureIndex: note.measureIndex - prerollMeasures
-                }))
-                .filter(note => note.measureIndex >= 0); // 녹음 시작 전 데이터 제외
-
-            const groupedNotes = distributeNotesToMeasures(adjustedNotes, {
+            // 무음 패딩 없음: measureIndex가 이미 0부터 시작하므로
+            // distributeNotesToMeasures에서 startMeasure만 더하면 됨
+            const groupedNotes = distributeNotesToMeasures(noteOnly, {
                 bpm: MOCK_SONG.bpm,
                 beatsPerMeasure,
                 startMeasure: storedRecordingRange.startMeasure
             });
 
             // 디버그 로그: 변환 결과
-            const adjustedMeasureIndices = adjustedNotes.map(n => n.measureIndex);
-            const uniqueAdjustedMeasures = [...new Set(adjustedMeasureIndices)].sort((a, b) => a - b);
             const finalMeasures = Object.keys(groupedNotes).map(Number).sort((a, b) => a - b);
 
             console.log('[Pitch Analysis] 변환 결과:', {
-                totalNotes: notes.filter(n => !n.isRest).length,
-                adjustedNotes: adjustedNotes.length,
-                adjustedMeasureRange: uniqueAdjustedMeasures.length > 0
-                    ? `${uniqueAdjustedMeasures[0]} ~ ${uniqueAdjustedMeasures[uniqueAdjustedMeasures.length - 1]}`
-                    : 'none',
+                totalNotes: noteOnly.length,
                 finalMeasureRange: finalMeasures.length > 0
                     ? `${finalMeasures[0]} ~ ${finalMeasures[finalMeasures.length - 1]}`
                     : 'none',
@@ -354,13 +333,12 @@ export default function FeedbackClientPage() {
             });
 
             // 첫 3개 음표의 상세 변환 과정
-            if (notes.filter(n => !n.isRest).length > 0) {
-                const firstThreeNotes = notes.filter(n => !n.isRest).slice(0, 3);
+            if (noteOnly.length > 0) {
+                const firstThreeNotes = noteOnly.slice(0, 3);
                 console.log('[Pitch Analysis] 첫 3개 음표 변환 과정:');
                 firstThreeNotes.forEach((note, i) => {
-                    const adjusted = note.measureIndex - prerollMeasures;
-                    const final = adjusted + storedRecordingRange.startMeasure;
-                    console.log(`  [${i}] ${note.pitch}: original=${note.measureIndex} - preroll=${prerollMeasures} = adjusted=${adjusted} + startMeasure=${storedRecordingRange.startMeasure} = final=${final}`);
+                    const final = note.measureIndex + storedRecordingRange.startMeasure;
+                    console.log(`  [${i}] ${note.pitch}: measureIndex=${note.measureIndex} + startMeasure=${storedRecordingRange.startMeasure} = final=${final}`);
                 });
             }
 

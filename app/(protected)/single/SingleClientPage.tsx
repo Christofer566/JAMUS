@@ -294,7 +294,7 @@ export default function SingleClientPage() {
             if (recorder.state === 'recorded' && currentSegment) {
                 console.log('🎵 Starting recording playback at', currentTime, 'segment:', currentSegment.id);
                 webAudio.setVolume(0.3);
-                recorder.playRecordingsAtTime(currentTime);
+                await recorder.playRecordingsAtTime(currentTime);
                 prevSegmentIdRef.current = currentSegment.id; // 현재 세그먼트 ID 저장
             }
             setIsPlaying(true);
