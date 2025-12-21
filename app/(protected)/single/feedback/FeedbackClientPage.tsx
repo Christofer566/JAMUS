@@ -81,7 +81,8 @@ export default function FeedbackClientPage() {
         redo,
         reset,
         initializeNotes,
-        editedNotes
+        editedNotes,
+        getCleanedNotes
     } = useFeedbackStore();
 
 
@@ -294,14 +295,18 @@ export default function FeedbackClientPage() {
             // measureIndex는 오디오 블롭 시작 기준 (0부터)
             const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
 
-            // 오디오 블롭에 포함된 선행 시간 오프셋 계산
-            // storedRecordingRange.startTime = 곡 시작부터의 시간 (초)
-            // 이 시간만큼 오디오 블롭 앞에 데이터가 포함되어 있음
-            const prerollMeasures = Math.floor(storedRecordingRange.startTime / measureDurationSec);
+            // 오디오 블롭은 녹음 시작 2마디 전부터 시작됨 (START JAM 로직)
+            // 따라서 prerollMeasures = 2 (오디오 시작 → 녹음 시작까지의 마디 수)
+            const LEAD_IN_MEASURES = 2;
+            const prerollMeasures = LEAD_IN_MEASURES;
+
+            // 디버그용: 오디오 시작 마디 = 녹음 시작 마디 - 2
+            const audioStartMeasure = storedRecordingRange.startMeasure - LEAD_IN_MEASURES;
 
             console.log('[Pitch Analysis] 오프셋 계산:', {
                 startTime: storedRecordingRange.startTime,
                 measureDuration: measureDurationSec,
+                audioStartMeasure,
                 prerollMeasures,
                 startMeasure: storedRecordingRange.startMeasure
             });
@@ -526,15 +531,15 @@ export default function FeedbackClientPage() {
     const handleShare = () => console.log('공유하기 클릭');
     const handleReJam = () => router.push('/single');
 
-    // 편집 확정: editedNotes를 recordedNotesByMeasure에 반영
+    // 편집 확정: 정리된 음표+쉼표를 recordedNotesByMeasure에 반영
     const handleConfirmEdit = useCallback(() => {
-        // editedNotes를 measure별로 그룹화 (쉼표 제외)
+        // 겹침 제거 + 연속 쉼표 병합된 깨끗한 데이터 가져오기
+        const cleanedNotes = getCleanedNotes();
+
+        // measure별로 그룹화
         const newNotesByMeasure: Record<number, NoteData[]> = {};
 
-        editedNotes.forEach(note => {
-            // 쉼표(삭제된 음표)는 제외
-            if (note.isRest) return;
-
+        cleanedNotes.forEach(note => {
             const measureIndex = note.measureIndex;
             if (!newNotesByMeasure[measureIndex]) {
                 newNotesByMeasure[measureIndex] = [];
@@ -542,8 +547,8 @@ export default function FeedbackClientPage() {
             newNotesByMeasure[measureIndex].push(note);
         });
 
-        console.log('[Edit Confirm] editedNotes:', editedNotes.length, 'non-rest notes:', Object.values(newNotesByMeasure).flat().length);
-        console.log('[Edit Confirm] newNotesByMeasure:', newNotesByMeasure);
+        console.log('[Edit Confirm] cleanedNotes:', cleanedNotes.length);
+        console.log('[Edit Confirm] notes:', cleanedNotes.filter(n => !n.isRest).length, 'rests:', cleanedNotes.filter(n => n.isRest).length);
 
         // recordedNotesByMeasure 업데이트
         setRecordedNotesByMeasure(newNotesByMeasure);
@@ -553,7 +558,7 @@ export default function FeedbackClientPage() {
         setEditMode(false);
 
         showToast('success', '편집이 확정되었습니다');
-    }, [editedNotes, setEditMode, showToast]);
+    }, [getCleanedNotes, setEditMode, showToast]);
 
     // AI 로딩 화면
     if (isFeedbackLoading) {

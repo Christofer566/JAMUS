@@ -6,7 +6,6 @@ import { NoteData } from '@/types/note';
 
 interface RestBoxProps {
   note: NoteData;
-  noteIndex: number;
   measureWidth: number;
   containerHeight: number;
 }
@@ -22,7 +21,6 @@ function getRestSymbol(slotCount: number): string {
 
 const RestBox: React.FC<RestBoxProps> = ({
   note,
-  noteIndex,
   measureWidth,
   containerHeight
 }) => {
@@ -33,26 +31,26 @@ const RestBox: React.FC<RestBoxProps> = ({
   const left = note.slotIndex * slotWidth;
   const width = note.slotCount * slotWidth;
   const centerY = containerHeight / 2;
-  const height = 12;
+  const height = 16;
 
   return (
     <div
-      className="absolute flex items-center justify-center rounded-sm border border-dashed border-gray-500/30 bg-gray-500/10"
+      className="absolute flex items-center justify-center rounded border-2 border-dashed border-orange-400/50 bg-orange-400/15"
       style={{
         left: `${left}px`,
         top: `${centerY - height / 2}px`,
-        width: `${Math.max(width - 2, 8)}px`,
+        width: `${Math.max(width - 2, 12)}px`,
         height: `${height}px`,
         zIndex: 5
       }}
     >
-      {/* 번호 표시 */}
-      <span className="absolute -top-5 left-0 text-xs text-gray-400 font-mono font-bold">
-        #{noteIndex}
+      {/* 슬롯 위치 표시 */}
+      <span className="absolute -top-5 left-0 text-[10px] text-orange-300/70 font-mono">
+        s{note.slotIndex}-{note.slotIndex + note.slotCount - 1}
       </span>
       {/* 쉼표 기호 표시 (슬롯이 충분히 넓을 때만) */}
-      {width >= 24 && (
-        <span className="text-sm text-gray-400 select-none">
+      {width >= 20 && (
+        <span className="text-base text-orange-300 select-none font-bold">
           {getRestSymbol(note.slotCount)}
         </span>
       )}

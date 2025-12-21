@@ -51,6 +51,7 @@ interface FeedbackState {
   setDragPreview: (preview: DragPreview | null) => void;
   setIsDragging: (dragging: boolean) => void;
   initializeNotes: (notes: NoteData[]) => void;
+  getCleanedNotes: () => NoteData[];  // 편집 확정용: 정리된 음표+쉼표 반환
 }
 
 // 헬퍼 함수들
@@ -94,6 +95,220 @@ function slotCountToDuration(slotCount: number): string {
   if (slotCount >= 4) return 'q';
   if (slotCount >= 2) return '8';
   return '16';
+}
+
+// 편집 후 정리: 겹치는 쉼표 제거 + 연속 쉼표 병합
+function cleanupNotesAndRests(notes: NoteData[]): NoteData[] {
+  if (notes.length === 0) return [];
+
+  // 마디별로 그룹핑 (실제 존재하는 마디만)
+  const notesByMeasure = new Map<number, NoteData[]>();
+  const measureIndices = new Set<number>();
+
+  notes.forEach(note => {
+    const measure = note.measureIndex;
+    measureIndices.add(measure);
+    if (!notesByMeasure.has(measure)) {
+      notesByMeasure.set(measure, []);
+    }
+    notesByMeasure.get(measure)!.push(note);
+  });
+
+  const result: NoteData[] = [];
+
+  // 실제 존재하는 마디만 처리 (0부터 순회하지 않음)
+  for (const measureIndex of Array.from(measureIndices).sort((a, b) => a - b)) {
+    const measureNotes = notesByMeasure.get(measureIndex) || [];
+    if (measureNotes.length === 0) continue;
+
+    // 음표와 쉼표 분리
+    const actualNotes = measureNotes.filter(n => !n.isRest);
+
+    // 음표가 차지하는 슬롯 마킹 (슬롯 오버플로우 방지)
+    const occupied: boolean[] = new Array(SLOTS_PER_MEASURE).fill(false);
+    actualNotes.forEach(note => {
+      // slotIndex와 slotCount 범위 제한
+      const safeSlotIndex = Math.max(0, Math.min(note.slotIndex, SLOTS_PER_MEASURE - 1));
+      const maxSlotCount = SLOTS_PER_MEASURE - safeSlotIndex;
+      const safeSlotCount = Math.max(1, Math.min(note.slotCount, maxSlotCount));
+
+      // 범위가 수정되었으면 노트도 수정
+      const fixedNote = (safeSlotIndex !== note.slotIndex || safeSlotCount !== note.slotCount)
+        ? { ...note, slotIndex: safeSlotIndex, slotCount: safeSlotCount, duration: slotCountToDuration(safeSlotCount) }
+        : note;
+
+      for (let i = fixedNote.slotIndex; i < fixedNote.slotIndex + fixedNote.slotCount; i++) {
+        occupied[i] = true;
+      }
+      result.push(fixedNote);
+    });
+
+    // 빈 슬롯을 연속된 쉼표로 채우기 (기존 쉼표 무시하고 새로 생성)
+    let gapStart = -1;
+    for (let slot = 0; slot <= SLOTS_PER_MEASURE; slot++) {
+      const isOccupied = slot < SLOTS_PER_MEASURE ? occupied[slot] : true;
+
+      if (!isOccupied && gapStart === -1) {
+        gapStart = slot;
+      } else if (isOccupied && gapStart !== -1) {
+        // 연속된 빈 구간 → 하나의 쉼표로
+        const gapLength = slot - gapStart;
+        const restNote: NoteData = {
+          pitch: 'rest',
+          duration: slotCountToDuration(gapLength),
+          beat: measureIndex * 4 + gapStart / 4,
+          measureIndex,
+          slotIndex: gapStart,
+          slotCount: gapLength,
+          isRest: true,
+          confidence: 'high'
+        };
+        result.push(restNote);
+        gapStart = -1;
+      }
+    }
+  }
+
+  // measureIndex와 slotIndex로 정렬
+  result.sort((a, b) => {
+    if (a.measureIndex !== b.measureIndex) return a.measureIndex - b.measureIndex;
+    return a.slotIndex - b.slotIndex;
+  });
+
+  // 겹침 검증 및 제거 (음표 우선, 쉼표는 겹치면 제거)
+  const validated: NoteData[] = [];
+  const slotMap = new Map<string, NoteData>(); // "measureIndex-slot" -> note
+
+  // 먼저 음표 처리 (음표가 우선권)
+  result.filter(n => !n.isRest).forEach(note => {
+    for (let s = note.slotIndex; s < note.slotIndex + note.slotCount; s++) {
+      slotMap.set(`${note.measureIndex}-${s}`, note);
+    }
+    validated.push(note);
+  });
+
+  // 쉼표는 겹치는 슬롯이 없는 경우만 추가
+  result.filter(n => n.isRest).forEach(rest => {
+    let hasOverlap = false;
+    for (let s = rest.slotIndex; s < rest.slotIndex + rest.slotCount; s++) {
+      if (slotMap.has(`${rest.measureIndex}-${s}`)) {
+        hasOverlap = true;
+        break;
+      }
+    }
+    if (!hasOverlap) {
+      for (let s = rest.slotIndex; s < rest.slotIndex + rest.slotCount; s++) {
+        slotMap.set(`${rest.measureIndex}-${s}`, rest);
+      }
+      validated.push(rest);
+    } else {
+      console.warn('[FeedbackStore] Removed overlapping rest:', rest);
+    }
+  });
+
+  // 다시 정렬
+  validated.sort((a, b) => {
+    if (a.measureIndex !== b.measureIndex) return a.measureIndex - b.measureIndex;
+    return a.slotIndex - b.slotIndex;
+  });
+
+  console.log('[FeedbackStore] cleanupNotesAndRests:', {
+    inputNotes: notes.length,
+    beforeValidation: result.length,
+    afterValidation: validated.length,
+    notes: validated.filter(n => !n.isRest).length,
+    rests: validated.filter(n => n.isRest).length
+  });
+
+  return validated;
+}
+
+// 빈 슬롯을 쉼표로 채우는 함수
+function fillGapsWithRests(notes: NoteData[]): NoteData[] {
+  if (notes.length === 0) return [];
+
+  // 마디별로 그룹핑 (실제 존재하는 마디만)
+  const notesByMeasure = new Map<number, NoteData[]>();
+  const measureIndices = new Set<number>();
+
+  notes.forEach(note => {
+    if (!note.isRest) {
+      const measure = note.measureIndex;
+      measureIndices.add(measure);
+      if (!notesByMeasure.has(measure)) {
+        notesByMeasure.set(measure, []);
+      }
+      notesByMeasure.get(measure)!.push(note);
+    }
+  });
+
+  const result: NoteData[] = [];
+
+  // 실제 존재하는 마디만 처리 (0부터 순회하지 않음)
+  for (const measureIndex of Array.from(measureIndices).sort((a, b) => a - b)) {
+    const measureNotes = notesByMeasure.get(measureIndex) || [];
+
+    // 슬롯 점유 상태 추적 (0~15)
+    const occupied: boolean[] = new Array(SLOTS_PER_MEASURE).fill(false);
+
+    // 음표가 차지하는 슬롯 마킹 (슬롯 오버플로우 방지)
+    measureNotes.forEach(note => {
+      // slotIndex와 slotCount 범위 제한
+      const safeSlotIndex = Math.max(0, Math.min(note.slotIndex, SLOTS_PER_MEASURE - 1));
+      const maxSlotCount = SLOTS_PER_MEASURE - safeSlotIndex;
+      const safeSlotCount = Math.max(1, Math.min(note.slotCount, maxSlotCount));
+
+      // 범위가 수정되었으면 노트도 수정
+      const fixedNote = (safeSlotIndex !== note.slotIndex || safeSlotCount !== note.slotCount)
+        ? { ...note, slotIndex: safeSlotIndex, slotCount: safeSlotCount, duration: slotCountToDuration(safeSlotCount) }
+        : note;
+
+      for (let i = fixedNote.slotIndex; i < fixedNote.slotIndex + fixedNote.slotCount; i++) {
+        occupied[i] = true;
+      }
+      result.push(fixedNote);
+    });
+
+    // 빈 슬롯을 쉼표로 채우기 (연속된 빈 슬롯은 하나의 쉼표로)
+    let gapStart = -1;
+    for (let slot = 0; slot <= SLOTS_PER_MEASURE; slot++) {
+      const isOccupied = slot < SLOTS_PER_MEASURE ? occupied[slot] : true; // 마지막은 항상 종료
+
+      if (!isOccupied && gapStart === -1) {
+        // 빈 구간 시작
+        gapStart = slot;
+      } else if (isOccupied && gapStart !== -1) {
+        // 빈 구간 종료 → 쉼표 생성
+        const gapLength = slot - gapStart;
+        const restNote: NoteData = {
+          pitch: 'rest',
+          duration: slotCountToDuration(gapLength),
+          beat: measureIndex * 4 + gapStart / 4,
+          measureIndex,
+          slotIndex: gapStart,
+          slotCount: gapLength,
+          isRest: true,
+          confidence: 'high'
+        };
+        result.push(restNote);
+        gapStart = -1;
+      }
+    }
+  }
+
+  // measureIndex와 slotIndex로 정렬
+  result.sort((a, b) => {
+    if (a.measureIndex !== b.measureIndex) return a.measureIndex - b.measureIndex;
+    return a.slotIndex - b.slotIndex;
+  });
+
+  console.log('[FeedbackStore] fillGapsWithRests:', {
+    inputNotes: notes.length,
+    outputNotes: result.length,
+    rests: result.filter(n => n.isRest).length
+  });
+
+  return result;
 }
 
 // 충돌 처리: 이동/리사이즈된 음표와 겹치는 다른 음표들을 잘라냄
@@ -624,14 +839,22 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   setDragPreview: (preview) => set({ dragPreview: preview }),
   setIsDragging: (dragging) => set({ isDragging: dragging }),
 
-  // 초기화
-  initializeNotes: (notes) => set({
-    originalNotes: [...notes],
-    editedNotes: [...notes],
-    undoStack: [],
-    redoStack: [],
-    selectedNoteIndices: []
-  })
+  // 초기화 (빈 슬롯을 쉼표로 채움)
+  initializeNotes: (notes) => {
+    const filledNotes = fillGapsWithRests(notes);
+    return set({
+      originalNotes: [...filledNotes],
+      editedNotes: [...filledNotes],
+      undoStack: [],
+      redoStack: [],
+      selectedNoteIndices: []
+    });
+  },
+
+  // 편집 확정용: 정리된 음표+쉼표 반환 (겹침 제거, 연속 쉼표 병합)
+  getCleanedNotes: () => {
+    return cleanupNotesAndRests(get().editedNotes);
+  }
 }));
 
 export default useFeedbackStore;

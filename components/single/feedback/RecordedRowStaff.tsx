@@ -107,30 +107,41 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
         const stave = staves[i];
 
         notes.forEach(n => {
-          if (n.isRest) return;
+          let staveNote: StaveNote;
 
-          const pitchMatch = n.pitch.match(/^([A-G])([#b]?)(\d)$/);
-          if (!pitchMatch) return;
+          if (n.isRest) {
+            // 쉼표 렌더링
+            staveNote = new StaveNote({
+              keys: ['b/4'],  // 쉼표는 위치가 고정됨
+              duration: n.duration + 'r',  // 'q' -> 'qr' (rest)
+              clef: 'treble'
+            });
+            staveNote.setStyle({ fillStyle: '#FF9500', strokeStyle: '#FF9500' });  // 오렌지색
+          } else {
+            // 음표 렌더링
+            const pitchMatch = n.pitch.match(/^([A-G])([#b]?)(\d)$/);
+            if (!pitchMatch) return;
 
-          const [, noteName, accidental, octave] = pitchMatch;
-          const vexKey = `${noteName.toLowerCase()}${accidental}/${octave}`;
+            const [, noteName, accidental, octave] = pitchMatch;
+            const vexKey = `${noteName.toLowerCase()}${accidental}/${octave}`;
 
-          const staveNote = new StaveNote({
-            keys: [vexKey],
-            duration: n.duration,
-            clef: 'treble'
-          });
+            staveNote = new StaveNote({
+              keys: [vexKey],
+              duration: n.duration,
+              clef: 'treble'
+            });
 
-          if (accidental === '#') staveNote.addModifier(new Accidental('#'));
-          else if (accidental === 'b') staveNote.addModifier(new Accidental('b'));
+            if (accidental === '#') staveNote.addModifier(new Accidental('#'));
+            else if (accidental === 'b') staveNote.addModifier(new Accidental('b'));
 
-          const noteColor = n.confidence === 'high'
-            ? CONFIDENCE_COLORS.high
-            : n.confidence === 'medium'
-              ? CONFIDENCE_COLORS.medium
-              : CONFIDENCE_COLORS.default;
+            const noteColor = n.confidence === 'high'
+              ? CONFIDENCE_COLORS.high
+              : n.confidence === 'medium'
+                ? CONFIDENCE_COLORS.medium
+                : CONFIDENCE_COLORS.default;
 
-          staveNote.setStyle({ fillStyle: noteColor, strokeStyle: noteColor });
+            staveNote.setStyle({ fillStyle: noteColor, strokeStyle: noteColor });
+          }
 
           const slotRatio = n.slotIndex / 16;
           const rowProgress = (i + slotRatio) / 4;
@@ -297,9 +308,21 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
     });
   }, []);
 
+  // 음표 전용 번호 매핑 (쉼표 제외, 1부터 시작)
+  const noteDisplayNumbers = React.useMemo(() => {
+    const map = new Map<number, number>();
+    let noteNumber = 1;
+    editedNotes.forEach((note, index) => {
+      if (!note.isRest) {
+        map.set(index, noteNumber++);
+      }
+    });
+    return map;
+  }, [editedNotes]);
+
   // 이 row에 해당하는 음표들 필터링 (editedNotes 기준)
   const getNotesForRow = () => {
-    const rowNotes: { note: NoteData; globalIndex: number; measureOffset: number }[] = [];
+    const rowNotes: { note: NoteData; globalIndex: number; measureOffset: number; displayNumber: number }[] = [];
 
     // editedNotes에서 현재 row에 해당하는 음표들 찾기
     editedNotes.forEach((note, globalIndex) => {
@@ -307,19 +330,14 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
       const measureOffset = note.measureIndex - rowStartMeasure;
 
       if (measureOffset >= 0 && measureOffset < 4 && !note.isRest) {
-        rowNotes.push({ note, globalIndex, measureOffset });
+        rowNotes.push({
+          note,
+          globalIndex,
+          measureOffset,
+          displayNumber: noteDisplayNumbers.get(globalIndex) || 0
+        });
       }
     });
-
-    // 디버그 로그 (첫 렌더링 시에만)
-    if (rowNotes.length > 0 && isEditMode) {
-      console.log('[RecordedRowStaff] getNotesForRow:', {
-        rowStartMeasure,
-        totalEditedNotes: editedNotes.length,
-        notesInThisRow: rowNotes.length,
-        notes: rowNotes.map(n => ({ idx: n.globalIndex, pitch: n.note.pitch, slot: n.note.slotIndex }))
-      });
-    }
 
     return rowNotes;
   };
@@ -368,9 +386,9 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
           ))}
 
           {/* 쉼표 박스들 */}
-          {getRestsForRow().map(({ note, globalIndex, measureOffset }) => (
+          {getRestsForRow().map(({ note, measureOffset }) => (
             <div
-              key={`rest-${note.measureIndex}-${note.slotIndex}-${globalIndex}`}
+              key={`rest-${note.measureIndex}-${note.slotIndex}`}
               className="absolute top-0 bottom-0"
               style={{
                 left: `${measureOffset * measureWidth}px`,
@@ -379,7 +397,6 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
             >
               <RestBox
                 note={note}
-                noteIndex={globalIndex}
                 measureWidth={measureWidth}
                 containerHeight={height}
               />
@@ -387,7 +404,7 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
           ))}
 
           {/* 음표 박스들 */}
-          {getNotesForRow().map(({ note, globalIndex, measureOffset }) => (
+          {getNotesForRow().map(({ note, globalIndex, measureOffset, displayNumber }) => (
             <div
               key={`${note.measureIndex}-${note.slotIndex}-${note.pitch}`}
               className="absolute top-0 bottom-0"
@@ -399,6 +416,7 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
               <NoteBox
                 note={note}
                 noteIndex={globalIndex}
+                displayNumber={displayNumber}
                 measureWidth={measureWidth}
                 containerHeight={height}
                 isSelected={selectedNoteIndices.includes(globalIndex)}

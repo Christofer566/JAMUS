@@ -7,6 +7,7 @@ import { NoteData } from '@/types/note';
 interface NoteBoxProps {
   note: NoteData;
   noteIndex: number;
+  displayNumber: number;  // 음표 전용 번호 (1부터 시작)
   measureWidth: number;
   containerHeight: number;
   isSelected: boolean;
@@ -44,6 +45,7 @@ function pitchToY(pitch: string, containerHeight: number): number {
 const NoteBox: React.FC<NoteBoxProps> = ({
   note,
   noteIndex,
+  displayNumber,
   measureWidth,
   containerHeight,
   isSelected,
@@ -123,9 +125,9 @@ const NoteBox: React.FC<NoteBoxProps> = ({
         {/* 리사이즈 핸들 시각적 표시 */}
         <div className="w-[2px] h-[60%] bg-white/40 group-hover:bg-white/80 rounded-full transition-colors" />
       </div>
-      {/* 번호 및 음정 표시 */}
+      {/* 번호 및 음정 표시 (displayNumber: 음표 전용 번호) */}
       <span className="absolute -top-5 left-0 text-xs font-mono whitespace-nowrap font-bold" style={{ color: isSelected ? '#7BA7FF' : '#9CA3AF' }}>
-        #{noteIndex}{isSelected && ` ${note.pitch}`}
+        #{displayNumber}{isSelected && ` ${note.pitch}`}
       </span>
     </div>
   );
