@@ -16,8 +16,13 @@ interface NoteBoxProps {
   onDragEnd: () => void;
 }
 
-// 음정 → Y 위치 변환 (C4 기준)
+// 음정 → Y 위치 변환 (VexFlow 오선보 기준)
 const NOTE_ORDER = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// VexFlow stave 설정과 일치: staveY = -5, height = 80
+// 오선보 중심 (B4 기준)은 대략 staveY + 40 = 35px 근처
+const STAVE_CENTER_Y = 35;
+const PIXELS_PER_SEMITONE = 2.5; // VexFlow 음표 간격에 맞춤
 
 function pitchToY(pitch: string, containerHeight: number): number {
   if (pitch === 'rest') return containerHeight / 2;
@@ -27,19 +32,14 @@ function pitchToY(pitch: string, containerHeight: number): number {
 
   const noteName = match[1];
   const octave = parseInt(match[2]);
-  const noteIndex = NOTE_ORDER.indexOf(noteName);
+  const noteIdx = NOTE_ORDER.indexOf(noteName);
 
-  // MIDI 기준 (C4 = 60)
-  const midiNote = (octave + 1) * 12 + noteIndex;
-  const c4Midi = 60;
+  // MIDI 기준 (B4 = 71, 오선보 가운데 선)
+  const midiNote = (octave + 1) * 12 + noteIdx;
+  const b4Midi = 71;
 
   // 높은 음 = 위쪽 (낮은 Y값)
-  // 오선보 영역 (약 20px ~ 60px) 내에서 표시
-  const noteHeight = 8;
-  const centerY = containerHeight / 2;
-  const pixelsPerSemitone = 3;
-
-  return centerY - (midiNote - c4Midi) * pixelsPerSemitone;
+  return STAVE_CENTER_Y - (midiNote - b4Midi) * PIXELS_PER_SEMITONE;
 }
 
 const NoteBox: React.FC<NoteBoxProps> = ({
@@ -63,17 +63,17 @@ const NoteBox: React.FC<NoteBoxProps> = ({
   const left = note.slotIndex * slotWidth;
   const width = note.slotCount * slotWidth;
   const top = pitchToY(note.pitch, containerHeight);
-  const height = 12; // 음표 박스 높이
+  const height = 8; // 음표 박스 높이 (작게)
 
   // 색상 결정
   const isYellow = note.confidence === 'medium';
 
-  const baseStyle = 'absolute rounded-sm transition-colors duration-100 cursor-pointer';
+  const baseStyle = 'absolute rounded-[2px] transition-colors duration-100 cursor-pointer';
   const colorStyle = isSelected
-    ? 'bg-[#7BA7FF]/40 border-2 border-[#7BA7FF] shadow-lg'
+    ? 'bg-[#7BA7FF]/50 border border-[#7BA7FF] shadow-md'
     : isYellow
-      ? 'bg-[#FFD700]/30 border border-[#FFD700]/70'
-      : 'bg-white/30 border border-white/50';
+      ? 'bg-[#FFD700]/40 border border-[#FFD700]/60'
+      : 'bg-white/40 border border-white/60';
 
   // 드래그 시작 처리
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -117,17 +117,22 @@ const NoteBox: React.FC<NoteBoxProps> = ({
       onMouseDown={handleMouseDown}
       onMouseUp={onDragEnd}
     >
-      {/* 리사이즈 핸들 - 더 눈에 띄게 표시 */}
+      {/* 리사이즈 핸들 */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-[8px] cursor-ew-resize group flex items-center justify-center"
+        className="absolute right-0 top-0 bottom-0 w-[6px] cursor-ew-resize group flex items-center justify-center"
         style={{ borderRadius: '0 2px 2px 0' }}
       >
-        {/* 리사이즈 핸들 시각적 표시 */}
-        <div className="w-[2px] h-[60%] bg-white/40 group-hover:bg-white/80 rounded-full transition-colors" />
+        <div className="w-[1px] h-[60%] bg-white/30 group-hover:bg-white/70 rounded-full transition-colors" />
       </div>
-      {/* 번호 및 음정 표시 (displayNumber: 음표 전용 번호) */}
-      <span className="absolute -top-5 left-0 text-xs font-mono whitespace-nowrap font-bold" style={{ color: isSelected ? '#7BA7FF' : '#9CA3AF' }}>
-        #{displayNumber}{isSelected && ` ${note.pitch}`}
+      {/* 번호 표시 (선택 시에만 음정 표시) */}
+      <span
+        className="absolute left-0 text-[10px] font-mono whitespace-nowrap font-medium pointer-events-none"
+        style={{
+          top: '-14px',
+          color: isSelected ? '#7BA7FF' : '#9CA3AF'
+        }}
+      >
+        {displayNumber}{isSelected && ` ${note.pitch}`}
       </span>
     </div>
   );

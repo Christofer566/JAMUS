@@ -143,9 +143,14 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
             staveNote.setStyle({ fillStyle: noteColor, strokeStyle: noteColor });
           }
 
-          const slotRatio = n.slotIndex / 16;
-          const rowProgress = (i + slotRatio) / 4;
-          const noteX = rowProgress * containerWidth;
+          // 슬롯 시작 위치 계산 (NoteBox와 일치)
+          const slotWidth = measureWidth / 16;
+
+          // NoteBox 위치 (목표 위치)
+          const noteBoxLeft = i * measureWidth + n.slotIndex * slotWidth;
+
+          // VexFlow 내부 오프셋 보정 (디버깅으로 확인된 값: 17px)
+          const VEXFLOW_INTERNAL_OFFSET = 17;
 
           const voice = new Voice({ num_beats: 4, beat_value: 4 }).setStrict(false);
           voice.addTickables([staveNote]);
@@ -153,7 +158,7 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
           staveNote.setStave(stave);
 
           const tickContext = staveNote.getTickContext();
-          if (tickContext) tickContext.setX(noteX - stave.getX());
+          if (tickContext) tickContext.setX(noteBoxLeft - stave.getX() - VEXFLOW_INTERNAL_OFFSET);
 
           voice.draw(context, stave);
         });
@@ -430,12 +435,12 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
           {/* 드래그 프리뷰 */}
           {dragPreview && currentDrag && (
             <div
-              className="absolute bg-[#7BA7FF]/20 border border-dashed border-[#7BA7FF] rounded-sm pointer-events-none"
+              className="absolute bg-[#7BA7FF]/20 border border-dashed border-[#7BA7FF] rounded-[2px] pointer-events-none"
               style={{
                 left: `${(dragPreview.measureIndex - rowStartMeasure) * measureWidth + (dragPreview.slotIndex / 16) * measureWidth}px`,
                 width: `${(dragPreview.slotCount / 16) * measureWidth - 2}px`,
-                height: '12px',
-                top: '50%',
+                height: '8px',
+                top: '35px', // VexFlow 오선보 중심
                 transform: 'translateY(-50%)',
                 zIndex: 30
               }}

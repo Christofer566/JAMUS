@@ -839,7 +839,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   setDragPreview: (preview) => set({ dragPreview: preview }),
   setIsDragging: (dragging) => set({ isDragging: dragging }),
 
-  // 초기화 (빈 슬롯을 쉼표로 채움)
+  // 초기화 (빈 슬롯을 쉼표로 채움, 일반모드로 리셋)
   initializeNotes: (notes) => {
     const filledNotes = fillGapsWithRests(notes);
     return set({
@@ -847,7 +847,9 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       editedNotes: [...filledNotes],
       undoStack: [],
       redoStack: [],
-      selectedNoteIndices: []
+      selectedNoteIndices: [],
+      isEditMode: false,
+      showEditPanel: false
     });
   },
 

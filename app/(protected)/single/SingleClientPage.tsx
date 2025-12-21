@@ -14,26 +14,13 @@ import { useToast } from '@/contexts/ToastContext';
 import { uploadJamRecording } from '@/lib/jamStorage';
 import { getSharedAudioContext, resumeAudioContext } from '@/hooks/useAudioContext';
 import { useRecordingStore } from '@/stores/recordingStore';
+import { DEFAULT_SONG } from '@/data/songs';
 
-const TEST_AUDIO_URLS = {
-    intro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3",
-    chorus: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/chorus.mp3",
-    outro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/outro.mp3"
-};
-
-const mockSections = [
-    { id: 'intro', label: 'Intro', isJamSection: false, measures: Array(8).fill({ chord: 'Cm7' }) },
-    { id: 'chorus', label: 'Chorus', isJamSection: true, measures: Array(32).fill({ chord: 'F7' }) },
-    { id: 'outro', label: 'Outro', isJamSection: false, measures: Array(8).fill({ chord: 'Gm' }) }
-];
-
-const MOCK_SONG = {
-    id: 'autumn-leaves', // song ID for storage
-    bpm: 142,
-    time_signature: '4/4',
-    title: "Autumn Leaves",
-    artist: "Jazz Standard"
-};
+// 곡 데이터에서 가져오기
+const CURRENT_SONG = DEFAULT_SONG;
+const TEST_AUDIO_URLS = CURRENT_SONG.audioUrls;
+const songSections = CURRENT_SONG.sections;
+const SONG_META = CURRENT_SONG.meta;
 
 const calculateMeasureDuration = (bpm: number, timeSignature: string): number => {
     const [beatsPerMeasure] = timeSignature.split('/').map(Number);
@@ -70,10 +57,10 @@ export default function SingleClientPage() {
     const webAudioRef = useRef(webAudio);
     webAudioRef.current = webAudio;
 
-    const metronome = useMetronome({ bpm: MOCK_SONG.bpm });
+    const metronome = useMetronome({ bpm: SONG_META.bpm });
 
-    const measureDuration = useMemo(() => calculateMeasureDuration(MOCK_SONG.bpm, MOCK_SONG.time_signature), []);
-    const totalMeasures = useMemo(() => mockSections.reduce((acc, s) => acc + s.measures.length, 0), []);
+    const measureDuration = useMemo(() => calculateMeasureDuration(SONG_META.bpm, SONG_META.time_signature), []);
+    const totalMeasures = useMemo(() => songSections.reduce((acc, s) => acc + s.measures.length, 0), []);
     const duration = webAudio.isReady ? webAudio.duration : totalMeasures * measureDuration;
 
     const { introEndTime, jamSectionRange } = useMemo(() => {
@@ -83,7 +70,7 @@ export default function SingleClientPage() {
         let jamStartMeasure = 0;
         let jamEndMeasure = 0;
 
-        for (const section of mockSections) {
+        for (const section of songSections) {
             const sectionStart = accumulatedMeasures;
             accumulatedMeasures += section.measures.length;
 
@@ -96,7 +83,7 @@ export default function SingleClientPage() {
         }
 
         return {
-            introEndTime: (mockSections[0].measures.length) * measureDuration,
+            introEndTime: (songSections[0].measures.length) * measureDuration,
             jamSectionRange: {
                 startTime: jamStart,
                 endTime: jamEnd,
@@ -108,7 +95,7 @@ export default function SingleClientPage() {
 
     const playerBarSections = useMemo(() => {
         let accumulatedMeasures = 0;
-        return mockSections.map(section => {
+        return songSections.map(section => {
             const startTime = accumulatedMeasures * measureDuration;
             accumulatedMeasures += section.measures.length;
             const endTime = accumulatedMeasures * measureDuration;
@@ -118,17 +105,17 @@ export default function SingleClientPage() {
 
     const currentSectionIndex = useMemo(() => {
         let accumulatedTime = 0;
-        for (let i = 0; i < mockSections.length; i++) {
-            if (currentTime < accumulatedTime + (mockSections[i].measures.length * measureDuration)) return i;
-            accumulatedTime += mockSections[i].measures.length * measureDuration;
+        for (let i = 0; i < songSections.length; i++) {
+            if (currentTime < accumulatedTime + (songSections[i].measures.length * measureDuration)) return i;
+            accumulatedTime += songSections[i].measures.length * measureDuration;
         }
-        return mockSections.length - 1;
+        return songSections.length - 1;
     }, [currentTime, measureDuration]);
 
     const currentMeasureInSection = useMemo(() => {
         let accumulatedTime = 0;
         for (let i = 0; i < currentSectionIndex; i++) {
-            accumulatedTime += mockSections[i].measures.length * measureDuration;
+            accumulatedTime += songSections[i].measures.length * measureDuration;
         }
         return Math.floor((currentTime - accumulatedTime) / measureDuration);
     }, [currentTime, currentSectionIndex, measureDuration]);
@@ -138,11 +125,11 @@ export default function SingleClientPage() {
         return (timeInSection % measureDuration) / measureDuration;
     }, [currentTime, currentSectionIndex, playerBarSections, measureDuration]);
     
-    const currentSection = mockSections[currentSectionIndex];
+    const currentSection = songSections[currentSectionIndex];
     const globalMeasure = useMemo(() => {
         let total = 0;
         for (let i = 0; i < currentSectionIndex; i++) {
-            total += mockSections[i].measures.length;
+            total += songSections[i].measures.length;
         }
         return total + currentMeasureInSection + 1;
     }, [currentSectionIndex, currentMeasureInSection]);
@@ -455,10 +442,18 @@ export default function SingleClientPage() {
             return;
         }
 
-        // 녹음 데이터를 store에 저장
+        // 녹음 데이터를 store에 저장 (prerollDuration 포함)
         const firstSegment = recorder.segments[0];
         if (firstSegment && recorder.recordingRange) {
-            setRecording(firstSegment.blob, recorder.recordingRange);
+            // 저장 직전 확인 로그
+            console.log('💾 저장 직전:', {
+                blobSize: firstSegment.blob.size,
+                blobType: firstSegment.blob.type,
+                prerollDuration: firstSegment.prerollDuration,
+                range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
+                note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
+            });
+            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration);
         }
 
         // Feedback 페이지로 이동
@@ -517,6 +512,11 @@ export default function SingleClientPage() {
         await resumeAudioContext();
         const audioContext = getSharedAudioContext();
 
+        // MediaRecorder 미리 시작 (preroll - 초기화 지연 해소)
+        const prepared = await recorder.prepareRecording();
+        console.log('🎤 [handleStartJam] prepareRecording:', prepared);
+        if (!prepared) return;
+
         // 1. 현재 위치 저장
         originalPositionRef.current = currentTime;
 
@@ -541,7 +541,7 @@ export default function SingleClientPage() {
         // 4. AudioContext 기반 카운트다운 시작
         setIsCountingDown(true);
         const countdownStartTime = audioContext.currentTime;
-        const secondsPerBeat = 60 / MOCK_SONG.bpm;
+        const secondsPerBeat = 60 / SONG_META.bpm;
 
         // 녹음 시작 시간 계산 (마디 경계) - 현재 마디 기준
         const recordStartMeasure = currentMeasureNum;
@@ -620,6 +620,9 @@ export default function SingleClientPage() {
         metronome.stop();
         setIsPlaying(false);
 
+        // MediaRecorder 정리 (prepareRecording으로 시작된 녹음 취소)
+        recorder.resetRecording();
+
         // 원래 위치로 복귀
         webAudio.seek(originalPositionRef.current);
         metronome.seekTo(originalPositionRef.current);
@@ -628,7 +631,7 @@ export default function SingleClientPage() {
 
         showToast('info', '녹음이 취소되었습니다');
         console.log('🎤 [START JAM] 취소됨, 원래 위치로 복귀:', originalPositionRef.current);
-    }, [webAudio, metronome, showToast]);
+    }, [webAudio, metronome, showToast, recorder]);
 
     /**
      * R키 핸들러 (상태에 따라 분기)
@@ -770,10 +773,18 @@ export default function SingleClientPage() {
     const handleModalSave = useCallback(() => {
         setShowCompleteModal(false);
 
-        // 녹음 데이터를 store에 저장
+        // 녹음 데이터를 store에 저장 (prerollDuration 포함)
         const firstSegment = recorder.segments[0];
         if (firstSegment && recorder.recordingRange) {
-            setRecording(firstSegment.blob, recorder.recordingRange);
+            // 저장 직전 확인 로그
+            console.log('💾 저장 직전 (모달):', {
+                blobSize: firstSegment.blob.size,
+                blobType: firstSegment.blob.type,
+                prerollDuration: firstSegment.prerollDuration,
+                range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
+                note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
+            });
+            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration);
         }
 
         // Feedback 페이지로 이동
@@ -788,8 +799,8 @@ export default function SingleClientPage() {
                         <div className="flex items-center gap-4">
                             <button onClick={handleBack} className="p-2 hover:bg-white/10 rounded-full transition-colors"><ChevronLeft size={24} /></button>
                             <div>
-                                <h1 className="text-2xl font-bold leading-none">{MOCK_SONG.title}</h1>
-                                <span className="text-sm text-gray-400">{MOCK_SONG.artist}</span>
+                                <h1 className="text-2xl font-bold leading-none">{SONG_META.title}</h1>
+                                <span className="text-sm text-gray-400">{SONG_META.artist}</span>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -806,7 +817,7 @@ export default function SingleClientPage() {
                                 <span>{formatTime(currentTime)} / {formatTime(duration)}</span>
                                 <span>{currentSection?.label} - {globalMeasure}/{totalMeasures} 마디</span>
                                 {jamOnlyMode && <span className="text-[#7BA7FF]">JAM ONLY</span>}
-                                {metronomeOn && <span className="text-[#FFD166]">♪ {MOCK_SONG.bpm} BPM</span>}
+                                {metronomeOn && <span className="text-[#FFD166]">♪ {SONG_META.bpm} BPM</span>}
                             </div>
                             {/* Recording/Processing Status */}
                             <div className="flex items-center gap-3">
@@ -839,7 +850,7 @@ export default function SingleClientPage() {
 
                     <div className="h-full pt-12 rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 overflow-hidden">
                         <SingleScore
-                            sections={mockSections}
+                            sections={songSections}
                             currentSectionIndex={currentSectionIndex}
                             currentMeasure={currentMeasureInSection}
                             measureProgress={measureProgress}

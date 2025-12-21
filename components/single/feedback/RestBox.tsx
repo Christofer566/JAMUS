@@ -30,27 +30,23 @@ const RestBox: React.FC<RestBoxProps> = ({
   const slotWidth = measureWidth / 16;
   const left = note.slotIndex * slotWidth;
   const width = note.slotCount * slotWidth;
-  const centerY = containerHeight / 2;
-  const height = 16;
+  const centerY = 35; // VexFlow 오선보 중심과 일치
+  const height = 10;
 
   return (
     <div
-      className="absolute flex items-center justify-center rounded border-2 border-dashed border-orange-400/50 bg-orange-400/15"
+      className="absolute flex items-center justify-center rounded-[2px] border border-dashed border-orange-400/40 bg-orange-400/10"
       style={{
         left: `${left}px`,
         top: `${centerY - height / 2}px`,
-        width: `${Math.max(width - 2, 12)}px`,
+        width: `${Math.max(width - 2, 10)}px`,
         height: `${height}px`,
         zIndex: 5
       }}
     >
-      {/* 슬롯 위치 표시 */}
-      <span className="absolute -top-5 left-0 text-[10px] text-orange-300/70 font-mono">
-        s{note.slotIndex}-{note.slotIndex + note.slotCount - 1}
-      </span>
       {/* 쉼표 기호 표시 (슬롯이 충분히 넓을 때만) */}
-      {width >= 20 && (
-        <span className="text-base text-orange-300 select-none font-bold">
+      {width >= 16 && (
+        <span className="text-xs text-orange-300/70 select-none">
           {getRestSymbol(note.slotCount)}
         </span>
       )}

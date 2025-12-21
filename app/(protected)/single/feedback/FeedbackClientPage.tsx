@@ -17,26 +17,13 @@ import { NoteData } from '@/types/note';
 import { GRADE_COLORS, GRADE_EMOJIS } from '@/types/feedback';
 import EditToolPanel from '@/components/single/feedback/EditToolPanel';
 import { ChevronRight } from 'lucide-react';
+import { DEFAULT_SONG } from '@/data/songs';
 
-const TEST_AUDIO_URLS = {
-    intro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3",
-    chorus: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/chorus.mp3",
-    outro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/outro.mp3"
-};
-
-const mockSections = [
-    { id: 'intro', label: 'Intro', isJamSection: false, measures: Array(8).fill({ chord: 'Cm7' }) },
-    { id: 'chorus', label: 'Chorus', isJamSection: true, measures: Array(32).fill({ chord: 'F7' }) },
-    { id: 'outro', label: 'Outro', isJamSection: false, measures: Array(8).fill({ chord: 'Gm' }) }
-];
-
-const MOCK_SONG = {
-    id: 'autumn-leaves', // song ID for storage
-    bpm: 142,
-    time_signature: '4/4',
-    title: "Autumn Leaves",
-    artist: "Jazz Standard"
-};
+// 곡 데이터에서 가져오기
+const CURRENT_SONG = DEFAULT_SONG;
+const TEST_AUDIO_URLS = CURRENT_SONG.audioUrls;
+const songSections = CURRENT_SONG.sections;
+const SONG_META = CURRENT_SONG.meta;
 
 const calculateMeasureDuration = (bpm: number, timeSignature: string): number => {
     const [beatsPerMeasure] = timeSignature.split('/').map(Number);
@@ -61,7 +48,7 @@ export default function FeedbackClientPage() {
     const { analyzeAudio, isAnalyzing: isAnalyzingPitch, error: pitchError } = usePitchAnalyzer();
 
     // Zustand store에서 녹음 데이터 가져오기
-    const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, clearRecording } = useRecordingStore();
+    const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, prerollDuration: storedPrerollDuration, clearRecording } = useRecordingStore();
 
     // 편집 모드 스토어
     const {
@@ -97,13 +84,13 @@ export default function FeedbackClientPage() {
     const webAudioRef = useRef(webAudio);
     webAudioRef.current = webAudio;
 
-    const measureDuration = useMemo(() => calculateMeasureDuration(MOCK_SONG.bpm, MOCK_SONG.time_signature), []);
-    const totalMeasures = useMemo(() => mockSections.reduce((acc, s) => acc + s.measures.length, 0), []);
+    const measureDuration = useMemo(() => calculateMeasureDuration(SONG_META.bpm, SONG_META.time_signature), []);
+    const totalMeasures = useMemo(() => songSections.reduce((acc, s) => acc + s.measures.length, 0), []);
     const duration = webAudio.isReady ? webAudio.duration : totalMeasures * measureDuration;
 
     const introEndTime = useMemo(() => { // Re-add introEndTime calculation
         let accumulatedMeasures = 0;
-        for (const section of mockSections) {
+        for (const section of songSections) {
             accumulatedMeasures += section.measures.length;
             if (!section.isJamSection) { // Assuming intro is the first non-jam section
                 return accumulatedMeasures * measureDuration;
@@ -114,7 +101,7 @@ export default function FeedbackClientPage() {
 
     const playerBarSections = useMemo(() => {
         let accumulatedMeasures = 0;
-        return mockSections.map(section => {
+        return songSections.map(section => {
             const startTime = accumulatedMeasures * measureDuration;
             accumulatedMeasures += section.measures.length;
             const endTime = accumulatedMeasures * measureDuration;
@@ -124,17 +111,17 @@ export default function FeedbackClientPage() {
 
     const currentSectionIndex = useMemo(() => {
         let accumulatedTime = 0;
-        for (let i = 0; i < mockSections.length; i++) {
-            if (currentTime < accumulatedTime + (mockSections[i].measures.length * measureDuration)) return i;
-            accumulatedTime += mockSections[i].measures.length * measureDuration;
+        for (let i = 0; i < songSections.length; i++) {
+            if (currentTime < accumulatedTime + (songSections[i].measures.length * measureDuration)) return i;
+            accumulatedTime += songSections[i].measures.length * measureDuration;
         }
-        return mockSections.length - 1;
+        return songSections.length - 1;
     }, [currentTime, measureDuration]);
 
     const currentMeasureInSection = useMemo(() => {
         let accumulatedTime = 0;
         for (let i = 0; i < currentSectionIndex; i++) {
-            accumulatedTime += mockSections[i].measures.length * measureDuration;
+            accumulatedTime += songSections[i].measures.length * measureDuration;
         }
         return Math.floor((currentTime - accumulatedTime) / measureDuration);
     }, [currentTime, currentSectionIndex, measureDuration]);
@@ -145,11 +132,11 @@ export default function FeedbackClientPage() {
         return (timeInSection % measureDuration) / measureDuration;
     }, [currentTime, currentSectionIndex, playerBarSections, measureDuration]);
 
-    const currentSection = mockSections[currentSectionIndex];
+    const currentSection = songSections[currentSectionIndex];
     const globalMeasure = useMemo(() => {
         let total = 0;
         for (let i = 0; i < currentSectionIndex; i++) {
-            total += mockSections[i].measures.length;
+            total += songSections[i].measures.length;
         }
         return total + currentMeasureInSection + 1;
     }, [currentSectionIndex, currentMeasureInSection]);
@@ -289,34 +276,48 @@ export default function FeedbackClientPage() {
 
         // 비동기 분석
         const performAnalysis = async () => {
-            const pitchFrames = await analyzeAudio(storedAudioBlob);
-            const beatsPerMeasure = Number(MOCK_SONG.time_signature.split('/')[0]);
+            // prerollDuration 전달: 0이면 지연 보정 생략 (트리밍된 상태)
+            const pitchFrames = await analyzeAudio(storedAudioBlob, storedPrerollDuration);
+            const beatsPerMeasure = Number(SONG_META.time_signature.split('/')[0]);
+
+            // prerollDuration을 마디 수로 변환 (이미 0이면 보정 불필요)
+            const prerollMeasures = Math.round(storedPrerollDuration / measureDuration);
+
+            console.log('[Pitch Analysis] prerollDuration 보정:', {
+                prerollDuration: storedPrerollDuration.toFixed(3) + 's',
+                measureDuration: measureDuration.toFixed(3) + 's',
+                prerollMeasures,
+                startMeasure: storedRecordingRange.startMeasure
+            });
 
             // 16슬롯 그리드 기반 음표 변환
-            // 무음 패딩 제거됨: measureIndex는 녹음 시작 기준 (0부터)
-            // startMeasure만 더하면 최종 마디 번호가 됨
-            const notes = convertToNotes(pitchFrames, MOCK_SONG.bpm);
+            const notes = convertToNotes(pitchFrames, SONG_META.bpm);
+
+            // prerollDuration 보정: measureIndex에서 prerollMeasures 빼기
+            notes.forEach(note => {
+                note.measureIndex = Math.max(0, note.measureIndex - prerollMeasures);
+            });
 
             // 음표만 필터링 (쉼표 제외)
             const noteOnly = notes.filter(note => !note.isRest);
 
-            // 디버그: 원본 음표들의 measureIndex 분포 확인
-            const originalMeasureIndices = noteOnly.map(n => n.measureIndex);
-            const uniqueOriginalMeasures = [...new Set(originalMeasureIndices)].sort((a, b) => a - b);
+            // 디버그: 보정 후 음표들의 measureIndex 분포 확인
+            const adjustedMeasureIndices = noteOnly.map(n => n.measureIndex);
+            const uniqueAdjustedMeasures = [...new Set(adjustedMeasureIndices)].sort((a, b) => a - b);
 
-            console.log('[Pitch Analysis] 무음 패딩 제거 - 단순 오프셋:', {
-                bpm: MOCK_SONG.bpm,
+            console.log('[Pitch Analysis] preroll 보정 후:', {
+                bpm: SONG_META.bpm,
                 startMeasure: storedRecordingRange.startMeasure,
-                originalMeasureRange: uniqueOriginalMeasures.length > 0
-                    ? `${uniqueOriginalMeasures[0]} ~ ${uniqueOriginalMeasures[uniqueOriginalMeasures.length - 1]}`
+                adjustedMeasureRange: uniqueAdjustedMeasures.length > 0
+                    ? `${uniqueAdjustedMeasures[0]} ~ ${uniqueAdjustedMeasures[uniqueAdjustedMeasures.length - 1]}`
                     : 'none',
-                calculation: `measureIndex + startMeasure = finalMeasure (prerollMeasures 계산 불필요)`
+                calculation: `measureIndex - ${prerollMeasures} + startMeasure = finalMeasure`
             });
 
             // 무음 패딩 없음: measureIndex가 이미 0부터 시작하므로
             // distributeNotesToMeasures에서 startMeasure만 더하면 됨
             const groupedNotes = distributeNotesToMeasures(noteOnly, {
-                bpm: MOCK_SONG.bpm,
+                bpm: SONG_META.bpm,
                 beatsPerMeasure,
                 startMeasure: storedRecordingRange.startMeasure
             });
@@ -616,8 +617,8 @@ export default function FeedbackClientPage() {
                         <div className="flex items-center gap-4">
                             <button onClick={handleBack} className="p-2 hover:bg-white/10 rounded-full transition-colors"><ChevronLeft size={24} /></button>
                             <div>
-                                <h1 className="text-2xl font-bold leading-none">{MOCK_SONG.title}</h1>
-                                <span className="text-sm text-gray-400">{MOCK_SONG.artist}</span>
+                                <h1 className="text-2xl font-bold leading-none">{SONG_META.title}</h1>
+                                <span className="text-sm text-gray-400">{SONG_META.artist}</span>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -640,7 +641,7 @@ export default function FeedbackClientPage() {
 
                     <div className="h-full pt-12 rounded-xl border border-[#FFFFFF]/10 bg-[#FFFFFF]/5 overflow-hidden">
                         <SingleScore
-                            sections={mockSections}
+                            sections={songSections}
                             currentSectionIndex={currentSectionIndex}
                             currentMeasure={currentMeasureInSection}
                             measureProgress={measureProgress}

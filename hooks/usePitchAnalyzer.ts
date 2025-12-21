@@ -6,14 +6,19 @@ import { PitchFrame } from '@/types/pitch';
 interface UsePitchAnalyzerReturn {
   isAnalyzing: boolean;
   error: string | null;
-  analyzeAudio: (blob: Blob) => Promise<PitchFrame[]>;
+  analyzeAudio: (blob: Blob, prerollDuration?: number) => Promise<PitchFrame[]>;
 }
 
 export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const analyzeAudio = useCallback(async (blob: Blob): Promise<PitchFrame[]> => {
+  /**
+   * 오디오 blob을 분석하여 피치 프레임 배열 반환
+   * @param blob - 분석할 오디오 blob
+   * @param prerollDuration - preroll 시간 (0이면 이미 트리밍됨, 지연 보정 생략)
+   */
+  const analyzeAudio = useCallback(async (blob: Blob, prerollDuration: number = 0): Promise<PitchFrame[]> => {
     setError(null);
     setIsAnalyzing(true);
 
@@ -114,15 +119,32 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         소요시간: `${elapsedTime.toFixed(0)}ms`
       });
 
-      // 첫 마디 디버깅: 첫 유효 프레임 찾기
-      const firstValidFrameIdx = frames.findIndex(f => f.frequency > 0 && f.confidence > 0.2);
-      const firstValidFrame = firstValidFrameIdx >= 0 ? frames[firstValidFrameIdx] : null;
-      console.log('[MacLeod] 첫 유효 프레임:', {
-        인덱스: firstValidFrameIdx,
-        시간: firstValidFrame?.time.toFixed(3) + 's',
-        주파수: firstValidFrame?.frequency.toFixed(0) + 'Hz',
-        confidence: firstValidFrame?.confidence.toFixed(2)
-      });
+      // MediaRecorder 지연 보정 (prerollDuration > 0일 때만)
+      // prerollDuration이 0이면 이미 트리밍된 상태이므로 보정 불필요
+      // 사용자가 늦게 시작한 것은 "쉼표"로 표시되어야 함
+      if (prerollDuration > 0) {
+        // 첫 유효 프레임 찾기 (MediaRecorder 지연 보정용)
+        const firstValidFrameIdx = frames.findIndex(f => f.frequency > 0 && f.confidence > 0.2);
+        const firstValidFrame = firstValidFrameIdx >= 0 ? frames[firstValidFrameIdx] : null;
+        const mediaRecorderDelay = firstValidFrame?.time || 0;
+
+        console.log('[MacLeod] MediaRecorder 지연 감지:', {
+          첫유효프레임인덱스: firstValidFrameIdx,
+          지연시간: mediaRecorderDelay.toFixed(3) + 's',
+          주파수: firstValidFrame?.frequency.toFixed(0) + 'Hz'
+        });
+
+        // MediaRecorder 지연 보정: 모든 프레임 시간에서 지연 시간 빼기
+        // 이렇게 하면 첫 유효 프레임이 time=0이 됨
+        if (mediaRecorderDelay > 0.1) { // 100ms 이상 지연 시 보정
+          console.log(`[MacLeod] 지연 보정 적용: 모든 프레임 시간에서 ${mediaRecorderDelay.toFixed(3)}s 빼기`);
+          frames.forEach(f => {
+            f.time = Math.max(0, f.time - mediaRecorderDelay);
+          });
+        }
+      } else {
+        console.log('[MacLeod] preroll=0이므로 지연 보정 생략 (트리밍 완료된 상태)');
+      }
 
       await audioContext.close();
       return frames;
