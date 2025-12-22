@@ -659,6 +659,14 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     console.log('🎤 [AUDIO RMS] 초별 RMS 분석 (트리밍 전):', rmsResults.join(' | '));
 
                             // preroll 부분을 잘라낸 새 AudioBuffer 생성
+                            console.log('🎤 [TRIM CHECK] prerollToTrim:', prerollToTrim.toFixed(3) + 's',
+                                prerollToTrim > 0.1 ? '→ 트리밍 실행' : '→ ⚠️ 트리밍 스킵 (0.1s 이하)');
+
+                            // 경고: preroll이 비정상적으로 짧으면 prepareRecording 호출 누락 가능성
+                            if (prerollToTrim < 1.0 && prerollToTrim > 0) {
+                                console.warn('🎤 ⚠️ prerollToTrim이 1초 미만! prepareRecording 호출 여부 확인 필요');
+                            }
+
                             if (prerollToTrim > 0.1) {
                                 const sampleRate = audioBuffer.sampleRate;
                                 const trimSamples = Math.floor(prerollToTrim * sampleRate);
@@ -697,6 +705,23 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                                         originalBlobSize: rawBlob.size,
                                         trimmedBlobSize: trimmedBlob.size
                                     });
+
+                                    // 트리밍 후 RMS 분석
+                                    const trimmedChannelData = trimmedBuffer.getChannelData(0);
+                                    const trimmedRmsResults: string[] = [];
+                                    for (const sec of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+                                        if (sec >= trimmedBuffer.duration) break;
+                                        const start = Math.floor(sec * sampleRate);
+                                        const end = Math.min(start + sampleRate, trimmedChannelData.length);
+                                        let sum = 0;
+                                        for (let i = start; i < end; i++) {
+                                            sum += trimmedChannelData[i] * trimmedChannelData[i];
+                                        }
+                                        const rms = Math.sqrt(sum / (end - start));
+                                        const status = rms < 0.005 ? '🔇무음' : rms < 0.02 ? '🔈약함' : '🔊정상';
+                                        trimmedRmsResults.push(`${sec}s:${rms.toFixed(4)}${status}`);
+                                    }
+                                    console.log('🎤 [AUDIO RMS] 초별 RMS 분석 (트리밍 후):', trimmedRmsResults.join(' | '));
 
                                     // segment 업데이트: 트리밍된 blob, url, prerollDuration=0
                                     setSegments(prev => prev.map(seg => {
@@ -826,7 +851,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             // 블롭 내 오프셋 계산
             // prerollDuration: blob 앞부분 건너뛸 시간 (카운트다운 동안 녹음된 부분)
             // fromTime - seg.startTime: 곡 시간 내 오프셋
-            const offset = seg.prerollDuration + Math.max(0, fromTime - seg.startTime);
+            // PLAYBACK_TIMING_OFFSET: 재생 타이밍 보정 (녹음이 늦게 들리면 + 값)
+            const PLAYBACK_TIMING_OFFSET = 0.2;
+            const offset = seg.prerollDuration + Math.max(0, fromTime - seg.startTime) + PLAYBACK_TIMING_OFFSET;
 
             // 새 source node 생성
             const source = context.createBufferSource();
@@ -861,15 +888,20 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     // Pause Recordings (Web Audio API 기반)
     // ========================================
     const pauseRecordings = useCallback(() => {
+        const count = sourceNodesRef.current.size;
+        console.log('🎤 [pauseRecordings] 호출됨, 활성 소스:', count);
+
         sourceNodesRef.current.forEach((source, id) => {
             try {
                 source.stop();
                 source.disconnect();
-            } catch {
-                // 이미 정지됨
+                console.log('🎤 [pauseRecordings] 소스 정지:', id);
+            } catch (e) {
+                console.log('🎤 [pauseRecordings] 소스 이미 정지됨:', id);
             }
         });
         sourceNodesRef.current.clear();
+        console.log('🎤 [pauseRecordings] 완료, 남은 소스:', sourceNodesRef.current.size);
     }, []);
 
     // ========================================

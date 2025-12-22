@@ -214,6 +214,15 @@ export default function SingleClientPage() {
     // 재생 중 녹음 구간 진입/전환 시 녹음 재생 시작 + 볼륨 조절
     const prevSegmentIdRef = useRef<string | null>(null);
     useEffect(() => {
+        // isPlaying이 false면 녹음 재생 정지 (pause 호출 직후 반영)
+        if (!isPlaying) {
+            if (prevSegmentIdRef.current) {
+                recorder.pauseRecordings();
+            }
+            prevSegmentIdRef.current = null;
+            return;
+        }
+
         if (!webAudio.isPlaying || recorder.state !== 'recorded' || recorder.segments.length === 0) {
             prevSegmentIdRef.current = null;
             return;
@@ -241,7 +250,7 @@ export default function SingleClientPage() {
         }
 
         prevSegmentIdRef.current = currentSegmentId;
-    }, [currentTime, webAudio, recorder]);
+    }, [currentTime, webAudio, recorder, isPlaying]);
 
     // Recording ranges derived from recorder segments (복수 녹음 지원)
     const recordedRanges = useMemo(() => {
@@ -258,17 +267,21 @@ export default function SingleClientPage() {
 
     const handlePlayPause = useCallback(async () => {
         console.log('🎵 handlePlayPause called', {
-            isPlaying: webAudio.isPlaying,
+            webAudioIsPlaying: webAudio.isPlaying,
+            localIsPlaying: isPlaying,
             recorderState: recorder.state,
             segmentCount: recorder.segments.length,
             currentTime
         });
 
-        if (webAudio.isPlaying) {
+        // webAudio.isPlaying 또는 로컬 isPlaying 중 하나라도 true면 정지
+        if (webAudio.isPlaying || isPlaying) {
+            console.log('🎵 [handlePlayPause] 정지 처리 시작');
             webAudio.pause();
             metronome.stop();
             recorder.pauseRecordings(); // 녹음 재생도 일시정지
             setIsPlaying(false);
+            console.log('🎵 [handlePlayPause] 정지 처리 완료');
         } else {
             await webAudio.play();
             // 메트로놈: 항상 시작하되 현재 위치로 동기화, 음소거 상태 유지
@@ -286,7 +299,7 @@ export default function SingleClientPage() {
             }
             setIsPlaying(true);
         }
-    }, [webAudio, metronome, recorder, currentTime]);
+    }, [webAudio, metronome, recorder, currentTime, isPlaying]);
 
     const handleToggleJam = useCallback(async () => {
         console.log('🎤 handleToggleJam called', { isJamming, isInJamSection, currentTime, jamSectionRange });
@@ -516,6 +529,19 @@ export default function SingleClientPage() {
         const prepared = await recorder.prepareRecording();
         console.log('🎤 [handleStartJam] prepareRecording:', prepared);
         if (!prepared) return;
+
+        // ========================================
+        // 인코더 Warm-up 대기 (1.5초)
+        // ========================================
+        // MediaRecorder의 opus/webm 인코더는 초기 1-2초 동안
+        // 불안정한 출력을 생성할 수 있음. 이 시간 동안 인코더가
+        // 안정화되도록 대기한 후 카운트다운 시작.
+        // 이 구간은 preroll에 포함되어 트리밍됨.
+        const ENCODER_WARMUP_MS = 1500;
+        setCountdown(-1); // UI에서 "준비 중..." 표시용
+        setIsCountingDown(true);
+        console.log('🎤 [handleStartJam] 인코더 warm-up 대기:', ENCODER_WARMUP_MS + 'ms');
+        await new Promise(resolve => setTimeout(resolve, ENCODER_WARMUP_MS));
 
         // 1. 현재 위치 저장
         originalPositionRef.current = currentTime;
@@ -827,7 +853,13 @@ export default function SingleClientPage() {
                                         처리 중...
                                     </div>
                                 )}
-                                {isCountingDown && countdown !== null && (
+                                {isCountingDown && countdown === -1 && (
+                                    <div className="text-sm flex items-center gap-2 text-[#FFD166]">
+                                        <div className="w-3 h-3 border-2 border-[#FFD166] border-t-transparent rounded-full animate-spin" />
+                                        준비 중...
+                                    </div>
+                                )}
+                                {isCountingDown && countdown !== null && countdown > 0 && (
                                     <div className="text-2xl font-bold text-[#FFD166] animate-pulse">
                                         {countdown}
                                     </div>

@@ -162,7 +162,17 @@ export default function FeedbackClientPage() {
 
     useEffect(() => {
         const userAudio = userAudioRef.current;
-        if (!userAudio || !storedRecordingRange || !isPlaying) {
+        if (!userAudio || !storedRecordingRange) {
+            wasInRangeRef.current = false;
+            return;
+        }
+
+        // 재생 중지 시 녹음 오디오도 즉시 정지
+        if (!isPlaying) {
+            if (!userAudio.paused) {
+                userAudio.pause();
+                console.log('🎤 [User Audio] 재생 중지됨 (isPlaying=false)');
+            }
             wasInRangeRef.current = false;
             return;
         }
@@ -175,8 +185,10 @@ export default function FeedbackClientPage() {
             const recordingOffset = currentTime - storedRecordingRange.startTime;
             userAudio.currentTime = Math.max(0, recordingOffset);
             userAudio.play().catch(() => {});
+            console.log('🎤 [User Audio] 재생 시작 (범위 진입)', { offset: recordingOffset.toFixed(2) });
         } else if (justLeftRange) {
             userAudio.pause();
+            console.log('🎤 [User Audio] 재생 정지 (범위 이탈)');
         }
 
         wasInRangeRef.current = isInRecordingRange;
@@ -224,8 +236,13 @@ export default function FeedbackClientPage() {
     const handlePlayPause = useCallback(async () => {
         const userAudio = userAudioRef.current;
         if (isPlaying) {
+            console.log('🎤 [handlePlayPause] 정지 요청');
             webAudio.pause();
-            userAudio?.pause();
+            if (userAudio && !userAudio.paused) {
+                userAudio.pause();
+                userAudio.currentTime = 0; // 재생 위치 초기화
+                console.log('🎤 [handlePlayPause] userAudio 정지됨');
+            }
             setIsPlaying(false);
         } else {
             if (myRecordingOnlyMode) {
