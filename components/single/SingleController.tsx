@@ -1,6 +1,9 @@
 'use client';
 
 import { Play, Pause, RotateCcw, RotateCw, ChevronDown } from "lucide-react";
+import { useState, useRef } from 'react';
+import { useOnClickOutside } from '@/hooks/useOnClickOutside';
+import { InputInstrument, OutputInstrument } from '@/types/instrument';
 
 interface SingleControllerProps {
   isPlaying: boolean;
@@ -19,10 +22,28 @@ interface SingleControllerProps {
   pressedKey: string | null;
   isFinishing?: boolean;
   hasRecording?: boolean;
+  inputInstrument: InputInstrument;
+  onInputInstrumentChange: (value: InputInstrument) => void;
+  outputInstrument: OutputInstrument;
+  onOutputInstrumentChange: (value: OutputInstrument) => void;
 }
 
 const JAMUS_BLUE = '#7BA7FF';
 const CORAL_COLOR = '#FF7B7B';
+
+const INPUT_OPTIONS = [
+  { value: 'voice', label: '🎤 목소리' },
+  { value: 'piano', label: '🎹 피아노' },
+  { value: 'guitar', label: '🎸 기타' },
+];
+
+const OUTPUT_OPTIONS = [
+  { value: 'raw', label: '🎤 녹음 원본' },
+  { value: 'piano', label: '🎹 피아노' },
+  { value: 'guitar', label: '🎸 기타' },
+];
+
+
 
 export default function SingleController({
   isPlaying,
@@ -39,7 +60,21 @@ export default function SingleController({
   pressedKey = null,
   isFinishing = false,
   hasRecording = false,
+  inputInstrument,
+  onInputInstrumentChange,
+  outputInstrument,
+  onOutputInstrumentChange,
 }: SingleControllerProps) {
+  const [isInputDropdownOpen, setIsInputDropdownOpen] = useState(false);
+  const [isOutputDropdownOpen, setIsOutputDropdownOpen] = useState(false);
+
+  // ref를 전체 드롭다운 컨테이너에 연결 (버튼 + 메뉴 포함)
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+  const outputContainerRef = useRef<HTMLDivElement>(null);
+
+  useOnClickOutside(inputContainerRef, () => setIsInputDropdownOpen(false));
+  useOnClickOutside(outputContainerRef, () => setIsOutputDropdownOpen(false));
+
 
   const jamButtonBg = isJamming ? CORAL_COLOR : JAMUS_BLUE;
   const jamButtonShadow = isJamming ? `0 4px 14px ${CORAL_COLOR}30` : `0 4px 14px ${JAMUS_BLUE}30`;
@@ -56,22 +91,68 @@ export default function SingleController({
     <div className="flex items-center justify-between gap-4">
       {/* 좌측: Input/Output */}
       <div className="flex items-center gap-3">
-        <div className="flex flex-col gap-1">
+        {/* Input Dropdown */}
+        <div ref={inputContainerRef} className="flex flex-col gap-1 relative">
           <span className="text-[10px] text-white font-medium uppercase tracking-wide">Input</span>
-          <button className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}>
-            <span className="text-sm">🎹</span>
-            <span className="text-xs text-[#E0E0E0] truncate">Grand Piano</span>
+          <button
+            onClick={() => setIsInputDropdownOpen(!isInputDropdownOpen)}
+            className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}
+          >
+            <span className="text-sm">{INPUT_OPTIONS.find(opt => opt.value === inputInstrument)?.label.split(' ')[0]}</span>
+            <span className="text-xs text-[#E0E0E0] truncate">{INPUT_OPTIONS.find(opt => opt.value === inputInstrument)?.label.split(' ')[1]}</span>
             <ChevronDown className="w-3 h-3 text-[#9B9B9B] ml-auto" />
           </button>
+          {isInputDropdownOpen && (
+            <div className="absolute z-50 bottom-full left-0 mb-2 w-40 bg-[#1B1C26] rounded-lg shadow-lg border border-white/10">
+              {INPUT_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    onInputInstrumentChange(option.value as InputInstrument);
+                    setIsInputDropdownOpen(false);
+                  }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-white/10 ${
+                    inputInstrument === option.value ? 'text-[#7BA7FF] bg-white/5' : 'text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
         <div className="w-px h-10 bg-white/10" />
-        <div className="flex flex-col gap-1">
+
+        {/* Output Dropdown */}
+        <div ref={outputContainerRef} className="flex flex-col gap-1 relative">
           <span className="text-[10px] text-white font-medium uppercase tracking-wide">Output</span>
-          <button className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}>
-            <span className="text-sm">🔊</span>
-            <span className="text-xs text-[#E0E0E0] truncate">Default Output</span>
+          <button
+            onClick={() => setIsOutputDropdownOpen(!isOutputDropdownOpen)}
+            className={`relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 ${buttonFeedbackStyle}`}
+          >
+            <span className="text-sm">{OUTPUT_OPTIONS.find(opt => opt.value === outputInstrument)?.label.split(' ')[0]}</span>
+            <span className="text-xs text-[#E0E0E0] truncate">{OUTPUT_OPTIONS.find(opt => opt.value === outputInstrument)?.label.split(' ')[1]}</span>
             <ChevronDown className="w-3 h-3 text-[#9B9B9B] ml-auto" />
           </button>
+          {isOutputDropdownOpen && (
+            <div className="absolute z-50 bottom-full left-0 mb-2 w-40 bg-[#1B1C26] rounded-lg shadow-lg border border-white/10">
+              {OUTPUT_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    onOutputInstrumentChange(option.value as OutputInstrument);
+                    setIsOutputDropdownOpen(false);
+                  }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-white/10 ${
+                    outputInstrument === option.value ? 'text-[#7BA7FF] bg-white/5' : 'text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

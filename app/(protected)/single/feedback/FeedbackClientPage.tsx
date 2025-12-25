@@ -18,6 +18,8 @@ import { GRADE_COLORS, GRADE_EMOJIS } from '@/types/feedback';
 import EditToolPanel from '@/components/single/feedback/EditToolPanel';
 import { ChevronRight } from 'lucide-react';
 import { DEFAULT_SONG } from '@/data/songs';
+import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
+import { OutputInstrument } from '@/types/instrument';
 
 // 곡 데이터에서 가져오기
 const CURRENT_SONG = DEFAULT_SONG;
@@ -48,7 +50,7 @@ export default function FeedbackClientPage() {
     const { analyzeAudio, isAnalyzing: isAnalyzingPitch, error: pitchError } = usePitchAnalyzer();
 
     // Zustand store에서 녹음 데이터 가져오기
-    const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, prerollDuration: storedPrerollDuration, clearRecording } = useRecordingStore();
+    const { audioBlob: storedAudioBlob, recordingRange: storedRecordingRange, prerollDuration: storedPrerollDuration, inputInstrument: storedInputInstrument, outputInstrument: storedOutputInstrument, clearRecording } = useRecordingStore();
 
     // 편집 모드 스토어
     const {
@@ -69,8 +71,16 @@ export default function FeedbackClientPage() {
         reset,
         initializeNotes,
         editedNotes,
-        getCleanedNotes
+        getCleanedNotes,
+        conversionState,
+        instrumentOnlyMode,
+        setConversionState,
+        toggleInstrumentOnlyMode,
+        resetConversionState
     } = useFeedbackStore();
+
+    // 악기 변환 훅
+    const voiceToInstrument = useVoiceToInstrument();
 
 
     // User recording playback
@@ -235,28 +245,50 @@ export default function FeedbackClientPage() {
 
     const handlePlayPause = useCallback(async () => {
         const userAudio = userAudioRef.current;
+        const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+
         if (isPlaying) {
             console.log('🎤 [handlePlayPause] 정지 요청');
             webAudio.pause();
+
+            // 폴백 모드: Tone.js 재생 정지
+            if (isFallbackMode) {
+                voiceToInstrument.stopFallbackPlayback();
+                console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 정지');
+            }
+
             if (userAudio && !userAudio.paused) {
                 userAudio.pause();
-                userAudio.currentTime = 0; // 재생 위치 초기화
+                userAudio.currentTime = 0;
                 console.log('🎤 [handlePlayPause] userAudio 정지됨');
             }
             setIsPlaying(false);
         } else {
-            if (myRecordingOnlyMode) {
+            if (myRecordingOnlyMode || instrumentOnlyMode) {
                 webAudio.setVolume(0);
             } else {
                 webAudio.setVolume(1);
             }
             await webAudio.play();
 
-            // 녹음 오디오 동기화
-            syncUserAudio(webAudio.currentTime, true);
+            // 폴백 모드: Tone.js로 음표 재생
+            if (isFallbackMode && editedNotes.length > 0 && storedRecordingRange) {
+                const notesOnlyNotes = editedNotes.filter(n => !n.isRest);
+                const startTimeOffset = storedRecordingRange.startTime;
+                console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 시작, 음표 수:', notesOnlyNotes.length);
+                await voiceToInstrument.playNotesAsFallback(
+                    notesOnlyNotes,
+                    SONG_META.bpm,
+                    Math.max(0, webAudio.currentTime - startTimeOffset)
+                );
+            } else {
+                // 원본 재생 모드
+                syncUserAudio(webAudio.currentTime, true);
+            }
+
             setIsPlaying(true);
         }
-    }, [webAudio, isPlaying, myRecordingOnlyMode, syncUserAudio]);
+    }, [webAudio, isPlaying, myRecordingOnlyMode, instrumentOnlyMode, syncUserAudio, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument]);
 
     const handleTimeChange = useCallback((newTime: number) => {
         let clampedTime = Math.max(0, Math.min(newTime, duration));
@@ -379,6 +411,77 @@ export default function FeedbackClientPage() {
 
         performAnalysis();
     }, [storedAudioBlob, storedRecordingRange, analyzeAudio, initializeNotes]);
+
+    // 악기 변환 모델 로드 (outputInstrument가 'raw'가 아닐 때)
+    // Tone.js 기반 폴백 재생
+    useEffect(() => {
+        if (storedOutputInstrument === 'raw') {
+            resetConversionState();
+            return;
+        }
+
+        console.log(`🎹 [Feedback] ${storedOutputInstrument} 선택됨 - Tone.js로 재생`);
+
+        let isCancelled = false;
+        let progressInterval: NodeJS.Timeout | null = null;
+
+        const loadInstrumentModel = async () => {
+            try {
+                console.log(`🎹 [Tone.js] ${storedOutputInstrument} 모델 로드 시작`);
+                setConversionState({ isConverting: true, progress: 0 });
+
+                // 진행률 시뮬레이션
+                let currentProgress = 0;
+                progressInterval = setInterval(() => {
+                    currentProgress = Math.min(currentProgress + 20, 95);
+                    setConversionState({ progress: currentProgress });
+                }, 200);
+
+                // Tone.js 모델 로드
+                const success = await voiceToInstrument.loadModel(storedOutputInstrument);
+
+                if (progressInterval) clearInterval(progressInterval);
+                if (isCancelled) return;
+
+                if (success) {
+                    // 완료 - 폴백 모드 활성화
+                    setConversionState({
+                        isConverting: false,
+                        progress: 100,
+                        isFallbackMode: true
+                    });
+                    console.log(`🎹 [Tone.js] ${storedOutputInstrument} 모델 로드 완료 - 폴백 모드 활성화`);
+                    showToast('success', `${storedOutputInstrument === 'piano' ? '피아노' : '기타'} 모드 준비 완료`);
+                } else {
+                    setConversionState({
+                        isConverting: false,
+                        error: '모델 로드 실패',
+                        isFallbackMode: false
+                    });
+                    showToast('error', '악기 모델 로드에 실패했습니다');
+                }
+
+            } catch (error) {
+                console.error('🎹 [Tone.js] 모델 로드 에러:', error);
+                if (!isCancelled) {
+                    setConversionState({
+                        isConverting: false,
+                        error: '에러 발생',
+                        isFallbackMode: false
+                    });
+                    showToast('error', '악기 모델 로드 중 에러가 발생했습니다');
+                }
+            }
+        };
+
+        loadInstrumentModel();
+
+        // cleanup
+        return () => {
+            isCancelled = true;
+            if (progressInterval) clearInterval(progressInterval);
+        };
+    }, [storedOutputInstrument, resetConversionState, setConversionState, showToast, voiceToInstrument]);
 
     // Helper to create a WAV blob from an AudioBuffer (for mocking)
     function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -590,8 +693,27 @@ export default function FeedbackClientPage() {
         showToast('success', '편집이 확정되었습니다');
     }, [getCleanedNotes, setEditMode, showToast]);
 
-    // AI 로딩 화면
-    if (isFeedbackLoading) {
+    // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
+    if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {
+        // M-11: 악기 변환 중일 때 텍스트 변경
+        const isInstrumentConverting = conversionState.isConverting && storedOutputInstrument !== 'raw';
+
+        // 디버깅 로그
+        console.log('🔍 [Loading Screen]', {
+            isFeedbackLoading,
+            'conversionState.isConverting': conversionState.isConverting,
+            storedOutputInstrument,
+            isInstrumentConverting,
+            progress: conversionState.progress
+        });
+
+        const loadingTitle = isInstrumentConverting
+            ? "악기 음색 변환 중입니다…"
+            : "AI가 당신의 연주를 조율 중입니다…";
+        const loadingSubtitle = isInstrumentConverting
+            ? `${storedOutputInstrument === 'piano' ? '피아노' : '기타'} 샘플러를 불러오는 중...`
+            : "잠시만 기다려 주세요...";
+
         return (
             <div className="flex h-screen w-full items-center justify-center bg-[#0A0B0F]">
                 <div className="flex flex-col items-center gap-6">
@@ -605,18 +727,36 @@ export default function FeedbackClientPage() {
 
                     {/* 로딩 텍스트 */}
                     <div className="text-center">
-                        <h2 className="text-xl font-bold text-white mb-2">AI가 당신의 연주를 조율 중입니다…</h2>
-                        <p className="text-gray-400 text-sm">잠시만 기다려 주세요...</p>
+                        <h2 className="text-xl font-bold text-white mb-2">{loadingTitle}</h2>
+                        <p className="text-gray-400 text-sm">{loadingSubtitle}</p>
                     </div>
 
-                    {/* 분석 중 표시 */}
-                    <div className="flex items-center gap-2 text-[#7BA7FF] text-sm">
-                        <span className="animate-pulse">♪</span>
-                        <span>리듬 분석 중</span>
-                        <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>♪</span>
-                        <span>음정 확인 중</span>
-                        <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>♪</span>
-                    </div>
+                    {/* M-12: 진행률 바 (악기 변환 중일 때만) */}
+                    {isInstrumentConverting && (
+                        <div className="w-64 space-y-2">
+                            <div className="flex items-center justify-between text-xs text-gray-400">
+                                <span>변환 진행</span>
+                                <span>{conversionState.progress}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-[#7BA7FF] transition-all duration-300"
+                                    style={{ width: `${conversionState.progress}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 분석 중 표시 (AI 피드백 로딩 중일 때만) */}
+                    {!isInstrumentConverting && (
+                        <div className="flex items-center gap-2 text-[#7BA7FF] text-sm">
+                            <span className="animate-pulse">♪</span>
+                            <span>리듬 분석 중</span>
+                            <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>♪</span>
+                            <span>음정 확인 중</span>
+                            <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>♪</span>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -645,6 +785,31 @@ export default function FeedbackClientPage() {
                         </div>
                         <div className="flex items-center gap-3">
                             {webAudio.isLoading && <div className="flex items-center gap-2 text-xs text-gray-400"><div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />로딩 중...</div>}
+
+                            {/* M-11, M-12: 악기 변환 로딩 & 진행률 표시 */}
+                            {conversionState.isConverting && (
+                                <div className="flex flex-col gap-1 min-w-[200px]">
+                                    <div className="flex items-center gap-2 text-xs text-[#7BA7FF]">
+                                        <div className="w-3 h-3 border-2 border-[#7BA7FF] border-t-transparent rounded-full animate-spin" />
+                                        악기 음색 변환 중...
+                                    </div>
+                                    {/* 진행률 바 */}
+                                    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-[#7BA7FF] transition-all duration-300"
+                                            style={{ width: `${conversionState.progress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 변환 완료 후 폴백 모드 표시 */}
+                            {!conversionState.isConverting && conversionState.isFallbackMode && storedOutputInstrument !== 'raw' && (
+                                <div className="flex items-center gap-2 text-xs text-[#FFD166]">
+                                    <span>🎹</span>
+                                    {storedOutputInstrument === 'piano' ? '피아노' : '기타'} 모드
+                                </div>
+                            )}
                             <div className="px-3 py-1 border border-gray-600 rounded-full text-xs font-medium text-gray-300">SINGLE FEEDBACK</div>
                         </div>
                     </div>
@@ -710,13 +875,27 @@ export default function FeedbackClientPage() {
                             </div>
                             <button
                                 onClick={() => {
+                                    if (storedOutputInstrument === 'raw') {
+                                        showToast('info', '악기 변환을 선택해야 편집 가능합니다');
+                                        return;
+                                    }
                                     setIsEditPanelOpen(true);
                                     setEditMode(true);
                                 }}
-                                className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-colors relative group ${
+                                    storedOutputInstrument === 'raw'
+                                        ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                                        : 'hover:bg-white/10 text-gray-400 hover:text-white'
+                                }`}
+                                disabled={storedOutputInstrument === 'raw'}
                             >
                                 <span className="text-sm">편집모드</span>
                                 <ChevronRight size={16} />
+                                {storedOutputInstrument === 'raw' && (
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 rounded bg-[#1B1C26] border border-white/20 text-white/70 text-xs whitespace-nowrap">
+                                        악기 변환을 선택해야 편집 가능합니다
+                                    </div>
+                                )}
                             </button>
                         </div>
                     )}

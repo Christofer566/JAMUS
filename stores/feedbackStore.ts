@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { NoteData } from '@/types/note';
 import { EditAction, DragPreview } from '@/types/edit';
+import { ConversionState, INITIAL_CONVERSION_STATE } from '@/types/instrument';
 
 // 음정 순서 (반음 단위)
 const NOTE_ORDER = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -29,6 +30,10 @@ interface FeedbackState {
   isDragging: boolean;
   dragPreview: DragPreview | null;
 
+  // 악기 변환
+  conversionState: ConversionState;
+  instrumentOnlyMode: boolean;  // true: 변환된 악기만, false: 배경음악 + 악기
+
   // Actions
   setEditMode: (mode: boolean) => void;
   toggleEditPanel: () => void;
@@ -52,6 +57,11 @@ interface FeedbackState {
   setIsDragging: (dragging: boolean) => void;
   initializeNotes: (notes: NoteData[]) => void;
   getCleanedNotes: () => NoteData[];  // 편집 확정용: 정리된 음표+쉼표 반환
+
+  // 악기 변환 Actions
+  setConversionState: (state: Partial<ConversionState>) => void;
+  toggleInstrumentOnlyMode: () => void;
+  resetConversionState: () => void;
 }
 
 // 헬퍼 함수들
@@ -419,6 +429,8 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   redoStack: [],
   isDragging: false,
   dragPreview: null,
+  conversionState: INITIAL_CONVERSION_STATE,
+  instrumentOnlyMode: false,
 
   // 모드 전환
   setEditMode: (mode) => set({
@@ -856,7 +868,23 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   // 편집 확정용: 정리된 음표+쉼표 반환 (겹침 제거, 연속 쉼표 병합)
   getCleanedNotes: () => {
     return cleanupNotesAndRests(get().editedNotes);
-  }
+  },
+
+  // 악기 변환 상태 설정
+  setConversionState: (state) => set((prev) => ({
+    conversionState: { ...prev.conversionState, ...state }
+  })),
+
+  // 악기만 듣기 토글
+  toggleInstrumentOnlyMode: () => set((prev) => ({
+    instrumentOnlyMode: !prev.instrumentOnlyMode
+  })),
+
+  // 변환 상태 리셋
+  resetConversionState: () => set({
+    conversionState: INITIAL_CONVERSION_STATE,
+    instrumentOnlyMode: false
+  })
 }));
 
 export default useFeedbackStore;

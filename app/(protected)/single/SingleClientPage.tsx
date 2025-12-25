@@ -15,6 +15,7 @@ import { uploadJamRecording } from '@/lib/jamStorage';
 import { getSharedAudioContext, resumeAudioContext } from '@/hooks/useAudioContext';
 import { useRecordingStore } from '@/stores/recordingStore';
 import { DEFAULT_SONG } from '@/data/songs';
+import { InputInstrument, OutputInstrument, DEFAULT_INPUT_INSTRUMENT, DEFAULT_OUTPUT_INSTRUMENT } from '@/types/instrument';
 
 // 곡 데이터에서 가져오기
 const CURRENT_SONG = DEFAULT_SONG;
@@ -37,6 +38,8 @@ export default function SingleClientPage() {
     const [jamOnlyMode, setJamOnlyMode] = useState(false);
     const [metronomeOn, setMetronomeOn] = useState(false);
     const [pressedKey, setPressedKey] = useState<string | null>(null);
+    const [inputInstrument, setInputInstrument] = useState<InputInstrument>(DEFAULT_INPUT_INSTRUMENT);
+    const [outputInstrument, setOutputInstrument] = useState<OutputInstrument>(DEFAULT_OUTPUT_INSTRUMENT);
 
     // START JAM 관련 상태
     const [isCountingDown, setIsCountingDown] = useState(false);
@@ -466,12 +469,12 @@ export default function SingleClientPage() {
                 range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
                 note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
             });
-            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration);
+            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration, inputInstrument, outputInstrument);
         }
 
         // Feedback 페이지로 이동
         router.push('/single/feedback');
-    }, [recorder, showToast, router, setRecording]);
+    }, [recorder, showToast, router, setRecording, inputInstrument, outputInstrument]);
 
     // ==========================================
     // START JAM (R키) 플로우 - AudioContext 기반 카운트다운
@@ -810,12 +813,12 @@ export default function SingleClientPage() {
                 range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
                 note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
             });
-            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration);
+            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration, inputInstrument, outputInstrument);
         }
 
         // Feedback 페이지로 이동
         router.push('/single/feedback');
-    }, [router, recorder, setRecording]);
+    }, [router, recorder, setRecording, inputInstrument, outputInstrument]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden">
@@ -918,6 +921,10 @@ export default function SingleClientPage() {
                         duration={duration}
                         pressedKey={pressedKey}
                         hasRecording={recorder.state === 'recorded'}
+                        inputInstrument={inputInstrument}
+                        onInputInstrumentChange={setInputInstrument}
+                        outputInstrument={outputInstrument}
+                        onOutputInstrumentChange={setOutputInstrument}
                     />
                 </div>
             </div>
