@@ -363,8 +363,13 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     // Mark Actual Start (카운트다운 완료 시 실제 녹음 시작 마커 찍기)
     // ========================================
     const markActualStart = useCallback(() => {
-        if (state !== 'recording') {
-            console.warn('🎤 [markActualStart] 녹음 중이 아닙니다');
+        // MediaRecorder의 실제 상태로 체크 (React state 업데이트 지연 문제 해결)
+        if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+            console.warn('🎤 [markActualStart] MediaRecorder가 녹음 중이 아닙니다:', {
+                hasRecorder: !!mediaRecorderRef.current,
+                recorderState: mediaRecorderRef.current?.state,
+                reactState: state
+            });
             return;
         }
 
@@ -378,7 +383,7 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             markerTime: markerTime.toFixed(3) + 's (blob 기준)',
             note: '이 시점부터가 실제 녹음 구간'
         });
-    }, [state]);
+    }, []); // 의존성 제거 - mediaRecorderRef 사용으로 state 업데이트 지연 문제 해결
 
     // ========================================
     // Stop Recording
