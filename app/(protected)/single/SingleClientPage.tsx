@@ -458,18 +458,17 @@ export default function SingleClientPage() {
             return;
         }
 
-        // 녹음 데이터를 store에 저장 (prerollDuration 포함)
+        // 녹음 데이터를 store에 저장 (마커 기반 - preroll 없음)
         const firstSegment = recorder.segments[0];
         if (firstSegment && recorder.recordingRange) {
             // 저장 직전 확인 로그
             console.log('💾 저장 직전:', {
                 blobSize: firstSegment.blob.size,
                 blobType: firstSegment.blob.type,
-                prerollDuration: firstSegment.prerollDuration,
                 range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
-                note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
+                note: '마커 기반 추출 완료 - blobType=audio/wav'
             });
-            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration, inputInstrument, outputInstrument);
+            setRecording(firstSegment.blob, recorder.recordingRange, 0, inputInstrument, outputInstrument);
         }
 
         // Feedback 페이지로 이동
@@ -528,23 +527,14 @@ export default function SingleClientPage() {
         await resumeAudioContext();
         const audioContext = getSharedAudioContext();
 
-        // MediaRecorder 미리 시작 (preroll - 초기화 지연 해소)
-        const prepared = await recorder.prepareRecording();
-        console.log('🎤 [handleStartJam] prepareRecording:', prepared);
-        if (!prepared) return;
+        // 녹음 시작 시간 계산 (마디 경계) - 현재 마디 기준
+        const recordStartMeasure = currentMeasureNum;
+        const recordStartTime = (recordStartMeasure - 1) * measureDuration;
 
-        // ========================================
-        // 인코더 Warm-up 대기 (1.5초)
-        // ========================================
-        // MediaRecorder의 opus/webm 인코더는 초기 1-2초 동안
-        // 불안정한 출력을 생성할 수 있음. 이 시간 동안 인코더가
-        // 안정화되도록 대기한 후 카운트다운 시작.
-        // 이 구간은 preroll에 포함되어 트리밍됨.
-        const ENCODER_WARMUP_MS = 1500;
-        setCountdown(-1); // UI에서 "준비 중..." 표시용
-        setIsCountingDown(true);
-        console.log('🎤 [handleStartJam] 인코더 warm-up 대기:', ENCODER_WARMUP_MS + 'ms');
-        await new Promise(resolve => setTimeout(resolve, ENCODER_WARMUP_MS));
+        // MediaRecorder 시작 (마커 기반 녹음)
+        const started = await recorder.startRecording(recordStartTime, recordStartMeasure);
+        console.log('🎤 [handleStartJam] startRecording:', started);
+        if (!started) return;
 
         // 1. 현재 위치 저장
         originalPositionRef.current = currentTime;
@@ -572,10 +562,6 @@ export default function SingleClientPage() {
         const countdownStartTime = audioContext.currentTime;
         const secondsPerBeat = 60 / SONG_META.bpm;
 
-        // 녹음 시작 시간 계산 (마디 경계) - 현재 마디 기준
-        const recordStartMeasure = currentMeasureNum;
-        const recordStartTime = (recordStartMeasure - 1) * measureDuration;
-
         // 실제 이동한 마디 수 계산
         const measuresBack = currentMeasureNum - targetMeasure;
         const totalBeatsToWait = measuresBack * 4; // 4/4 박자 기준
@@ -600,19 +586,17 @@ export default function SingleClientPage() {
             } else if (beatsRemaining > 0) {
                 setCountdown(1);
             } else {
-                // 카운트다운 완료 → 녹음 시작
+                // 카운트다운 완료 → 실제 녹음 시작 마커 설정
                 setCountdown(null);
                 setIsCountingDown(false);
                 setIsJamming(true);
 
-                // 녹음 시작: 의도한 마디(recordStartMeasure)와 시간(recordStartTime) 사용
-                // actualAudioTime은 참고용 로그만 (마디 계산에 사용하면 Intro 등 잘못된 마디가 기록됨)
+                // 실제 녹음 시작 마커 찍기 (blob 내 상대 시간)
                 const actualAudioTime = webAudioRef.current.currentTime;
-
-                recorder.startRecording(recordStartTime, recordStartMeasure);
+                recorder.markActualStart();
                 showToast('info', '녹음이 시작되었습니다');
 
-                console.log('🎤 [START JAM] 녹음 시작:', {
+                console.log('🎤 [START JAM] 녹음 시작 마커 설정:', {
                     녹음시작시간: recordStartTime.toFixed(3),
                     녹음시작마디: recordStartMeasure,
                     실제오디오시간: actualAudioTime.toFixed(3),
@@ -802,18 +786,17 @@ export default function SingleClientPage() {
     const handleModalSave = useCallback(() => {
         setShowCompleteModal(false);
 
-        // 녹음 데이터를 store에 저장 (prerollDuration 포함)
+        // 녹음 데이터를 store에 저장 (마커 기반 - preroll 없음)
         const firstSegment = recorder.segments[0];
         if (firstSegment && recorder.recordingRange) {
             // 저장 직전 확인 로그
             console.log('💾 저장 직전 (모달):', {
                 blobSize: firstSegment.blob.size,
                 blobType: firstSegment.blob.type,
-                prerollDuration: firstSegment.prerollDuration,
                 range: `${recorder.recordingRange.startMeasure}-${recorder.recordingRange.endMeasure}`,
-                note: 'prerollDuration=0이고 blobType=audio/wav면 트리밍 완료'
+                note: '마커 기반 추출 완료 - blobType=audio/wav'
             });
-            setRecording(firstSegment.blob, recorder.recordingRange, firstSegment.prerollDuration, inputInstrument, outputInstrument);
+            setRecording(firstSegment.blob, recorder.recordingRange, 0, inputInstrument, outputInstrument);
         }
 
         // Feedback 페이지로 이동
