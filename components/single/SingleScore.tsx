@@ -27,6 +27,7 @@ interface SingleScoreProps {
   recordedMeasures?: number[];
   recordedNotes?: Record<number, NoteData[]>;
   isEditMode?: boolean;
+  onNoteSelect?: (index: number, multiSelect: boolean) => void;
 }
 
 const SINGLE_COLOR = '#7BA7FF';
@@ -43,6 +44,7 @@ export default function SingleScore({
   recordedMeasures = [],
   recordedNotes = {},
   isEditMode = false,
+  onNoteSelect,
 }: SingleScoreProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const currentRowRef = useRef<HTMLDivElement>(null);
@@ -186,6 +188,7 @@ export default function SingleScore({
                       rowStartMeasure={rowStartMeasure}
                       height={112}
                       isEditMode={isEditMode}
+                      onNoteSelect={onNoteSelect}
                     />
                   </div>
                 )}

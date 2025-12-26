@@ -32,6 +32,37 @@ const calculateMeasureDuration = (bpm: number, timeSignature: string): number =>
     return (60 / bpm) * beatsPerMeasure;
 };
 
+// 음정 변경 헬퍼 (미리듣기용)
+const NOTE_ORDER = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const MIN_OCTAVE = 2;
+const MAX_OCTAVE = 6;
+
+function shiftPitch(pitch: string, direction: 'up' | 'down'): string | null {
+    const match = pitch.match(/^([A-G]#?)(\d)$/);
+    if (!match) return null;
+
+    const note = match[1];
+    let noteIndex = NOTE_ORDER.indexOf(note);
+    let octave = parseInt(match[2]);
+
+    if (direction === 'up') {
+        noteIndex++;
+        if (noteIndex >= NOTE_ORDER.length) {
+            noteIndex = 0;
+            octave++;
+        }
+    } else {
+        noteIndex--;
+        if (noteIndex < 0) {
+            noteIndex = NOTE_ORDER.length - 1;
+            octave--;
+        }
+    }
+
+    if (octave < MIN_OCTAVE || octave > MAX_OCTAVE) return null;
+    return `${NOTE_ORDER[noteIndex]}${octave}`;
+}
+
 export default function FeedbackClientPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -61,6 +92,10 @@ export default function FeedbackClientPage() {
         redoStack,
         setEditMode,
         toggleEditPanel,
+        selectNote: storeSelectNote,
+        selectPrevNote,
+        selectNextNote,
+        addNote,
         updateNotePitch,
         updateNotePosition,
         updateSelectedNotesDuration,
@@ -157,8 +192,49 @@ export default function FeedbackClientPage() {
         setSelectedMeasures(selection);
     }, []);
 
+    // 현재 선택된 음표 번호 계산 (쉼표 제외)
+    const currentNoteInfo = useMemo(() => {
+        const notesOnly = editedNotes.filter(n => !n.isRest);
+        if (selectedNoteIndices.length === 0 || notesOnly.length === 0) {
+            return { index: null, total: notesOnly.length };
+        }
+        const selectedIndex = selectedNoteIndices[0];
+        const noteIndex = notesOnly.findIndex(n => editedNotes.indexOf(n) === selectedIndex);
+        return { index: noteIndex !== -1 ? noteIndex : null, total: notesOnly.length };
+    }, [editedNotes, selectedNoteIndices]);
+
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
+
+    // 재생 중 현재 음표 자동 선택
+    useEffect(() => {
+        if (!isPlaying || !storedRecordingRange || editedNotes.length === 0) return;
+
+        // 편집 모드가 아니면 자동 선택하지 않음
+        if (!isEditMode) return;
+
+        // 현재 재생 시간이 녹음 범위 내에 있는지 확인
+        if (currentTime < storedRecordingRange.startTime || currentTime >= storedRecordingRange.endTime) return;
+
+        // 녹음 시작점 기준 상대 시간 계산
+        const relativeTime = currentTime - storedRecordingRange.startTime;
+        const relativeBeat = relativeTime / (60 / SONG_META.bpm);
+
+        // 현재 재생 중인 음표 찾기 (쉼표 제외)
+        const notesOnly = editedNotes.filter(n => !n.isRest);
+        const currentNoteIndex = notesOnly.findIndex(note => {
+            const noteEndBeat = note.beat + (note.slotCount / 4);
+            return relativeBeat >= note.beat && relativeBeat < noteEndBeat;
+        });
+
+        if (currentNoteIndex !== -1) {
+            const actualIndex = editedNotes.indexOf(notesOnly[currentNoteIndex]);
+            // 이미 선택되어 있으면 업데이트하지 않음 (무한 루프 방지)
+            if (selectedNoteIndices[0] !== actualIndex) {
+                storeSelectNote(actualIndex, false);
+            }
+        }
+    }, [isPlaying, currentTime, storedRecordingRange, editedNotes, isEditMode, selectedNoteIndices, storeSelectNote]);
 
     // 재생 중 녹음 범위 진입/이탈 감지
     const isInRecordingRange = useMemo(() => {
@@ -173,6 +249,17 @@ export default function FeedbackClientPage() {
     useEffect(() => {
         const userAudio = userAudioRef.current;
         if (!userAudio || !storedRecordingRange) {
+            wasInRangeRef.current = false;
+            return;
+        }
+
+        // 폴백 모드(신디사이저)일 때는 녹음 오디오 재생하지 않음
+        const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+        if (isFallbackMode) {
+            if (!userAudio.paused) {
+                userAudio.pause();
+                console.log('🎤 [User Audio] 폴백 모드 - 녹음 오디오 정지');
+            }
             wasInRangeRef.current = false;
             return;
         }
@@ -202,7 +289,7 @@ export default function FeedbackClientPage() {
         }
 
         wasInRangeRef.current = isInRecordingRange;
-    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange]);
+    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange, storedOutputInstrument, conversionState.isFallbackMode]);
 
     // 실제 녹음 범위에서 구간 가져오기 (Zustand store 사용)
     const recordedRanges = useMemo(() => {
@@ -273,13 +360,31 @@ export default function FeedbackClientPage() {
 
             // 폴백 모드: Tone.js로 음표 재생
             if (isFallbackMode && editedNotes.length > 0 && storedRecordingRange) {
-                const notesOnlyNotes = editedNotes.filter(n => !n.isRest);
-                const startTimeOffset = storedRecordingRange.startTime;
-                console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 시작, 음표 수:', notesOnlyNotes.length);
+                // 모든 음표의 beat를 상대 beat로 통일 (절대/상대 beat 혼재 문제 해결)
+                const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+                const notesOnlyNotes = editedNotes
+                    .filter(n => !n.isRest)
+                    .map(note => ({
+                        ...note,
+                        beat: note.beat >= startMeasureBeat
+                            ? note.beat - startMeasureBeat  // 절대 beat → 상대 beat
+                            : note.beat                      // 이미 상대 beat
+                    }));
+
+                // note.beat은 녹음 시작점 기준이므로, startTime도 녹음 시작점 기준으로 전달
+                const relativeStartTime = Math.max(0, webAudio.currentTime - storedRecordingRange.startTime);
+                console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 시작', {
+                    notesCount: notesOnlyNotes.length,
+                    currentTime: webAudio.currentTime.toFixed(2),
+                    recordingStart: storedRecordingRange.startTime.toFixed(2),
+                    relativeStartTime: relativeStartTime.toFixed(2)
+                });
+                console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 pitch:', notesOnlyNotes.slice(0, 5).map(n => n.pitch));
+                console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 beat:', notesOnlyNotes.slice(0, 5).map(n => n.beat.toFixed(2)));
                 await voiceToInstrument.playNotesAsFallback(
                     notesOnlyNotes,
                     SONG_META.bpm,
-                    Math.max(0, webAudio.currentTime - startTimeOffset)
+                    relativeStartTime  // 녹음 시작점 기준 시간
                 );
             } else {
                 // 원본 재생 모드
@@ -290,12 +395,47 @@ export default function FeedbackClientPage() {
         }
     }, [webAudio, isPlaying, myRecordingOnlyMode, instrumentOnlyMode, syncUserAudio, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument]);
 
-    const handleTimeChange = useCallback((newTime: number) => {
+    const handleTimeChange = useCallback(async (newTime: number) => {
         let clampedTime = Math.max(0, Math.min(newTime, duration));
         webAudio.seek(clampedTime);
-        syncUserAudio(clampedTime, isPlaying);
         setCurrentTime(clampedTime);
-    }, [duration, webAudio, syncUserAudio, isPlaying]);
+
+        const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+
+        // 폴백 모드이고 재생 중이면 Tone.js 재생 재시작
+        if (isFallbackMode && isPlaying && editedNotes.length > 0 && storedRecordingRange) {
+            // 기존 재생 중지
+            voiceToInstrument.stopFallbackPlayback();
+
+            // 모든 음표의 beat를 상대 beat로 통일
+            const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+            const notesOnlyNotes = editedNotes
+                .filter(n => !n.isRest)
+                .map(note => ({
+                    ...note,
+                    beat: note.beat >= startMeasureBeat
+                        ? note.beat - startMeasureBeat
+                        : note.beat
+                }));
+
+            const relativeStartTime = Math.max(0, clampedTime - storedRecordingRange.startTime);
+
+            console.log('🎹 [Seek] Tone.js 재생 재시작', {
+                seekTime: clampedTime.toFixed(2),
+                recordingStart: storedRecordingRange.startTime.toFixed(2),
+                relativeStartTime: relativeStartTime.toFixed(2)
+            });
+
+            await voiceToInstrument.playNotesAsFallback(
+                notesOnlyNotes,
+                SONG_META.bpm,
+                relativeStartTime
+            );
+        } else {
+            // 원본 모드: user audio 동기화
+            syncUserAudio(clampedTime, isPlaying);
+        }
+    }, [duration, webAudio, isPlaying, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument, syncUserAudio]);
 
     const handleSeekByMeasures = useCallback((offset: number) => {
         const newTime = currentTime + (offset * measureDuration);
@@ -423,31 +563,24 @@ export default function FeedbackClientPage() {
         console.log(`🎹 [Feedback] ${storedOutputInstrument} 선택됨 - Tone.js로 재생`);
 
         let isCancelled = false;
-        let progressInterval: NodeJS.Timeout | null = null;
 
         const loadInstrumentModel = async () => {
             try {
                 console.log(`🎹 [Tone.js] ${storedOutputInstrument} 모델 로드 시작`);
-                setConversionState({ isConverting: true, progress: 0 });
+                setConversionState({ isConverting: true });
 
-                // 진행률 시뮬레이션
-                let currentProgress = 0;
-                progressInterval = setInterval(() => {
-                    currentProgress = Math.min(currentProgress + 20, 95);
-                    setConversionState({ progress: currentProgress });
-                }, 200);
+                // Tone.js 모델 로드 + 최소 대기 시간 보장
+                const [success] = await Promise.all([
+                    voiceToInstrument.loadModel(storedOutputInstrument),
+                    new Promise(resolve => setTimeout(resolve, 2500)) // 최소 2.5초 대기
+                ]);
 
-                // Tone.js 모델 로드
-                const success = await voiceToInstrument.loadModel(storedOutputInstrument);
-
-                if (progressInterval) clearInterval(progressInterval);
                 if (isCancelled) return;
 
                 if (success) {
                     // 완료 - 폴백 모드 활성화
                     setConversionState({
                         isConverting: false,
-                        progress: 100,
                         isFallbackMode: true
                     });
                     console.log(`🎹 [Tone.js] ${storedOutputInstrument} 모델 로드 완료 - 폴백 모드 활성화`);
@@ -479,9 +612,8 @@ export default function FeedbackClientPage() {
         // cleanup
         return () => {
             isCancelled = true;
-            if (progressInterval) clearInterval(progressInterval);
         };
-    }, [storedOutputInstrument, resetConversionState, setConversionState, showToast, voiceToInstrument]);
+    }, [storedOutputInstrument]); // Zustand 함수들과 voiceToInstrument는 안정적인 참조이므로 제외
 
     // Helper to create a WAV blob from an AudioBuffer (for mocking)
     function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
@@ -537,14 +669,92 @@ export default function FeedbackClientPage() {
             if (isEditMode) {
                 console.log('[Keyboard] Edit mode key:', e.code);
                 switch (e.code) {
+                    case 'KeyQ':
+                        e.preventDefault();
+                        console.log('[Keyboard] Previous note');
+                        {
+                            const newIndex = selectPrevNote();
+                            if (newIndex !== null && editedNotes[newIndex]) {
+                                const note = editedNotes[newIndex];
+                                const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+
+                                // 미리듣기
+                                if (isFallbackMode && !note.isRest) {
+                                    voiceToInstrument.previewNote(note.pitch, 0.3);
+                                }
+
+                                // 진행바 이동
+                                if (storedRecordingRange) {
+                                    // beat가 startMeasure보다 큰 경우 절대 beat → 상대 beat로 변환
+                                    // beat가 작은 경우 이미 상대 beat → 그대로 사용
+                                    const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+                                    const relativeBeat = note.beat >= startMeasureBeat
+                                        ? note.beat - startMeasureBeat
+                                        : note.beat;
+                                    const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+                                    const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
+                                    handleTimeChange(absoluteTime);
+                                }
+                            }
+                        }
+                        return;
+                    case 'KeyW':
+                        e.preventDefault();
+                        console.log('[Keyboard] Next note');
+                        {
+                            const newIndex = selectNextNote();
+                            if (newIndex !== null && editedNotes[newIndex]) {
+                                const note = editedNotes[newIndex];
+                                const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+
+                                // 미리듣기
+                                if (isFallbackMode && !note.isRest) {
+                                    voiceToInstrument.previewNote(note.pitch, 0.3);
+                                }
+
+                                // 진행바 이동
+                                if (storedRecordingRange) {
+                                    // beat가 startMeasure보다 큰 경우 절대 beat → 상대 beat로 변환
+                                    // beat가 작은 경우 이미 상대 beat → 그대로 사용
+                                    const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+                                    const relativeBeat = note.beat >= startMeasureBeat
+                                        ? note.beat - startMeasureBeat
+                                        : note.beat;
+                                    const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+                                    const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
+                                    handleTimeChange(absoluteTime);
+                                }
+                            }
+                        }
+                        return;
                     case 'ArrowUp':
                         e.preventDefault();
                         console.log('[Keyboard] Pitch up');
+                        // 미리듣기 (폴백 모드일 때만)
+                        if (storedOutputInstrument !== 'raw' && conversionState.isFallbackMode && selectedNoteIndices.length > 0) {
+                            const firstNote = editedNotes[selectedNoteIndices[0]];
+                            if (firstNote && !firstNote.isRest) {
+                                const newPitch = shiftPitch(firstNote.pitch, 'up');
+                                if (newPitch) {
+                                    voiceToInstrument.previewNote(newPitch, 0.3);
+                                }
+                            }
+                        }
                         updateNotePitch('up');
                         return;
                     case 'ArrowDown':
                         e.preventDefault();
                         console.log('[Keyboard] Pitch down');
+                        // 미리듣기 (폴백 모드일 때만)
+                        if (storedOutputInstrument !== 'raw' && conversionState.isFallbackMode && selectedNoteIndices.length > 0) {
+                            const firstNote = editedNotes[selectedNoteIndices[0]];
+                            if (firstNote && !firstNote.isRest) {
+                                const newPitch = shiftPitch(firstNote.pitch, 'down');
+                                if (newPitch) {
+                                    voiceToInstrument.previewNote(newPitch, 0.3);
+                                }
+                            }
+                        }
                         updateNotePitch('down');
                         return;
                     case 'ArrowLeft':
@@ -609,7 +819,12 @@ export default function FeedbackClientPage() {
                     break;
                 case 'KeyS':
                     e.preventDefault();
-                    handleToggleMyRecordingOnly(!myRecordingOnlyMode);
+                    // raw 모드: 내 녹음만 듣기, 폴백 모드: 악기만 듣기
+                    if (storedOutputInstrument === 'raw') {
+                        handleToggleMyRecordingOnly(!myRecordingOnlyMode);
+                    } else {
+                        toggleInstrumentOnlyMode();
+                    }
                     break;
             }
         };
@@ -620,7 +835,7 @@ export default function FeedbackClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo]);
+    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, storedOutputInstrument, toggleInstrumentOnlyMode, instrumentOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo, selectPrevNote, selectNextNote, selectedNoteIndices, editedNotes, conversionState.isFallbackMode, voiceToInstrument, storedRecordingRange, handleTimeChange]);
     
     const [isUserAudioReady, setIsUserAudioReady] = useState(false);
     const audioCreatedRef = useRef(false);
@@ -664,6 +879,42 @@ export default function FeedbackClientPage() {
     const handleShare = () => console.log('공유하기 클릭');
     const handleReJam = () => router.push('/single');
 
+    // 음표 선택 + 미리듣기 + 진행바 이동 (편집 모드에서만)
+    const handleNoteSelect = useCallback((index: number, multiSelect: boolean = false) => {
+        // 음표 선택
+        storeSelectNote(index, multiSelect);
+
+        const note = editedNotes[index];
+        if (!note) return;
+
+        // 편집 모드일 때만 진행바 이동
+        if (isEditMode && storedRecordingRange) {
+            // beat가 startMeasure보다 큰 경우 절대 beat → 상대 beat로 변환
+            // beat가 작은 경우 이미 상대 beat → 그대로 사용
+            const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+            const relativeBeat = note.beat >= startMeasureBeat
+                ? note.beat - startMeasureBeat
+                : note.beat;
+            const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+            const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
+            handleTimeChange(absoluteTime);
+        }
+
+        // 미리듣기 (폴백 모드일 때만)
+        const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+        if (isFallbackMode && !note.isRest) {
+            voiceToInstrument.previewNote(note.pitch, 0.3);
+        }
+    }, [storeSelectNote, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, voiceToInstrument, isEditMode, storedRecordingRange, handleTimeChange]);
+
+    // 새 음표 추가 핸들러 (충돌 검사 포함)
+    const handleAddNote = useCallback(() => {
+        const result = addNote();
+        if (!result.success && result.message) {
+            showToast('error', result.message);
+        }
+    }, [addNote, showToast]);
+
     // 편집 확정: 정리된 음표+쉼표를 recordedNotesByMeasure에 반영
     const handleConfirmEdit = useCallback(() => {
         // 겹침 제거 + 연속 쉼표 병합된 깨끗한 데이터 가져오기
@@ -682,16 +933,20 @@ export default function FeedbackClientPage() {
 
         console.log('[Edit Confirm] cleanedNotes:', cleanedNotes.length);
         console.log('[Edit Confirm] notes:', cleanedNotes.filter(n => !n.isRest).length, 'rests:', cleanedNotes.filter(n => n.isRest).length);
+        console.log('[Edit Confirm] 첫 5개 음표 pitch:', cleanedNotes.filter(n => !n.isRest).slice(0, 5).map(n => n.pitch));
 
         // recordedNotesByMeasure 업데이트
         setRecordedNotesByMeasure(newNotesByMeasure);
+
+        // editedNotes도 업데이트 (재생 시 사용)
+        initializeNotes(cleanedNotes);
 
         // 편집 모드 종료
         setIsEditPanelOpen(false);
         setEditMode(false);
 
         showToast('success', '편집이 확정되었습니다');
-    }, [getCleanedNotes, setEditMode, showToast]);
+    }, [getCleanedNotes, initializeNotes, setEditMode, showToast]);
 
     // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
     if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {
@@ -703,8 +958,7 @@ export default function FeedbackClientPage() {
             isFeedbackLoading,
             'conversionState.isConverting': conversionState.isConverting,
             storedOutputInstrument,
-            isInstrumentConverting,
-            progress: conversionState.progress
+            isInstrumentConverting
         });
 
         const loadingTitle = isInstrumentConverting
@@ -731,18 +985,11 @@ export default function FeedbackClientPage() {
                         <p className="text-gray-400 text-sm">{loadingSubtitle}</p>
                     </div>
 
-                    {/* M-12: 진행률 바 (악기 변환 중일 때만) */}
+                    {/* 무한 로딩 바 (악기 변환 중일 때만) */}
                     {isInstrumentConverting && (
-                        <div className="w-64 space-y-2">
-                            <div className="flex items-center justify-between text-xs text-gray-400">
-                                <span>변환 진행</span>
-                                <span>{conversionState.progress}%</span>
-                            </div>
+                        <div className="w-64">
                             <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-[#7BA7FF] transition-all duration-300"
-                                    style={{ width: `${conversionState.progress}%` }}
-                                />
+                                <div className="h-full w-1/3 bg-[#7BA7FF] animate-indeterminate" />
                             </div>
                         </div>
                     )}
@@ -786,19 +1033,16 @@ export default function FeedbackClientPage() {
                         <div className="flex items-center gap-3">
                             {webAudio.isLoading && <div className="flex items-center gap-2 text-xs text-gray-400"><div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />로딩 중...</div>}
 
-                            {/* M-11, M-12: 악기 변환 로딩 & 진행률 표시 */}
+                            {/* 악기 변환 로딩 & 무한 로딩 바 */}
                             {conversionState.isConverting && (
                                 <div className="flex flex-col gap-1 min-w-[200px]">
                                     <div className="flex items-center gap-2 text-xs text-[#7BA7FF]">
                                         <div className="w-3 h-3 border-2 border-[#7BA7FF] border-t-transparent rounded-full animate-spin" />
                                         악기 음색 변환 중...
                                     </div>
-                                    {/* 진행률 바 */}
+                                    {/* 무한 로딩 바 */}
                                     <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-[#7BA7FF] transition-all duration-300"
-                                            style={{ width: `${conversionState.progress}%` }}
-                                        />
+                                        <div className="h-full w-1/3 bg-[#7BA7FF] animate-indeterminate" />
                                     </div>
                                 </div>
                             )}
@@ -838,6 +1082,7 @@ export default function FeedbackClientPage() {
                             recordedMeasures={recordedMeasures}
                             recordedNotes={recordedNotesByMeasure}
                             isEditMode={isEditMode}
+                            onNoteSelect={handleNoteSelect}
                         />
                     </div>
                 </div>
@@ -856,8 +1101,13 @@ export default function FeedbackClientPage() {
                             onRedo={redo}
                             onReset={reset}
                             onConfirm={handleConfirmEdit}
+                            onPrevNote={selectPrevNote}
+                            onNextNote={selectNextNote}
+                            onAddNote={handleAddNote}
                             canUndo={undoStack.length > 0}
                             canRedo={redoStack.length > 0}
+                            currentNoteIndex={currentNoteInfo.index}
+                            totalNotes={currentNoteInfo.total}
                         />
                     ) : (
                         /* 평가 카드 (컴팩트) */
@@ -917,18 +1167,34 @@ export default function FeedbackClientPage() {
                         />
                         {/* Feed 스타일의 컨트롤러 영역 */}
                         <div className="flex items-center justify-between pt-4">
-                            {/* 내 녹음만 듣기 Toggle - 좌측 정렬 */}
-                            <button
-                                type="button"
-                                onClick={() => handleToggleMyRecordingOnly(!myRecordingOnlyMode)}
-                                className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
-                                    myRecordingOnlyMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
-                                }`}
-                                title="내 녹음만 듣기 (S)"
-                            >
-                                내 녹음만 듣기
-                                <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
-                            </button>
+                            {/* 좌측: 녹음/악기만 듣기 Toggle (모드에 따라 선택) */}
+                            {storedOutputInstrument === 'raw' ? (
+                                /* 원본 모드: 내 녹음만 듣기 */
+                                <button
+                                    type="button"
+                                    onClick={() => handleToggleMyRecordingOnly(!myRecordingOnlyMode)}
+                                    className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
+                                        myRecordingOnlyMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                    }`}
+                                    title="내 녹음만 듣기 (S)"
+                                >
+                                    내 녹음만 듣기
+                                    <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
+                                </button>
+                            ) : (
+                                /* 폴백 모드: 악기만 듣기 */
+                                <button
+                                    type="button"
+                                    onClick={() => toggleInstrumentOnlyMode()}
+                                    className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
+                                        instrumentOnlyMode ? 'bg-[#FFD166]/20 border border-[#FFD166] text-[#FFD166]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                    }`}
+                                    title="악기만 듣기 (S)"
+                                >
+                                    악기만 듣기
+                                    <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
+                                </button>
+                            )}
 
                             {/* 중앙: 재생 컨트롤 */}
                             <div className="flex items-center gap-3">

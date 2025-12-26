@@ -41,6 +41,9 @@ interface FeedbackState {
   selectNote: (index: number, multiSelect?: boolean) => void;
   selectNotesByArea: (startSlot: number, endSlot: number, measureIndex: number) => void;
   clearSelection: () => void;
+  selectPrevNote: () => number | null;
+  selectNextNote: () => number | null;
+  addNote: () => { success: boolean; message?: string };
 
   updateNotePitch: (direction: 'up' | 'down') => void;
   updateNotePosition: (direction: 'left' | 'right') => void;
@@ -477,6 +480,124 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   }),
 
   clearSelection: () => set({ selectedNoteIndices: [] }),
+
+  // 이전 음표 선택 (쉼표 제외) - 선택된 인덱스 반환
+  selectPrevNote: () => {
+    const state = get();
+    const notes = state.editedNotes.filter(n => !n.isRest);
+    if (notes.length === 0) return null;
+
+    const currentIndex = state.selectedNoteIndices.length > 0 ? state.selectedNoteIndices[0] : -1;
+    const currentNoteInFiltered = notes.findIndex((_, i) => state.editedNotes.indexOf(notes[i]) === currentIndex);
+
+    let prevIndex = currentNoteInFiltered - 1;
+    if (prevIndex < 0) prevIndex = notes.length - 1; // 순환
+
+    const actualIndex = state.editedNotes.indexOf(notes[prevIndex]);
+    set({ selectedNoteIndices: [actualIndex] });
+    return actualIndex;
+  },
+
+  // 다음 음표 선택 (쉼표 제외) - 선택된 인덱스 반환
+  selectNextNote: () => {
+    const state = get();
+    const notes = state.editedNotes.filter(n => !n.isRest);
+    if (notes.length === 0) return null;
+
+    const currentIndex = state.selectedNoteIndices.length > 0 ? state.selectedNoteIndices[0] : -1;
+    const currentNoteInFiltered = notes.findIndex((_, i) => state.editedNotes.indexOf(notes[i]) === currentIndex);
+
+    let nextIndex = currentNoteInFiltered + 1;
+    if (nextIndex >= notes.length) nextIndex = 0; // 순환
+
+    const actualIndex = state.editedNotes.indexOf(notes[nextIndex]);
+    set({ selectedNoteIndices: [actualIndex] });
+    return actualIndex;
+  },
+
+  // 새 음표 추가 (16분음표, 선택된 음표 오른쪽에 동일 음높이로 생성)
+  addNote: () => {
+    const state = get();
+
+    if (state.selectedNoteIndices.length === 0) {
+      console.warn('[Store] No note selected to add after');
+      return { success: false, message: '음표를 먼저 선택해주세요' };
+    }
+
+    const selectedIndex = state.selectedNoteIndices[0];
+    const selectedNote = state.editedNotes[selectedIndex];
+    if (!selectedNote || selectedNote.isRest) {
+      console.warn('[Store] Selected note is a rest');
+      return { success: false, message: '쉼표에는 음표를 추가할 수 없습니다' };
+    }
+
+    // 16분음표 (slotCount = 1)
+    const newSlotIndex = selectedNote.slotIndex + selectedNote.slotCount;
+
+    // 마디 넘어가는 경우 처리
+    let newMeasureIndex = selectedNote.measureIndex;
+    let actualSlotIndex = newSlotIndex;
+    if (newSlotIndex >= SLOTS_PER_MEASURE) {
+      actualSlotIndex = newSlotIndex - SLOTS_PER_MEASURE;
+      newMeasureIndex++;
+    }
+
+    // 충돌 검사: 해당 위치에 이미 음표가 있는지 확인
+    const existingNote = state.editedNotes.find(n =>
+      n.measureIndex === newMeasureIndex &&
+      !n.isRest &&
+      n.slotIndex === actualSlotIndex
+    );
+
+    if (existingNote) {
+      console.warn('[Store] Note already exists at position');
+      return { success: false, message: '이미 음표가 있습니다' };
+    }
+
+    const newNote: NoteData = {
+      pitch: selectedNote.pitch, // 동일한 음높이
+      duration: '16',
+      beat: newMeasureIndex * 4 + actualSlotIndex / 4,
+      measureIndex: newMeasureIndex,
+      slotIndex: actualSlotIndex,
+      slotCount: 1,
+      isRest: false,
+      confidence: 'high'
+    };
+
+    const newNotes = [...state.editedNotes];
+
+    // 적절한 위치에 삽입 (measureIndex, slotIndex 순서대로)
+    const insertIndex = newNotes.findIndex(n =>
+      n.measureIndex > newMeasureIndex ||
+      (n.measureIndex === newMeasureIndex && n.slotIndex > actualSlotIndex)
+    );
+
+    if (insertIndex === -1) {
+      newNotes.push(newNote);
+    } else {
+      newNotes.splice(insertIndex, 0, newNote);
+    }
+
+    console.log('[Store] Added new note:', newNote);
+
+    // 새로 추가된 음표 선택
+    const newNoteIndex = insertIndex === -1 ? newNotes.length - 1 : insertIndex;
+
+    set({
+      editedNotes: newNotes,
+      selectedNoteIndices: [newNoteIndex],
+      undoStack: [...state.undoStack.slice(-MAX_UNDO_STEPS + 1), {
+        type: 'add' as any,
+        noteIndices: [newNoteIndex],
+        before: [],
+        after: [newNote]
+      }],
+      redoStack: []
+    });
+
+    return { success: true };
+  },
 
   // 음정 조정
   updateNotePitch: (direction) => set((state) => {

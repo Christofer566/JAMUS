@@ -15,6 +15,7 @@ interface RecordedRowStaffProps {
   rowStartMeasure: number;
   height?: number;
   isEditMode?: boolean;
+  onNoteSelect?: (index: number, multiSelect: boolean) => void;
 }
 
 const CONFIDENCE_COLORS = {
@@ -27,7 +28,8 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
   notesPerMeasure,
   rowStartMeasure,
   height = 80,
-  isEditMode = false
+  isEditMode = false,
+  onNoteSelect
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -171,8 +173,13 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
   // 음표 클릭 핸들러
   const handleNoteClick = useCallback((noteIndex: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    selectNote(noteIndex, e.ctrlKey || e.metaKey);
-  }, [selectNote]);
+    const multiSelect = e.ctrlKey || e.metaKey;
+    if (onNoteSelect) {
+      onNoteSelect(noteIndex, multiSelect);
+    } else {
+      selectNote(noteIndex, multiSelect);
+    }
+  }, [onNoteSelect, selectNote]);
 
   // 드래그 시작
   const handleDragStart = useCallback((noteIndex: number, dragType: DragType, e: React.MouseEvent) => {
@@ -222,7 +229,12 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
       // 스토어에 선택 업데이트
       if (selectedIndices.length > 0) {
         selectedIndices.forEach((idx, i) => {
-          selectNote(idx, i > 0); // 첫 번째 이후는 다중선택
+          const multiSelect = i > 0; // 첫 번째 이후는 다중선택
+          if (onNoteSelect) {
+            onNoteSelect(idx, multiSelect);
+          } else {
+            selectNote(idx, multiSelect);
+          }
         });
       }
 
@@ -391,9 +403,9 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
           ))}
 
           {/* 쉼표 박스들 */}
-          {getRestsForRow().map(({ note, measureOffset }) => (
+          {getRestsForRow().map(({ note, globalIndex, measureOffset }) => (
             <div
-              key={`rest-${note.measureIndex}-${note.slotIndex}`}
+              key={`rest-${globalIndex}`}
               className="absolute top-0 bottom-0"
               style={{
                 left: `${measureOffset * measureWidth}px`,

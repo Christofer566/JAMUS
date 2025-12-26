@@ -18,9 +18,14 @@ const config: Config = {
           '0%': { transform: 'translateX(100%)', opacity: '0' },
           '100%': { transform: 'translateX(0)', opacity: '1' },
         },
+        'indeterminate': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
       },
       animation: {
         'toast-slide-in': 'toast-slide-in 0.3s ease-out',
+        'indeterminate': 'indeterminate 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },
     },
   },

@@ -32,13 +32,10 @@ export function distributeNotesToMeasures(
       result[measureNumber] = [];
     }
 
-    // slotIndex를 박자로 변환 (16슬롯 = 4박)
-    const relativeBeat = note.slotIndex / 4;
-
     result[measureNumber].push({
       ...note,
       measureIndex: measureNumber,  // 실제 마디 번호로 업데이트
-      beat: relativeBeat
+      // beat은 그대로 유지 (convertToNotes에서 이미 globalSlotIndex 기준으로 계산됨)
     });
   }
 

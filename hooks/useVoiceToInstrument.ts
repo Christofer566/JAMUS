@@ -35,8 +35,27 @@ interface UseVoiceToInstrumentReturn {
   convertAudio: (audioBlob: Blob) => Promise<Blob | null>;
   playNotesAsFallback: (notes: NoteData[], bpm: number, startTime?: number) => Promise<void>;
   stopFallbackPlayback: () => void;
+  previewNote: (pitch: string, duration?: number) => void;
   cleanup: () => void;
   isModelSupported: () => boolean;
+}
+
+/**
+ * Synth 생성 헬퍼 함수
+ */
+function createSynth(instrument: OutputInstrument): Tone.PolySynth | null {
+  if (instrument === 'piano') {
+    return new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'triangle', partialCount: 3 },
+      envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 1 }
+    }).toDestination();
+  } else if (instrument === 'guitar') {
+    return new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sawtooth', partialCount: 8 },
+      envelope: { attack: 0.01, decay: 0.3, sustain: 0.5, release: 0.8 }
+    }).toDestination();
+  }
+  return null;
 }
 
 export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
@@ -62,8 +81,7 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
     try {
       console.log(`🎹 [Tone.js] ${instrument} 신디사이저 로드 중...`);
 
-      // PolySynth 생성
-      synthRef.current = new Tone.PolySynth(Tone.Synth).toDestination();
+      synthRef.current = createSynth(instrument);
       currentInstrumentRef.current = instrument;
 
       console.log(`🎹 [Tone.js] ${instrument} 신디사이저 로드 완료`);
@@ -113,14 +131,44 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
 
     try {
       await Tone.start();
-      console.log('🎹 [Tone.js] 음표 재생 시작', { notes: notes.length, bpm, startTime });
 
       const secondsPerBeat = 60 / bpm;
       const now = Tone.now();
 
+      // startTime(초)을 beat으로 변환
+      const startBeat = startTime / secondsPerBeat;
+
+      let scheduledCount = 0;
+      let skippedCount = 0;
+
+      // 🔍 첫 5개 음표의 상세 타이밍 디버깅
+      console.log('🔍 [DEBUG] 첫 5개 음표 타이밍:', {
+        now: now.toFixed(3),
+        startTime: startTime.toFixed(3),
+        startBeat: startBeat.toFixed(3),
+        secondsPerBeat: secondsPerBeat.toFixed(3)
+      });
+
+      notes.slice(0, 5).forEach((note, i) => {
+        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat;
+        const delay = triggerTime - now;
+        console.log(`  [${i}] ${note.pitch} (beat=${note.beat.toFixed(2)}, measure=${note.measureIndex}):`, {
+          triggerTime: triggerTime.toFixed(3),
+          delay: delay.toFixed(3) + 's',
+          willSkip: delay < 0
+        });
+      });
+
       notes.forEach(note => {
-        // beat을 초 단위로 변환
-        const triggerTime = now + (note.beat - startTime) * secondsPerBeat;
+        // 음표의 트리거 시간 계산 (현재 재생 위치 기준)
+        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat;
+
+        // 이미 지나간 음표는 스킵
+        if (triggerTime < now) {
+          skippedCount++;
+          return;
+        }
+
         const durationInBeats = durationToBeats(note.duration);
         const durationInSeconds = durationInBeats * secondsPerBeat;
 
@@ -129,6 +177,16 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
           durationInSeconds,
           triggerTime
         );
+        scheduledCount++;
+      });
+
+      console.log('🎹 [Tone.js] 음표 재생 시작', {
+        totalNotes: notes.length,
+        scheduled: scheduledCount,
+        skipped: skippedCount,
+        bpm,
+        startTime: startTime.toFixed(2) + 's',
+        startBeat: startBeat.toFixed(1)
       });
 
     } catch (error) {
@@ -138,11 +196,40 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
 
   /**
    * 재생 중지
+   * - releaseAll()은 현재 재생 중인 음표만 중지
+   * - 미래에 예약된 음표를 취소하려면 synth를 dispose하고 재생성해야 함
    */
   const stopFallbackPlayback = useCallback(() => {
     if (synthRef.current) {
       synthRef.current.releaseAll();
-      console.log('🎹 [Tone.js] 재생 중지');
+      synthRef.current.dispose();
+
+      // 즉시 재생성 (미래 예약 이벤트 모두 취소됨)
+      if (currentInstrumentRef.current && currentInstrumentRef.current !== 'raw') {
+        synthRef.current = createSynth(currentInstrumentRef.current);
+        console.log('🎹 [Tone.js] 재생 중지 및 synth 재생성');
+      } else {
+        synthRef.current = null;
+        console.log('🎹 [Tone.js] 재생 중지');
+      }
+    }
+  }, []);
+
+  /**
+   * 음표 미리듣기 (짧게 재생)
+   */
+  const previewNote = useCallback((pitch: string, duration: number = 0.3) => {
+    if (!synthRef.current) {
+      console.warn('🎹 [Preview] 신디사이저가 로드되지 않음');
+      return;
+    }
+
+    try {
+      Tone.start();
+      synthRef.current.triggerAttackRelease(pitch, duration);
+      console.log(`🎹 [Preview] ${pitch} 미리듣기 (${duration}s)`);
+    } catch (error) {
+      console.error('🎹 [Preview] 재생 중 에러:', error);
     }
   }, []);
 
@@ -171,6 +258,7 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
     convertAudio,
     playNotesAsFallback,
     stopFallbackPlayback,
+    previewNote,
     cleanup,
     isModelSupported,
   };

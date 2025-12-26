@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Undo, Redo, RotateCcw, ChevronLeft, Check, Pin } from 'lucide-react';
+import { Undo, Redo, RotateCcw, ChevronLeft, Check, Pin, ChevronUp, ChevronDown, Plus } from 'lucide-react';
 
 interface EditToolPanelProps {
   onClose: () => void;
@@ -10,11 +10,19 @@ interface EditToolPanelProps {
   onRedo: () => void;
   onReset: () => void;
   onConfirm: () => void;
+  onPrevNote: () => void;
+  onNextNote: () => void;
+  onAddNote: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  currentNoteIndex: number | null;
+  totalNotes: number;
 }
 
-export const EditToolPanel: React.FC<EditToolPanelProps> = ({ onClose, onUndo, onRedo, onReset, onConfirm, canUndo, canRedo }) => {
+export const EditToolPanel: React.FC<EditToolPanelProps> = ({
+  onClose, onUndo, onRedo, onReset, onConfirm, onPrevNote, onNextNote, onAddNote,
+  canUndo, canRedo, currentNoteIndex, totalNotes
+}) => {
   const [isHelpVisible, setIsHelpVisible] = useState(false);
   const [isHelpPinned, setIsHelpPinned] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
@@ -64,6 +72,25 @@ export const EditToolPanel: React.FC<EditToolPanelProps> = ({ onClose, onUndo, o
 
         <div className="w-px h-7 bg-white/20" />
 
+        {/* 이전/다음 음표 */}
+        <button onClick={onPrevNote} className={buttonStyle} title="이전 음표 (Q)">
+          <ChevronUp size={16} />
+          이전
+        </button>
+        <div className="px-2 py-1 text-sm text-gray-300 font-mono">
+          {currentNoteIndex !== null ? `${currentNoteIndex + 1}/${totalNotes}` : '-/-'}
+        </div>
+        <button onClick={onNextNote} className={buttonStyle} title="다음 음표 (W)">
+          <ChevronDown size={16} />
+          다음
+        </button>
+        <button onClick={onAddNote} className={buttonStyle} title="새 음표 추가">
+          <Plus size={16} />
+          새 음표
+        </button>
+
+        <div className="w-px h-7 bg-white/20" />
+
         {/* 확인 버튼 */}
         <button
           onClick={onConfirm}
@@ -106,6 +133,7 @@ export const EditToolPanel: React.FC<EditToolPanelProps> = ({ onClose, onUndo, o
             >
               <h4 className="font-bold text-white text-sm mb-3">📌 조작 안내</h4>
               <ul className="space-y-1.5 text-xs text-gray-400">
+                <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">Q/W</span> 이전/다음 음표</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">↑↓</span> 음정 (반음)</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">←→</span> 위치 (슬롯)</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">Shift+←→</span> 길이</li>
