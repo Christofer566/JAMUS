@@ -531,11 +531,6 @@ export default function SingleClientPage() {
         const recordStartMeasure = currentMeasureNum;
         const recordStartTime = (recordStartMeasure - 1) * measureDuration;
 
-        // MediaRecorder 시작 (마커 기반 녹음)
-        const started = await recorder.startRecording(recordStartTime, recordStartMeasure);
-        console.log('🎤 [handleStartJam] startRecording:', started);
-        if (!started) return;
-
         // 1. 현재 위치 저장
         originalPositionRef.current = currentTime;
 
@@ -557,21 +552,34 @@ export default function SingleClientPage() {
         // 메트로놈 ON/OFF는 기존 metronomeOn 상태 유지
         metronome.setMuted(!metronomeOn);
 
-        // 4. AudioContext 기반 카운트다운 시작
+        // 4. MediaRecorder 시작 (seek 후 - 정확한 타이밍)
+        const started = await recorder.startRecording(recordStartTime, recordStartMeasure);
+        console.log('🎤 [handleStartJam] startRecording (seek 후):', started);
+        if (!started) {
+            // 실패 시 정리
+            webAudio.pause();
+            metronome.stop();
+            setIsPlaying(false);
+            return;
+        }
+
+        // 5. performance.now() 기반 카운트다운 시작 (마커 기록과 시간 기준 통일)
         setIsCountingDown(true);
-        const countdownStartTime = audioContext.currentTime;
+        const countdownStartTime = performance.now();
         const secondsPerBeat = 60 / SONG_META.bpm;
 
         // 실제 이동한 마디 수 계산
         const measuresBack = currentMeasureNum - targetMeasure;
         const totalBeatsToWait = measuresBack * 4; // 4/4 박자 기준
+        const countdownDuration = totalBeatsToWait * secondsPerBeat; // 초
+        const countdownEndTime = countdownStartTime + (countdownDuration * 1000); // 밀리초
 
-        console.log(`🎤 [START JAM] 녹음 시작 예정: 녹음시작마디=${recordStartMeasure}, 녹음시작시간=${recordStartTime.toFixed(2)}, 목표마디=${targetMeasure}, 이동마디수=${measuresBack}, 대기박자=${totalBeatsToWait}`);
+        console.log(`🎤 [START JAM] 녹음 시작 예정: 녹음시작마디=${recordStartMeasure}, 녹음시작시간=${recordStartTime.toFixed(2)}, 목표마디=${targetMeasure}, 이동마디수=${measuresBack}, 대기박자=${totalBeatsToWait}, 카운트다운=${countdownDuration.toFixed(3)}s`);
 
         const updateCountdown = () => {
-            const elapsed = audioContext.currentTime - countdownStartTime;
-            const beatsElapsed = elapsed / secondsPerBeat;
-            const beatsRemaining = totalBeatsToWait - beatsElapsed;
+            const now = performance.now();
+            const remaining = (countdownEndTime - now) / 1000; // 초로 변환
+            const beatsRemaining = remaining / secondsPerBeat;
 
             // 마지막 4박을 4,3,2,1로 표시 (또는 남은 박자만큼)
             if (beatsRemaining > 4) {

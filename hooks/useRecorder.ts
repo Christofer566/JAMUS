@@ -375,13 +375,15 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
         const now = performance.now();
         const markerTime = (now - recordingBlobStartRef.current) / 1000; // blob 기준 상대 시간 (초)
+
+        // seek 후 startRecording 호출로 정확한 타이밍 - 추가 보정 불필요
         actualStartMarkerRef.current = markerTime;
 
         console.log('🎤 [Marker] 실제 녹음 시작 마커 설정:', {
             blobStartTime: recordingBlobStartRef.current.toFixed(0) + 'ms',
             currentTime: now.toFixed(0) + 'ms',
             markerTime: markerTime.toFixed(3) + 's (blob 기준)',
-            note: '이 시점부터가 실제 녹음 구간'
+            note: 'seek 후 startRecording으로 정확한 타이밍 보장'
         });
     }, []); // 의존성 제거 - mediaRecorderRef 사용으로 state 업데이트 지연 문제 해결
 
