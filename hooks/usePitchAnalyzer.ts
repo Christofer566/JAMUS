@@ -101,11 +101,15 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         // MacLeod Pitch Method (MPM) 알고리즘
         const result = detectPitchMPM(frame, sampleRate);
 
-        if (result.frequency > 80 && result.frequency < 2000 && result.confidence > 0.2) { // 정확도 유지
+        // Phase 2: 사람 목소리 범위 검증 (C2: 65Hz ~ C6: 1047Hz) + Confidence 0.5 이상
+        if (result.frequency >= 65 && result.frequency <= 1047 && result.confidence >= 0.5) {
           frames.push({
             time,
             frequency: result.frequency,
-            confidence: result.confidence
+            confidence: result.confidence,
+            isMpmCorrected: result.isMpmCorrected,
+            originalFrequency: result.originalFrequency,
+            correctionFactor: result.correctionFactor
           });
 
           validFreqCount++;
@@ -211,7 +215,13 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
 function detectPitchMPM(
   buffer: Float32Array,
   sampleRate: number
-): { frequency: number; confidence: number } {
+): {
+  frequency: number;
+  confidence: number;
+  isMpmCorrected?: boolean;
+  originalFrequency?: number;
+  correctionFactor?: number;
+} {
   const bufferSize = buffer.length;
   const cutoff = 0.5; // 정확도 유지
 
@@ -298,10 +308,56 @@ function detectPitchMPM(
   }
 
   // 6. 주파수 계산
-  const frequency = betterTau > 0 ? sampleRate / betterTau : 0;
+  let frequency = betterTau > 0 ? sampleRate / betterTau : 0;
   const confidence = selectedPeak.value;
+  const originalFrequency = frequency; // 보정 전 원본 주파수 저장
 
-  return { frequency, confidence };
+  // ========================================
+  // MPM 서브하모닉 감지 (DISABLED - Phase 16)
+  // ========================================
+  // 비활성화 이유: MPM의 배음 보정이 멜로디 주파수를 /2, /3으로 과도하게 낮춤
+  // - 200Hz → 100Hz로 떨어지면 Bass Trap에 걸려 shift 0 적용
+  // - 결과: 멜로디가 2옥타브 추락 (15차 10.5% 원인)
+  // - 해결: 순수 fundamental 주파수만 사용, Phase 2 correctOctaveError에만 의존
+
+  let isMpmCorrected = false;
+  let correctionFactor: number | undefined = undefined;
+
+  // 서브하모닉 검사: /2, /3, /4, /5 배수 확인
+  // const subharmonics = [2, 3, 4, 5];
+  //
+  // for (const divisor of subharmonics) {
+  //   const subFreq = frequency / divisor;
+  //   if (subFreq < 50) continue; // 너무 낮으면 스킵
+  //
+  //   // 서브하모닉에서 피크 찾기
+  //   const subTau = sampleRate / subFreq;
+  //   const subTauInt = Math.round(subTau);
+  //
+  //   if (subTauInt > 0 && subTauInt < bufferSize - 1) {
+  //     const subPeakValue = nsdf[subTauInt];
+  //
+  //     // threshold 0.6: 서브하모닉 피크가 원래 피크의 0.6배 이상이면 보정
+  //     // (과도한 /2 방지 - 진짜 서브하모닉만 감지)
+  //     if (subPeakValue >= selectedPeak.value * 0.6) {
+  //       frequency = subFreq;
+  //       isMpmCorrected = true;
+  //       correctionFactor = divisor;
+  //       console.log(`[MPM] 서브하모닉 감지: ${originalFrequency.toFixed(0)}Hz → ${frequency.toFixed(0)}Hz (/${divisor})`);
+  //       break;
+  //     }
+  //   }
+  // }
+
+  console.log('[MPM] DISABLED - 순수 fundamental 주파수 사용');
+
+  return {
+    frequency,
+    confidence,
+    isMpmCorrected,
+    originalFrequency,
+    correctionFactor
+  };
 }
 
 export default usePitchAnalyzer;

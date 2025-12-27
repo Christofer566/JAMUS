@@ -20,6 +20,8 @@ import { ChevronRight } from 'lucide-react';
 import { DEFAULT_SONG } from '@/data/songs';
 import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
 import { OutputInstrument } from '@/types/instrument';
+import { compareNotes, analyzeGap, logGapAnalysis } from '@/utils/noteComparison';
+import { GROUND_TRUTH_NOTES } from '@/utils/groundTruthNotes';
 
 // 곡 데이터에서 가져오기
 const CURRENT_SONG = DEFAULT_SONG;
@@ -90,6 +92,7 @@ export default function FeedbackClientPage() {
         selectedNoteIndices,
         undoStack,
         redoStack,
+        rawAutoNotes,
         setEditMode,
         toggleEditPanel,
         selectNote: storeSelectNote,
@@ -104,6 +107,7 @@ export default function FeedbackClientPage() {
         undo,
         redo,
         reset,
+        setRawAutoNotes,
         initializeNotes,
         editedNotes,
         getCleanedNotes,
@@ -539,6 +543,23 @@ export default function FeedbackClientPage() {
 
             setRecordedNotesByMeasure(groupedNotes);
 
+            // Gap 분석용: 원본 자동 감지 음표 저장 (상대 measureIndex, 쉼표 제외)
+            // distributeNotesToMeasures 이전의 noteOnly 사용 (상대 마디 인덱스)
+            setRawAutoNotes(noteOnly);
+
+            // ============================================
+            // 자동 Gap 분석: 정답 음표 vs 자동 감지 비교
+            // ============================================
+            console.log('[Auto Gap Analysis] 자동 Gap 분석 시작');
+            const comparisons = compareNotes(
+                noteOnly,
+                GROUND_TRUTH_NOTES,
+                storedRecordingRange.startMeasure
+            );
+            const analysis = analyzeGap(comparisons);
+            logGapAnalysis(analysis);
+            console.log('[Auto Gap Analysis] 음정 정확도:', analysis.pitchAccuracy.toFixed(1) + '%');
+
             // 편집 스토어 초기화 - 모든 음표를 flat array로 변환
             const allNotes: NoteData[] = [];
             Object.entries(groupedNotes).forEach(([measureNum, notes]) => {
@@ -546,11 +567,12 @@ export default function FeedbackClientPage() {
                     allNotes.push(note);
                 });
             });
+
             initializeNotes(allNotes);
         };
 
         performAnalysis();
-    }, [storedAudioBlob, storedRecordingRange, analyzeAudio, initializeNotes]);
+    }, [storedAudioBlob, storedRecordingRange, analyzeAudio, setRawAutoNotes, initializeNotes]);
 
     // 악기 변환 모델 로드 (outputInstrument가 'raw'가 아닐 때)
     // Tone.js 기반 폴백 재생
@@ -935,6 +957,19 @@ export default function FeedbackClientPage() {
         console.log('[Edit Confirm] notes:', cleanedNotes.filter(n => !n.isRest).length, 'rests:', cleanedNotes.filter(n => n.isRest).length);
         console.log('[Edit Confirm] 첫 5개 음표 pitch:', cleanedNotes.filter(n => !n.isRest).slice(0, 5).map(n => n.pitch));
 
+        // ============================================
+        // Gap 분석: 자동 감지 vs 수동 편집 비교
+        // ============================================
+        if (rawAutoNotes.length > 0 && storedRecordingRange) {
+            const comparisons = compareNotes(
+                rawAutoNotes,
+                cleanedNotes,
+                storedRecordingRange.startMeasure
+            );
+            const analysis = analyzeGap(comparisons);
+            logGapAnalysis(analysis);
+        }
+
         // recordedNotesByMeasure 업데이트
         setRecordedNotesByMeasure(newNotesByMeasure);
 
@@ -946,7 +981,7 @@ export default function FeedbackClientPage() {
         setEditMode(false);
 
         showToast('success', '편집이 확정되었습니다');
-    }, [getCleanedNotes, initializeNotes, setEditMode, showToast]);
+    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast]);
 
     // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
     if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {

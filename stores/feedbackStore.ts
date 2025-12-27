@@ -19,6 +19,7 @@ interface FeedbackState {
   selectedNoteIndices: number[];
 
   // 데이터
+  rawAutoNotes: NoteData[];      // Gap 분석용: 원본 자동 감지 음표 (쉼표 제외)
   originalNotes: NoteData[];
   editedNotes: NoteData[];
 
@@ -58,6 +59,7 @@ interface FeedbackState {
 
   setDragPreview: (preview: DragPreview | null) => void;
   setIsDragging: (dragging: boolean) => void;
+  setRawAutoNotes: (notes: NoteData[]) => void;  // Gap 분석용 원본 음표 설정
   initializeNotes: (notes: NoteData[]) => void;
   getCleanedNotes: () => NoteData[];  // 편집 확정용: 정리된 음표+쉼표 반환
 
@@ -426,6 +428,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   isEditMode: false,
   showEditPanel: false,
   selectedNoteIndices: [],
+  rawAutoNotes: [],
   originalNotes: [],
   editedNotes: [],
   undoStack: [],
@@ -971,6 +974,9 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   // 드래그
   setDragPreview: (preview) => set({ dragPreview: preview }),
   setIsDragging: (dragging) => set({ isDragging: dragging }),
+
+  // Gap 분석용 원본 음표 설정 (쉼표 제외)
+  setRawAutoNotes: (notes) => set({ rawAutoNotes: notes.filter(n => !n.isRest) }),
 
   // 초기화 (빈 슬롯을 쉼표로 채움, 일반모드로 리셋)
   initializeNotes: (notes) => {

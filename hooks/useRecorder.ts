@@ -606,6 +606,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
         console.log('🎤 [Web Audio] AudioContext state:', context.state, 'gainNode:', gainNodeRef.current?.gain.value);
 
+        // AudioContext.currentTime 기반 즉시 재생 (배경음악과 정확히 동기화)
+        const scheduleTime = context.currentTime; // 즉시 재생 (0ms lookahead)
+
         // Play each active segment using Web Audio API
         activeSegments.forEach(seg => {
             const audioBuffer = audioBuffersRef.current.get(seg.id);
@@ -638,15 +641,16 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                 source.connect(context.destination);
             }
 
-            // 즉시 재생 (Web Audio API는 정확한 타이밍 보장)
-            source.start(0, offset);
+            // AudioContext.currentTime 기반 정확한 스케줄링 (배경음악과 동기화)
+            source.start(scheduleTime, offset);
             sourceNodesRef.current.set(seg.id, source);
 
-            console.log('🎤 [Web Audio] 재생 시작:', {
+            console.log('🎤 [Web Audio] 재생 시작 (스케줄링):', {
                 segId: seg.id,
                 fromTime,
                 segStartTime: seg.startTime,
                 offset: offset.toFixed(3),
+                scheduleTime: scheduleTime.toFixed(3),
                 bufferDuration: audioBuffer.duration.toFixed(2)
             });
 
