@@ -128,6 +128,44 @@ export function compareNotes(
   // 2. 수동 입력 음표 (쉼표 제외)
   const normalizedManual = manualNotes.filter(n => !n.isRest);
 
+  // ============================================
+  // Phase 43: 동적 타이밍 오프셋 (Dynamic Auto-Alignment)
+  // ============================================
+  // 정답지(수동)의 첫 음표와 자동 감지의 첫 음표 시점을 비교하여
+  // 하드웨어 지연으로 인한 전체 밀림을 자동 보정
+  if (normalizedAuto.length > 0 && normalizedManual.length > 0) {
+    // 첫 음표 찾기 (시간순 정렬)
+    const autoSorted = [...normalizedAuto].sort(
+      (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)
+    );
+    const manualSorted = [...normalizedManual].sort(
+      (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)
+    );
+
+    const autoFirstSlot = getGlobalSlotIndex(autoSorted[0]);
+    const manualFirstSlot = getGlobalSlotIndex(manualSorted[0]);
+    const timingDelta = autoFirstSlot - manualFirstSlot;
+
+    // 오프셋이 ±4슬롯 이내일 때만 보정 (너무 큰 차이는 의도적일 수 있음)
+    if (Math.abs(timingDelta) > 0 && Math.abs(timingDelta) <= 4) {
+      console.log(`[Phase 43] 🎯 동적 타이밍 오프셋 적용: ${timingDelta > 0 ? '+' : ''}${timingDelta}슬롯`);
+      console.log(`  자동 첫 음표: 마디 ${autoSorted[0].measureIndex}, 슬롯 ${autoSorted[0].slotIndex}`);
+      console.log(`  수동 첫 음표: 마디 ${manualSorted[0].measureIndex}, 슬롯 ${manualSorted[0].slotIndex}`);
+
+      // 전체 자동 음표에 delta 적용 (슬롯 시프트)
+      normalizedAuto.forEach(n => {
+        const currentGlobalSlot = getGlobalSlotIndex(n);
+        const newGlobalSlot = currentGlobalSlot - timingDelta;
+        n.measureIndex = Math.floor(newGlobalSlot / 16);
+        n.slotIndex = ((newGlobalSlot % 16) + 16) % 16; // 음수 처리
+      });
+
+      console.log(`  → 전체 ${normalizedAuto.length}개 음표 시프트 완료`);
+    } else if (timingDelta !== 0) {
+      console.log(`[Phase 43] ⚠️ 타이밍 차이 ${timingDelta}슬롯 - 보정 범위 초과 (±4슬롯)`);
+    }
+  }
+
   // 3. globalSlotIndex로 정렬
   const sortedAuto = normalizedAuto.sort(
     (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)

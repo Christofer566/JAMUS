@@ -165,6 +165,19 @@ export default function SingleClientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // 마운트 시 1회만 실행
 
+    // Phase 52: Warm-up - 페이지 진입 시 마이크 통로 사전 활성화
+    useEffect(() => {
+        if (webAudio.isReady && !recorder.isWarmedUp) {
+            console.log('🔥 [Phase 52] 오디오 로드 완료, Warm-up 시작...');
+            recorder.warmUp().then((success) => {
+                if (success) {
+                    console.log('🔥 [Phase 52] Warm-up 완료! 측정된 지연:', recorder.measuredLatency.toFixed(1) + 'ms');
+                }
+            });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [webAudio.isReady]);
+
     // webAudio.currentTime이 변경될 때마다 항상 반영 (재생 중이든 아니든)
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
 
@@ -599,16 +612,17 @@ export default function SingleClientPage() {
                 setIsCountingDown(false);
                 setIsJamming(true);
 
-                // 실제 녹음 시작 마커 찍기 (blob 내 상대 시간)
+                // Phase 31: 하드웨어 지연 보정 - 실제 녹음 시작 마커 찍기
                 const actualAudioTime = webAudioRef.current.currentTime;
-                recorder.markActualStart();
+                const timeDelta = recordStartTime - actualAudioTime; // 목표 - 실제 (보정값)
+                recorder.markActualStart(timeDelta); // ✅ 지연 보정값 전달
                 showToast('info', '녹음이 시작되었습니다');
 
-                console.log('🎤 [START JAM] 녹음 시작 마커 설정:', {
-                    녹음시작시간: recordStartTime.toFixed(3),
+                console.log('🎤 [START JAM] 녹음 시작 마커 설정 (Phase 31 - 하드웨어 지연 보정):', {
+                    목표시간: recordStartTime.toFixed(3),
                     녹음시작마디: recordStartMeasure,
                     실제오디오시간: actualAudioTime.toFixed(3),
-                    차이: (actualAudioTime - recordStartTime).toFixed(3) + 's'
+                    지연보정: timeDelta.toFixed(3) + 's ← 마커에 반영됨'
                 });
                 return;
             }

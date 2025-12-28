@@ -19,19 +19,26 @@ const A4_MIDI = 69;
 
 // 그리드 분석 파라미터
 const SLOTS_PER_MEASURE = 16;           // 1마디 = 16슬롯
-const RMS_THRESHOLD = 0.02;             // 소리 있음 판단
+const RMS_THRESHOLD = 0.018;            // Phase 40: 0.02 → 0.018 (Missed 음표 구출, Gemini 제안)
 const OCCUPANCY_HIGH = 0.70;            // 70% 이상 = 확실
-const OCCUPANCY_MIN = 0.70;             // 70% 이상만 허용 (Phase 1: 0.50 → 0.70)
-const PITCH_CONFIDENCE_MIN = 0.5;       // 음정 감지 최소 신뢰도 (Phase 1: 0.3 → 0.5)
+const OCCUPANCY_MIN = 0.70;             // Phase 40: 0.65 → 0.70 (38차 복귀, 노이즈 방어)
+const PITCH_CONFIDENCE_MIN = 0.35;      // Phase 40: 0.5 → 0.35 (음정 구출 강화, Gemini 제안)
 const GRID_SNAP_TOLERANCE = 0.15;       // 박자 경계 ±15% 허용
 const DEFAULT_PITCH = 'C4';             // 음정 감지 실패 시 기본값
-const TIMING_OFFSET_SLOTS = 1;          // Phase 24: +2 → +1 (23차 -1슬롯 집단 발생 → 영점 복구)
+const TIMING_OFFSET_SLOTS = 3;          // Phase 35: 2 → 3 (32차 +1슬롯 패턴 보정, Gemini 제안)
 const MIN_NOTE_DURATION_SLOTS = 2;      // Phase 1: 최소 음표 길이 (2슬롯)
 
 // 악보 표시 적정 범위 (오선지 중심)
 // Phase 15: 4 → 3 (남자 키 정답지 C3-C4 영역에 맞춤)
-// Phase 24: 3 → 2 (옥타브 강제 견인 - 배음 오감지 억제)
-const TARGET_MIN_OCTAVE = 2;
+// Phase 24: 3 → 2 (옥타브 강제 견인 - 배음 오감지 억제, 52.9% 달성!)
+// Phase 28: 2 → 3 (복구 시도 → 28차 -12반음 오류 발생)
+// Phase 29: 3 → 2 (24차 성공 구조 복귀, Gemini 제안)
+// Phase 30: 2 → 3 (TARGET=2 음정 0.0% 실패 → 복구, threshold 1.6으로 배음 억제)
+// Phase 32: 3 → 2 (24차 황금 설정 복귀 + 하드웨어 지연 보정 유지, Claude & Gemini 합의)
+// Phase 37: 2 → 3 (35차 타이밍 66.7% 복귀 + threshold 1.55 배음 필터 강화, Claude & Gemini 합의)
+// Phase 48: 3 → 2 (저음역대 정확도 개선 시도 → 실패, 모든 음이 1옥타브 낮게 감지)
+// Phase 49: 2 → 3 (롤백 + 저음역대 피치 보정 강화로 대응)
+const TARGET_MIN_OCTAVE = 3;
 const TARGET_MAX_OCTAVE = 5;
 
 // ============================================
@@ -41,8 +48,23 @@ export function frequencyToNote(hz: number, octaveShift: number = 0): string {
   if (hz <= 0) return 'rest';
 
   const midiNote = Math.round(12 * Math.log2(hz / A4_FREQ) + A4_MIDI);
-  const octave = Math.floor(midiNote / 12) - 1 + octaveShift;
+  let octave = Math.floor(midiNote / 12) - 1 + octaveShift;
   const noteIndex = ((midiNote % 12) + 12) % 12;
+
+  // ========================================
+  // Phase 53/66: 저음역대 옥타브 가드레일 (200Hz 설정 복구)
+  // 200Hz 이하(G3 영역)에서 옥타브 4 이상은 배음으로 간주하여 강제 하향
+  // ========================================
+  const LOW_FREQ_OCTAVE_GUARDRAIL = 200;
+  if (hz <= LOW_FREQ_OCTAVE_GUARDRAIL && octave >= 4) {
+    octave = octave - 1;
+  }
+
+  // Phase 42: 옥타브 5 이상 강제 하향
+  // 성민님 음역대(옥타브 2-4) 기준, 옥타브 5 이상은 배음일 가능성 높음
+  if (octave >= 5) {
+    octave = octave - 1;
+  }
 
   return `${NOTE_NAMES[noteIndex]}${octave}`;
 }
@@ -56,6 +78,45 @@ function frequencyToOctave(hz: number): number {
 export function frequencyToMidi(hz: number): number {
   if (hz <= 0) return -1;
   return Math.round(12 * Math.log2(hz / A4_FREQ) + A4_MIDI);
+}
+
+/**
+ * Phase 44: Pitch Snap (반음 단위 정밀 보정)
+ * Phase 49: 저음역대(200Hz 이하) 강화 - ±75 cents로 확장
+ *
+ * 감지된 주파수가 특정 음계의 범위 내에 있으면
+ * 해당 음의 정확한 주파수로 스냅 (Quantize)
+ *
+ * @param hz - 원본 주파수
+ * @returns 스냅된 주파수 (범위 밖이면 원본 반환)
+ */
+export function pitchSnap(hz: number): number {
+  if (hz <= 0) return hz;
+
+  // 정확한 MIDI 값 계산 (소수점 포함)
+  const exactMidi = 12 * Math.log2(hz / A4_FREQ) + A4_MIDI;
+  const nearestMidi = Math.round(exactMidi);
+
+  // 센트 차이 계산: 1 semitone = 100 cents
+  const centsDeviation = (exactMidi - nearestMidi) * 100;
+
+  // Phase 49: 저음역대에서는 더 넓은 범위로 스냅 (55차 설정 유지)
+  const LOW_FREQ_THRESHOLD = 200; // G3(196Hz) 이하
+  const SNAP_THRESHOLD_NORMAL = 50;  // 일반: ±50 cents (반음의 절반)
+  const SNAP_THRESHOLD_LOW = 75;     // 저음: ±75 cents (반음의 3/4)
+
+  const snapThreshold = hz <= LOW_FREQ_THRESHOLD ? SNAP_THRESHOLD_LOW : SNAP_THRESHOLD_NORMAL;
+
+  if (Math.abs(centsDeviation) <= snapThreshold) {
+    // 정확한 반음 주파수 계산: f = A4 * 2^((midi - 69) / 12)
+    const snappedHz = A4_FREQ * Math.pow(2, (nearestMidi - A4_MIDI) / 12);
+    // Phase 67: PitchSnap 로그 제거 (매우 빈번)
+    return snappedHz;
+  }
+
+  // 범위 밖이면 원본 반환 (비정상적인 피치)
+  // Phase 67: PitchSnap 로그 제거
+  return hz;
 }
 
 function pitchToMidi(pitch: string): number {
@@ -104,30 +165,61 @@ function median(arr: number[]): number {
 }
 
 /**
+ * Phase 66: 최빈값(Mode) 함수 - 옥타브 튐 방어
+ * Phase 67: 로그 제거 (현재 비활성화 상태)
+ * 주파수 배열에서 가장 많이 등장한 MIDI 노트의 대표 주파수 반환
+ */
+function modeFrequency(arr: number[]): number {
+  if (arr.length === 0) return 0;
+  if (arr.length === 1) return arr[0];
+
+  const midiCounts = new Map<number, { count: number; freqs: number[] }>();
+
+  for (const freq of arr) {
+    if (freq <= 0) continue;
+    const midi = Math.round(12 * Math.log2(freq / A4_FREQ) + A4_MIDI);
+
+    if (!midiCounts.has(midi)) {
+      midiCounts.set(midi, { count: 0, freqs: [] });
+    }
+    const entry = midiCounts.get(midi)!;
+    entry.count++;
+    entry.freqs.push(freq);
+  }
+
+  if (midiCounts.size === 0) return median(arr);
+
+  let maxCount = 0;
+  let modeFreqs: number[] = [];
+
+  for (const [, data] of midiCounts) {
+    if (data.count > maxCount) {
+      maxCount = data.count;
+      modeFreqs = data.freqs;
+    }
+  }
+
+  return median(modeFreqs);
+}
+
+/**
  * Phase 2: 옥타브 자동 보정
- * Phase 17: 임계값 강화 (1.8 → 1.5) - Target 3를 벗어나는 고음 억제
- * 감지된 주파수가 배음일 가능성을 검사하여 올바른 옥타브로 보정
+ * Phase 55: 1.62x threshold 황금 설정
+ * Phase 67: 로그 제거
  */
 function correctOctaveError(frequency: number, contextFreqs: number[]): number {
   if (frequency <= 0 || contextFreqs.length === 0) return frequency;
 
   const avgContextFreq = contextFreqs.reduce((sum, f) => sum + f, 0) / contextFreqs.length;
 
-  // Phase 23: 임계값 1.5 → 1.7 (Claude & Gemini 합의안)
-  // Phase 24: TARGET_MIN_OCTAVE=2 적용으로 52.9% 달성
-  // Phase 25: 1.75 시도했으나 녹음/재생 타이밍 문제로 롤백
-  // 주파수가 평균의 1.7배 이상이면 한 옥타브 낮춤 (배음 오감지)
-  if (frequency > avgContextFreq * 1.7) {
-    const corrected = frequency / 2;
-    console.log(`[Octave] 보정: ${frequency.toFixed(0)}Hz → ${corrected.toFixed(0)}Hz (배음 감지, threshold 1.7x)`);
-    return corrected;
+  // Phase 55: 배음 필터 (1.62x threshold - 황금 설정)
+  if (frequency > avgContextFreq * 1.62) {
+    return frequency / 2;
   }
 
-  // 주파수가 평균의 절반 이하면 한 옥타브 높임 (기본음 누락)
+  // 기본음 누락 보정
   if (frequency < avgContextFreq * 0.55) {
-    const corrected = frequency * 2;
-    console.log(`[Octave] 보정: ${frequency.toFixed(0)}Hz → ${corrected.toFixed(0)}Hz (기본음 복구)`);
-    return corrected;
+    return frequency * 2;
   }
 
   return frequency;
@@ -277,24 +369,26 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const validFreqs = validFramesInSlot.map(f => f.frequency);
 
     if (validFreqs.length > 0) {
+      // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
       slot.medianFrequency = median(validFreqs);
 
       // Phase 2: 옥타브 자동 보정 (주변 문맥 기반)
       const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
       const correctedFreq = correctOctaveError(slot.medianFrequency, contextFreqs);
 
+      // Phase 44: Pitch Snap 적용 (±50 cents 범위 내 반음 스냅)
+      const snappedFreq = pitchSnap(correctedFreq);
+
       // Low Solo 보호: 초저음 솔로 멜로디는 원음 보존
-      // Phase 16: 100Hz → 90Hz (더 엄격한 기준, F2=87Hz 제외)
-      const LOW_SOLO_THRESHOLD = 90; // D2(73Hz), E2(82Hz)만 보호
+      // Phase 67: 로그 제거
+      const LOW_SOLO_THRESHOLD = 90;
       let finalShift = octaveShift;
 
       if (slot.medianFrequency < LOW_SOLO_THRESHOLD) {
-        // 초저음 솔로는 shift 없이 원음 그대로 보존
         finalShift = 0;
-        console.log(`[Low Solo] 🎷 ${slot.medianFrequency.toFixed(0)}Hz → shift 0 (초저음 솔로 보존)`);
       }
 
-      slot.pitch = frequencyToNote(correctedFreq, finalShift);
+      slot.pitch = frequencyToNote(snappedFreq, finalShift);
     }
 
     // 그리드 스냅 검사: 소리 시작점이 슬롯 경계 ±15% 이내인지
@@ -314,7 +408,8 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     slots.push(slot);
   }
 
-  console.log('[Grid] 슬롯별 점유율 분포:', { high: highCount, medium: mediumCount, empty: emptyCount });
+  // Phase 67: 상세 로그 제거, 슬롯 분포만 유지
+  console.log('[Grid] 슬롯 분포:', { high: highCount, medium: mediumCount, empty: emptyCount });
 
   // ========================================
   // Step 3: 연속 슬롯 병합 → 음표 생성
@@ -339,19 +434,23 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
           continue;
         }
 
+        // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
         const medianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
         const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
         const correctedFreq = medianFreq > 0 ? correctOctaveError(medianFreq, contextFreqs) : 0;
 
-        // Low Solo 보호
+        // Phase 44: Pitch Snap 적용
+        const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
+
+        // Low Solo 보호 (Phase 51: 100Hz로 롤백, 49차 최적 설정)
         const LOW_SOLO_THRESHOLD = 100;
         let finalShift = octaveShift;
         if (medianFreq > 0 && medianFreq < LOW_SOLO_THRESHOLD) {
           finalShift = 0;
         }
 
-        const finalPitch = correctedFreq > 0
-          ? frequencyToNote(correctedFreq, finalShift)
+        const finalPitch = snappedFreq > 0
+          ? frequencyToNote(snappedFreq, finalShift)
           : lastValidPitch;
 
         // Phase 1: 타이밍 오프셋 적용
@@ -419,19 +518,23 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         }
       } else {
         // 음정 다름 → 현재 음표 종료 후 새 음표 시작
-        const medianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
+        // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
+        const medianFreq2 = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
         const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-        const correctedFreq = medianFreq > 0 ? correctOctaveError(medianFreq, contextFreqs) : 0;
+        const correctedFreq = medianFreq2 > 0 ? correctOctaveError(medianFreq2, contextFreqs) : 0;
 
-        // Low Solo 보호
+        // Phase 44: Pitch Snap 적용
+        const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
+
+        // Low Solo 보호 (Phase 51: 100Hz로 롤백, 49차 최적 설정)
         const LOW_SOLO_THRESHOLD = 100;
         let finalShift = octaveShift;
-        if (medianFreq > 0 && medianFreq < LOW_SOLO_THRESHOLD) {
+        if (medianFreq2 > 0 && medianFreq2 < LOW_SOLO_THRESHOLD) {
           finalShift = 0;
         }
 
-        const finalPitch = correctedFreq > 0
-          ? frequencyToNote(correctedFreq, finalShift)
+        const finalPitch = snappedFreq > 0
+          ? frequencyToNote(snappedFreq, finalShift)
           : lastValidPitch;
 
         // Phase 1: 최소 길이 필터링 + 타이밍 오프셋
@@ -470,19 +573,23 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
   // 마지막 음표 처리
   if (currentNote) {
-    const medianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
+    // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
+    const medianFreqLast = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
     const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-    const correctedFreq = medianFreq > 0 ? correctOctaveError(medianFreq, contextFreqs) : 0;
+    const correctedFreq = medianFreqLast > 0 ? correctOctaveError(medianFreqLast, contextFreqs) : 0;
+
+    // Phase 44: Pitch Snap 적용
+    const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
 
     // Low Solo 보호
     const LOW_SOLO_THRESHOLD = 100;
     let finalShift = octaveShift;
-    if (medianFreq > 0 && medianFreq < LOW_SOLO_THRESHOLD) {
+    if (medianFreqLast > 0 && medianFreqLast < LOW_SOLO_THRESHOLD) {
       finalShift = 0;
     }
 
-    const finalPitch = correctedFreq > 0
-      ? frequencyToNote(correctedFreq, finalShift)
+    const finalPitch = snappedFreq > 0
+      ? frequencyToNote(snappedFreq, finalShift)
       : lastValidPitch;
 
     // Phase 1: 최소 길이 필터링 + 타이밍 오프셋
@@ -508,7 +615,34 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     }
   }
 
-  console.log('[Grid] 병합 전 음표:', rawNotes.length);
+  // ========================================
+  // Phase 66: 첫 음 기준 상대 정렬 (활성화)
+  // ========================================
+  // 감지된 첫 번째 음표의 시작점을 슬롯 0에 맞추고 전체 타임라인 재정렬
+  if (rawNotes.length > 0) {
+    const firstNote = rawNotes[0];
+    const firstNoteGlobalSlot = firstNote.measureIndex * SLOTS_PER_MEASURE + firstNote.slotIndex;
+
+    // 최대 2마디(32슬롯)까지만 조정, 그 이상은 비정상
+    if (firstNoteGlobalSlot > 0 && firstNoteGlobalSlot < 32) {
+      // 모든 음표를 firstNoteGlobalSlot만큼 앞으로 이동
+      for (let i = 0; i < rawNotes.length; i++) {
+        const note = rawNotes[i];
+        const currentGlobalSlot = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex;
+        const newGlobalSlot = currentGlobalSlot - firstNoteGlobalSlot;
+
+        // 음수 슬롯 방지 (안전장치)
+        if (newGlobalSlot < 0) continue;
+
+        rawNotes[i] = {
+          ...note,
+          measureIndex: Math.floor(newGlobalSlot / SLOTS_PER_MEASURE),
+          slotIndex: newGlobalSlot % SLOTS_PER_MEASURE,
+          beat: newGlobalSlot / 4
+        };
+      }
+    }
+  }
 
   // ========================================
   // Phase 3: 옥타브 점프 후처리 (DISABLED)
@@ -609,29 +743,18 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   }
 
   // ========================================
-  // Step 5: 결과 로그
+  // Step 5: 결과 로그 (Phase 67: 통계 위주로 간소화)
   // ========================================
-  const highNotes = finalNotes.filter(n => !n.isRest && n.confidence === 'high').length;
-  const mediumNotes = finalNotes.filter(n => !n.isRest && n.confidence === 'medium').length;
-  const restNotes = finalNotes.filter(n => n.isRest).length;
-
-  console.log('[Grid] 병합 후 음표:', rawNotes.length);
-  console.log('[Grid] 최종 (음표+쉼표):', finalNotes.length);
-  console.log('[Grid] 신뢰도 분포:', { high: highNotes, medium: mediumNotes, rests: restNotes });
-
-  if (finalNotes.length > 0) {
-    console.log('[Grid] 최종 음표 목록:');
-    finalNotes.slice(0, 20).forEach((note, i) => {
-      const confLabel = note.isRest ? '▢' : (note.confidence === 'high' ? '●' : '○');
-      const type = note.isRest ? '쉼표' : '음표';
-      console.log(`  ${confLabel} [${i}] ${note.pitch} (${note.duration}, ${note.slotCount}슬롯) @ 마디${note.measureIndex} 슬롯${note.slotIndex}`);
-    });
-    if (finalNotes.length > 20) {
-      console.log(`  ... 외 ${finalNotes.length - 20}개`);
-    }
-  }
+  const noteCount = finalNotes.filter(n => !n.isRest).length;
+  const restCount = finalNotes.filter(n => n.isRest).length;
 
   console.log('[Grid] ========== 분석 완료 ==========');
+  console.log(`[Grid] 결과: 음표 ${noteCount}개, 쉼표 ${restCount}개`);
+
+  // 데이터 증발 경고 (중요!)
+  if (frames.length > 0 && noteCount === 0) {
+    console.error('[Grid 경고] ⚠️ 데이터 증발! 입력:', frames.length, '프레임 → 출력: 0개 음표');
+  }
 
   return finalNotes;
 }

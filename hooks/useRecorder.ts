@@ -36,10 +36,14 @@ export interface UseRecorderReturn {
     // For save - combined blob of all segments
     audioBlob: Blob | null;
     recordingRange: { startTime: number; endTime: number; startMeasure: number; endMeasure: number } | null;
+    // Phase 52: Warm-up 상태
+    isWarmedUp: boolean;
+    measuredLatency: number; // 측정된 고정 지연 (ms)
     requestPermission: () => Promise<boolean>;
-    // prepareRecording 제거 - 마커 기반 방식으로 불필요
+    // Phase 52: Warm-up - 페이지 진입 시 마이크 통로 사전 활성화
+    warmUp: () => Promise<boolean>;
     startRecording: (startTime: number, startMeasure: number) => Promise<boolean>;
-    markActualStart: () => void; // 카운트다운 완료 시 실제 녹음 시작 마커 찍기
+    markActualStart: (timeDelta?: number) => void; // 카운트다운 완료 시 실제 녹음 시작 마커 찍기 (timeDelta: 하드웨어 지연 보정값)
     stopRecording: (endTime: number, endMeasure: number) => Promise<void>;
     pauseJamming: () => void;
     resumeJamming: () => void;
@@ -193,6 +197,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const [isProcessing, setIsProcessing] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Phase 52: Warm-up 상태
+    const [isWarmedUp, setIsWarmedUp] = useState(false);
+    const [measuredLatency, setMeasuredLatency] = useState(0); // 측정된 고정 지연 (ms)
 
     // Refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -203,6 +210,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const recordingBlobStartRef = useRef<number>(0); // blob 0초 시점 (performance.now, MediaRecorder.start() 호출 시점)
     const actualStartMarkerRef = useRef<number>(0); // 실제 녹음 시작 마커 (blob 기준 상대 시간, 초)
     const recordingStopTimeRef = useRef<number>(0); // 녹음 종료 시점 (performance.now)
+    // Phase 52: Calibration - 고정 지연 측정
+    const firstDataTimestampRef = useRef<number>(0); // 첫 번째 ondataavailable 이벤트 시점
+    const staticLatencyRef = useRef<number>(0); // 측정된 고정 지연 (ms)
 
     // Web Audio API 기반 재생 (정확한 타이밍 동기화)
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -284,6 +294,97 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     }, [onError]);
 
     // ========================================
+    // Phase 52: Warm-up - 마이크 통로 사전 활성화
+    // 페이지 진입 시 호출하여 MediaRecorder 하드웨어 지연을 미리 해소
+    // ========================================
+    const warmUp = useCallback(async (): Promise<boolean> => {
+        console.log('🔥 [Phase 52 Warm-up] 마이크 워밍업 시작...');
+
+        // 1. 권한 확보
+        if (permissionState !== 'granted') {
+            const granted = await requestPermission();
+            if (!granted) {
+                console.warn('🔥 [Warm-up] 마이크 권한 없음');
+                return false;
+            }
+        }
+
+        if (!streamRef.current) {
+            const granted = await requestPermission();
+            if (!granted) return false;
+        }
+
+        try {
+            // 2. AudioContext 미리 활성화
+            if (!audioContextRef.current) {
+                audioContextRef.current = getSharedAudioContext();
+                gainNodeRef.current = audioContextRef.current.createGain();
+                gainNodeRef.current.connect(audioContextRef.current.destination);
+            }
+
+            if (audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
+                console.log('🔥 [Warm-up] AudioContext resumed');
+            }
+
+            // 3. MediaRecorder 짧게 시작/정지 (하드웨어 초기화)
+            const mimeType = getSupportedMimeType();
+            const warmupRecorder = new MediaRecorder(streamRef.current!, { mimeType });
+
+            return new Promise((resolve) => {
+                const warmupStartTime = performance.now();
+                let firstDataTime = 0;
+
+                warmupRecorder.ondataavailable = (event) => {
+                    if (firstDataTime === 0 && event.data.size > 0) {
+                        firstDataTime = performance.now();
+                        const latency = firstDataTime - warmupStartTime;
+
+                        // 고정 지연 측정 및 저장
+                        staticLatencyRef.current = latency;
+                        setMeasuredLatency(latency);
+
+                        console.log('🔥 [Warm-up] 고정 지연 측정 완료:', {
+                            startTime: warmupStartTime.toFixed(0) + 'ms',
+                            firstDataTime: firstDataTime.toFixed(0) + 'ms',
+                            staticLatency: latency.toFixed(1) + 'ms',
+                            note: '이 값만큼 추출 시 Pull-back 적용됨'
+                        });
+                    }
+                };
+
+                warmupRecorder.onstop = () => {
+                    // Phase 53: 지연 측정 실패 시 기본값 사용
+                    // 일반적인 하드웨어 지연 250ms (브라우저/기기마다 다름)
+                    const DEFAULT_STATIC_LATENCY_MS = 250;
+
+                    if (staticLatencyRef.current === 0) {
+                        staticLatencyRef.current = DEFAULT_STATIC_LATENCY_MS;
+                        setMeasuredLatency(DEFAULT_STATIC_LATENCY_MS);
+                        console.log('🔥 [Phase 53 Warm-up] 고정 지연 측정 실패, 기본값 사용:', DEFAULT_STATIC_LATENCY_MS + 'ms');
+                    }
+
+                    setIsWarmedUp(true);
+                    console.log('🔥 [Phase 52 Warm-up] 완료! 마이크 통로 활성화됨, 최종 지연:', staticLatencyRef.current.toFixed(1) + 'ms');
+                    resolve(true);
+                };
+
+                warmupRecorder.start(50); // 50ms timeslice로 빠르게 데이터 수집
+
+                // 300ms 후 정지 (충분히 데이터 수집)
+                setTimeout(() => {
+                    if (warmupRecorder.state === 'recording') {
+                        warmupRecorder.stop();
+                    }
+                }, 300);
+            });
+        } catch (err) {
+            console.error('🔥 [Warm-up] 실패:', err);
+            return false;
+        }
+    }, [permissionState, requestPermission]);
+
+    // ========================================
     // Get overlapping segment
     // ========================================
     const getOverlappingSegment = useCallback((startMeasure: number, endMeasure: number): RecordingSegment | null => {
@@ -361,8 +462,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
     // ========================================
     // Mark Actual Start (카운트다운 완료 시 실제 녹음 시작 마커 찍기)
+    // Phase 31: 하드웨어 지연 보정 (목표 시간 vs 실제 오디오 시간 차이 반영)
     // ========================================
-    const markActualStart = useCallback(() => {
+    const markActualStart = useCallback((timeDelta: number = 0) => {
         // MediaRecorder의 실제 상태로 체크 (React state 업데이트 지연 문제 해결)
         if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
             console.warn('🎤 [markActualStart] MediaRecorder가 녹음 중이 아닙니다:', {
@@ -376,14 +478,19 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
         const now = performance.now();
         const markerTime = (now - recordingBlobStartRef.current) / 1000; // blob 기준 상대 시간 (초)
 
-        // seek 후 startRecording 호출로 정확한 타이밍 - 추가 보정 불필요
-        actualStartMarkerRef.current = markerTime;
+        // Phase 31: 하드웨어 지연 보정 적용
+        // timeDelta = 목표 시간 - 실제 오디오 시간 (예: 13.521 - 13.512 = 0.009s)
+        // markerTime에 더하면 blob에서 추출할 시작점이 앞당겨짐 (지연 상쇄)
+        const correctedMarkerTime = markerTime + timeDelta;
+        actualStartMarkerRef.current = correctedMarkerTime;
 
-        console.log('🎤 [Marker] 실제 녹음 시작 마커 설정:', {
+        console.log('🎤 [Marker] 실제 녹음 시작 마커 설정 (하드웨어 지연 보정):', {
             blobStartTime: recordingBlobStartRef.current.toFixed(0) + 'ms',
             currentTime: now.toFixed(0) + 'ms',
-            markerTime: markerTime.toFixed(3) + 's (blob 기준)',
-            note: 'seek 후 startRecording으로 정확한 타이밍 보장'
+            원본마커: markerTime.toFixed(3) + 's (blob 기준)',
+            지연보정: timeDelta.toFixed(3) + 's',
+            최종마커: correctedMarkerTime.toFixed(3) + 's (보정 후)',
+            note: 'Phase 31 - 목표 vs 실제 오디오 시간 차이 반영'
         });
     }, []); // 의존성 제거 - mediaRecorderRef 사용으로 state 업데이트 지연 문제 해결
 
@@ -416,7 +523,24 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
                     const startTime = pendingRangeRef.current?.startTime || 0;
                     const startMeasure = pendingRangeRef.current?.startMeasure || 1;
-                    const startMarker = actualStartMarkerRef.current; // 카운트다운 끝난 시점 (blob 기준)
+                    const rawStartMarker = actualStartMarkerRef.current; // 카운트다운 끝난 시점 (blob 기준)
+
+                    // ========================================
+                    // Phase 55: Pull-back (황금 설정 - 타이밍 83.3%, 피치 61.1%)
+                    // 고정 지연 + 추가 버퍼로 단순하고 안정적인 싱크
+                    // Phase 63: +50ms 추가 보정 (모든 음표 +1슬롯 밀림 해결)
+                    // ========================================
+                    const PULLBACK_BUFFER_MS = 200; // 추가 버퍼 (150 + 50)
+                    const pullbackSeconds = (staticLatencyRef.current + PULLBACK_BUFFER_MS) / 1000;
+                    const startMarker = Math.max(0, rawStartMarker - pullbackSeconds);
+
+                    console.log('🎤 [Phase 55 Pull-back] 적용:', {
+                        원본마커: rawStartMarker.toFixed(3) + 's',
+                        측정된고정지연: staticLatencyRef.current.toFixed(1) + 'ms',
+                        추가버퍼: PULLBACK_BUFFER_MS + 'ms',
+                        총당김량: (pullbackSeconds * 1000).toFixed(1) + 'ms',
+                        보정마커: startMarker.toFixed(3) + 's'
+                    });
 
                     console.log('🎤 [Marker] 마커 정보:', {
                         blobStartTime: recordingBlobStartRef.current.toFixed(0) + 'ms',
@@ -491,12 +615,26 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     // AudioBuffer 저장 (재생용)
                     audioBuffersRef.current.set(segmentId, extractedBuffer);
 
+                    // ========================================
+                    // Phase 53: Segment startTime에도 Pull-back 적용
+                    // Pull-back으로 blob 앞부분을 더 추출하면, 그만큼 startTime도 앞당겨야
+                    // 재생 시 offset 계산이 정확해짐
+                    // ========================================
+                    const adjustedStartTime = startTime - pullbackSeconds;
+
+                    console.log('🎤 [Phase 53] Segment 시간 조정:', {
+                        원본startTime: startTime.toFixed(3) + 's',
+                        조정startTime: adjustedStartTime.toFixed(3) + 's',
+                        pullback: (pullbackSeconds * 1000).toFixed(1) + 'ms',
+                        note: '재생 시 offset 계산 정확도 향상'
+                    });
+
                     // Segment 생성
                     const newSegment: RecordingSegment = {
                         id: segmentId,
                         blob: wavBlob,
                         url,
-                        startTime,
+                        startTime: adjustedStartTime,  // Phase 53: Pull-back 적용
                         endTime,
                         startMeasure,
                         endMeasure
@@ -725,7 +863,12 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
         error,
         audioBlob,
         recordingRange,
+        // Phase 52: Warm-up 상태
+        isWarmedUp,
+        measuredLatency,
         requestPermission,
+        // Phase 52: Warm-up 함수
+        warmUp,
         startRecording,
         markActualStart,
         stopRecording,

@@ -687,13 +687,11 @@ export default function FeedbackClientPage() {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             setPressedKey(e.code);
 
-            // 편집 모드 키보드 단축키
+            // 편집 모드 키보드 단축키 (Phase 67: 로그 제거)
             if (isEditMode) {
-                console.log('[Keyboard] Edit mode key:', e.code);
                 switch (e.code) {
                     case 'KeyQ':
                         e.preventDefault();
-                        console.log('[Keyboard] Previous note');
                         {
                             const newIndex = selectPrevNote();
                             if (newIndex !== null && editedNotes[newIndex]) {
@@ -722,7 +720,6 @@ export default function FeedbackClientPage() {
                         return;
                     case 'KeyW':
                         e.preventDefault();
-                        console.log('[Keyboard] Next note');
                         {
                             const newIndex = selectNextNote();
                             if (newIndex !== null && editedNotes[newIndex]) {
@@ -751,7 +748,6 @@ export default function FeedbackClientPage() {
                         return;
                     case 'ArrowUp':
                         e.preventDefault();
-                        console.log('[Keyboard] Pitch up');
                         // 미리듣기 (폴백 모드일 때만)
                         if (storedOutputInstrument !== 'raw' && conversionState.isFallbackMode && selectedNoteIndices.length > 0) {
                             const firstNote = editedNotes[selectedNoteIndices[0]];
@@ -766,7 +762,6 @@ export default function FeedbackClientPage() {
                         return;
                     case 'ArrowDown':
                         e.preventDefault();
-                        console.log('[Keyboard] Pitch down');
                         // 미리듣기 (폴백 모드일 때만)
                         if (storedOutputInstrument !== 'raw' && conversionState.isFallbackMode && selectedNoteIndices.length > 0) {
                             const firstNote = editedNotes[selectedNoteIndices[0]];
@@ -782,32 +777,26 @@ export default function FeedbackClientPage() {
                     case 'ArrowLeft':
                         e.preventDefault();
                         if (e.shiftKey) {
-                            console.log('[Keyboard] Duration decrease (Shift+Left)');
                             updateSelectedNotesDuration('decrease');
                         } else {
-                            console.log('[Keyboard] Move left');
                             updateNotePosition('left');
                         }
                         return;
                     case 'ArrowRight':
                         e.preventDefault();
                         if (e.shiftKey) {
-                            console.log('[Keyboard] Duration increase (Shift+Right)');
                             updateSelectedNotesDuration('increase');
                         } else {
-                            console.log('[Keyboard] Move right');
                             updateNotePosition('right');
                         }
                         return;
                     case 'Delete':
                     case 'Backspace':
                         e.preventDefault();
-                        console.log('[Keyboard] Delete pressed');
                         deleteSelectedNotes();
                         return;
                     case 'Escape':
                         e.preventDefault();
-                        console.log('[Keyboard] Escape - clear selection');
                         clearSelection();
                         return;
                     case 'KeyZ':
