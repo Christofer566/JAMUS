@@ -611,6 +611,34 @@ function detectPitchEnsemble(
   // 2. 둘 다 유효한 경우 - 앙상블 로직
   const ratio = mpmFreq / yinFreq;
 
+  // ========================================
+  // Phase 64: 저음 2배음 강제 보정
+  // ========================================
+  // D2(73Hz) ~ G2(98Hz) 범위의 저음이 140-200Hz로 검출되는 경우
+  // 둘 다 2배음을 검출했을 가능성이 높음 → 강제로 /2 적용
+  const VERY_LOW_NOTE_MAX = 100; // D2~G2 범위 상한
+  const HARMONIC_DETECTION_MIN = 140; // 2배음 검출 시 하한 (140Hz)
+  const HARMONIC_DETECTION_MAX = 210; // 2배음 검출 시 상한 (210Hz)
+
+  // MPM과 YIN이 비슷하고 (±10%), 둘 다 140-210Hz 범위면 2배음으로 판단
+  if (ratio > 0.9 && ratio < 1.1 &&
+      mpmFreq >= HARMONIC_DETECTION_MIN && mpmFreq <= HARMONIC_DETECTION_MAX &&
+      yinFreq >= HARMONIC_DETECTION_MIN && yinFreq <= HARMONIC_DETECTION_MAX) {
+    // 평균 주파수의 절반이 저음 범위(65-100Hz)에 해당하면 보정
+    const avgFreq = (mpmFreq + yinFreq) / 2;
+    const correctedFreq = avgFreq / 2;
+
+    if (correctedFreq >= 65 && correctedFreq <= VERY_LOW_NOTE_MAX) {
+      console.log(`[Phase 64] 저음 2배음 보정: ${avgFreq.toFixed(0)}Hz → ${correctedFreq.toFixed(0)}Hz`);
+      return {
+        frequency: correctedFreq,
+        confidence: Math.max(mpmResult.confidence, yinResult.confidence) * 0.9,
+        method: 'ensemble',
+        mpmFreq, yinFreq, hpsFreq
+      };
+    }
+  }
+
   // 2.1. 거의 일치하는 경우 (±5% 이내) → 신뢰도 높은 쪽 선택
   if (ratio > 0.95 && ratio < 1.05) {
     const betterResult = mpmResult.confidence >= yinResult.confidence ? mpmResult : yinResult;

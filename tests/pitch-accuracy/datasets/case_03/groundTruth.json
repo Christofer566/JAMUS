@@ -1,0 +1,175 @@
+{
+  "name": "Recording 2026-01-01",
+  "bpm": 142,
+  "description": "28개 음표, 마디 9-17",
+  "notes": [
+    {
+      "measure": 18,
+      "slot": 4,
+      "pitch": "C4",
+      "slots": 8
+    },
+    {
+      "measure": 18,
+      "slot": 12,
+      "pitch": "G3",
+      "slots": 4
+    },
+    {
+      "measure": 19,
+      "slot": 0,
+      "pitch": "A#3",
+      "slots": 4
+    },
+    {
+      "measure": 19,
+      "slot": 4,
+      "pitch": "F3",
+      "slots": 4
+    },
+    {
+      "measure": 19,
+      "slot": 8,
+      "pitch": "D3",
+      "slots": 4
+    },
+    {
+      "measure": 19,
+      "slot": 12,
+      "pitch": "A3",
+      "slots": 4
+    },
+    {
+      "measure": 20,
+      "slot": 0,
+      "pitch": "F3",
+      "slots": 4
+    },
+    {
+      "measure": 20,
+      "slot": 11,
+      "pitch": "C3",
+      "slots": 1
+    },
+    {
+      "measure": 20,
+      "slot": 12,
+      "pitch": "D3",
+      "slots": 3
+    },
+    {
+      "measure": 20,
+      "slot": 15,
+      "pitch": "A#2",
+      "slots": 1
+    },
+    {
+      "measure": 21,
+      "slot": 11,
+      "pitch": "C3",
+      "slots": 1
+    },
+    {
+      "measure": 21,
+      "slot": 12,
+      "pitch": "D3",
+      "slots": 3
+    },
+    {
+      "measure": 21,
+      "slot": 15,
+      "pitch": "D#3",
+      "slots": 1
+    },
+    {
+      "measure": 22,
+      "slot": 0,
+      "pitch": "D#3",
+      "slots": 8
+    },
+    {
+      "measure": 22,
+      "slot": 12,
+      "pitch": "C3",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 0,
+      "pitch": "D3",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 4,
+      "pitch": "D2",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 8,
+      "pitch": "E2",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 12,
+      "pitch": "F#2",
+      "slots": 4
+    },
+    {
+      "measure": 24,
+      "slot": 0,
+      "pitch": "G2",
+      "slots": 4
+    },
+    {
+      "measure": 24,
+      "slot": 4,
+      "pitch": "A2",
+      "slots": 4
+    },
+    {
+      "measure": 24,
+      "slot": 8,
+      "pitch": "A#2",
+      "slots": 4
+    },
+    {
+      "measure": 24,
+      "slot": 12,
+      "pitch": "C3",
+      "slots": 4
+    },
+    {
+      "measure": 25,
+      "slot": 0,
+      "pitch": "D3",
+      "slots": 4
+    },
+    {
+      "measure": 25,
+      "slot": 4,
+      "pitch": "F#3",
+      "slots": 4
+    },
+    {
+      "measure": 25,
+      "slot": 8,
+      "pitch": "G3",
+      "slots": 4
+    },
+    {
+      "measure": 25,
+      "slot": 12,
+      "pitch": "D3",
+      "slots": 4
+    },
+    {
+      "measure": 26,
+      "slot": 0,
+      "pitch": "D3",
+      "slots": 2
+    }
+  ]
+}

@@ -20,7 +20,7 @@ interface RecordedRowStaffProps {
 
 const CONFIDENCE_COLORS = {
   high: '#FFFFFF',
-  medium: '#FFD700',
+  medium: '#FFFFFF',  // 노란색 제거 - 모든 음표 동일 색상
   default: '#7BA7FF'
 };
 

@@ -17,16 +17,69 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 const A4_FREQ = 440;
 const A4_MIDI = 69;
 
-// 그리드 분석 파라미터
+// ============================================
+// Self-Refining: 런타임 조정 가능 파라미터 시스템
+// ============================================
+export interface TunableParams {
+  // 저음 복원 파라미터
+  LOW_FREQ_RECOVERY_MAX: number;      // 70-150Hz (현재 120)
+  LOW_SOLO_THRESHOLD: number;         // 100-150Hz (현재 130)
+  LOW_FREQ_CONFIDENCE_MIN: number;    // 0.10-0.30 (현재 0.15)
+
+  // 점유율 파라미터
+  OCCUPANCY_MIN: number;              // 0.50-0.80 (현재 0.70)
+  OCCUPANCY_SUSTAIN: number;          // 0.30-0.60 (현재 0.50)
+
+  // 에너지 피크 파라미터
+  ENERGY_PEAK_CONFIDENCE_MIN: number; // 0.50-0.90 (현재 0.75)
+  ENERGY_PEAK_OCCUPANCY_MIN: number;  // 0.70-0.95 (현재 0.90)
+
+  // 음표 길이 파라미터
+  MIN_NOTE_DURATION_SLOTS: number;    // 1-3 (현재 2)
+
+  // Cross-Measure Merge 최대 슬롯 (과잉 병합 방지)
+  MAX_MERGE_SLOTS: number;            // 6-12 (현재 무제한→8 추천)
+}
+
+// 기본값 (자동 최적화 7차 최고 기록: 63.8%)
+const DEFAULT_PARAMS: TunableParams = {
+  LOW_FREQ_RECOVERY_MAX: 120,
+  LOW_SOLO_THRESHOLD: 150,         // 130→150: D3=147Hz까지 보호
+  LOW_FREQ_CONFIDENCE_MIN: 0.15,
+  OCCUPANCY_MIN: 0.75,             // 0.70→0.75: 노이즈 필터링 강화
+  OCCUPANCY_SUSTAIN: 0.55,         // 0.50→0.55: Sustain 확장
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.80, // 0.75→0.80: 엄격한 피크 감지
+  ENERGY_PEAK_OCCUPANCY_MIN: 0.95, // 0.90→0.95: 엄격한 피크 점유율
+  MIN_NOTE_DURATION_SLOTS: 1,      // 2→1: 1슬롯 음표 허용
+  MAX_MERGE_SLOTS: 8               // 16→8: 과잉 병합 방지
+};
+
+// 현재 활성 파라미터 (런타임 조정 가능)
+let activeParams: TunableParams = { ...DEFAULT_PARAMS };
+
+// 파라미터 조정 API
+export function setTunableParams(params: Partial<TunableParams>): void {
+  activeParams = { ...activeParams, ...params };
+  console.log('[Self-Refining] 파라미터 업데이트:', activeParams);
+}
+
+export function getTunableParams(): TunableParams {
+  return { ...activeParams };
+}
+
+export function resetTunableParams(): void {
+  activeParams = { ...DEFAULT_PARAMS };
+  console.log('[Self-Refining] 파라미터 초기화 (75차 기본값)');
+}
+
+// 그리드 분석 파라미터 (고정)
 const SLOTS_PER_MEASURE = 16;           // 1마디 = 16슬롯
 const RMS_THRESHOLD = 0.018;            // Phase 40: 0.02 → 0.018 (Missed 음표 구출, Gemini 제안)
 const OCCUPANCY_HIGH = 0.70;            // 70% 이상 = 확실
-const OCCUPANCY_MIN = 0.70;             // Phase 40: 0.65 → 0.70 (38차 복귀, 노이즈 방어)
 const PITCH_CONFIDENCE_MIN = 0.35;      // Phase 40: 0.5 → 0.35 (음정 구출 강화, Gemini 제안)
 const GRID_SNAP_TOLERANCE = 0.15;       // 박자 경계 ±15% 허용
 const DEFAULT_PITCH = 'C4';             // 음정 감지 실패 시 기본값
 const TIMING_OFFSET_SLOTS = 3;          // Phase 35: 2 → 3 (32차 +1슬롯 패턴 보정, Gemini 제안)
-const MIN_NOTE_DURATION_SLOTS = 2;      // Phase 1: 최소 음표 길이 (2슬롯)
 
 // 악보 표시 적정 범위 (오선지 중심)
 // Phase 15: 4 → 3 (남자 키 정답지 C3-C4 영역에 맞춤)
@@ -347,11 +400,11 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
     slot.occupancy = soundFrames.length / slotFrames.length;
 
-    // 점유율에 따른 confidence 판정
+    // 점유율에 따른 confidence 판정 (activeParams 사용)
     if (slot.occupancy >= OCCUPANCY_HIGH) {
       slot.confidence = 'high';
       highCount++;
-    } else if (slot.occupancy >= OCCUPANCY_MIN) {
+    } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
       slot.confidence = 'medium';
       mediumCount++;
     } else {
@@ -380,11 +433,10 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       const snappedFreq = pitchSnap(correctedFreq);
 
       // Low Solo 보호: 초저음 솔로 멜로디는 원음 보존
-      // Phase 67: 로그 제거
-      const LOW_SOLO_THRESHOLD = 90;
+      // Phase 75: activeParams 사용 (130Hz 기본값)
       let finalShift = octaveShift;
 
-      if (slot.medianFrequency < LOW_SOLO_THRESHOLD) {
+      if (slot.medianFrequency < activeParams.LOW_SOLO_THRESHOLD) {
         finalShift = 0;
       }
 
@@ -414,11 +466,10 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // ========================================
   // Phase 72: 저음 재검증 패스 (Low Frequency Recovery)
   // ========================================
-  // 70-120Hz 대역에서 confidence 미달로 탈락한 슬롯을 재검증
+  // 70-150Hz 대역에서 confidence 미달로 탈락한 슬롯을 재검증
   // 연속된 저음 프레임이 일정 pitch를 유지하면 음표로 복원
   const LOW_FREQ_RECOVERY_MIN = 70;   // D2 ~= 73Hz
-  const LOW_FREQ_RECOVERY_MAX = 120;  // A#2 ~= 117Hz
-  const LOW_FREQ_CONFIDENCE_MIN = 0.15; // 저음 전용 낮은 임계값
+  // activeParams.LOW_FREQ_RECOVERY_MAX 사용 (기본값 120Hz)
   const LOW_FREQ_CONTINUITY_MIN = 3;  // 최소 연속 프레임 수
   const LOW_FREQ_VARIANCE_MAX = 0.15; // 주파수 편차 허용 범위 (±15%)
 
@@ -430,11 +481,11 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     // 이미 유효한 슬롯은 스킵
     if (slot.confidence !== 'excluded') continue;
 
-    // 해당 슬롯의 저음역대 프레임 수집 (낮은 confidence 허용)
+    // 해당 슬롯의 저음역대 프레임 수집 (낮은 confidence 허용, activeParams 사용)
     const lowFreqFrames = slot.frames.filter(
       f => f.frequency >= LOW_FREQ_RECOVERY_MIN &&
-           f.frequency <= LOW_FREQ_RECOVERY_MAX &&
-           f.confidence >= LOW_FREQ_CONFIDENCE_MIN
+           f.frequency <= activeParams.LOW_FREQ_RECOVERY_MAX &&
+           f.confidence >= activeParams.LOW_FREQ_CONFIDENCE_MIN
     );
 
     // 최소 연속 프레임 수 충족 확인
@@ -481,14 +532,56 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
   let lastValidPitch = DEFAULT_PITCH;
 
+  // ========================================
+  // Phase 73: 에너지 피크 검출용 (activeParams 사용)
+  // Phase 75: 임계값 상향 (1슬롯 과잉 검출 방지)
+  // ========================================
+
+  // 에너지 피크 판정 헬퍼 함수 (activeParams 사용)
+  const isEnergyPeak = (slot: SlotData): boolean => {
+    if (slot.occupancy < activeParams.ENERGY_PEAK_OCCUPANCY_MIN) return false;
+
+    const frameConfidences = slot.frames
+      .filter(f => f.frequency > 0)
+      .map(f => f.confidence);
+
+    if (frameConfidences.length === 0) return false;
+
+    const avgConfidence = frameConfidences.reduce((a, b) => a + b, 0) / frameConfidences.length;
+    return avgConfidence >= activeParams.ENERGY_PEAK_CONFIDENCE_MIN;
+  };
+
   for (const slot of slots) {
     if (slot.confidence === 'excluded') {
+      // Phase 75: Sustain Bridge - 진행 중인 음표는 낮은 occupancy에서도 연장 가능 (activeParams)
+      if (currentNote && slot.occupancy >= activeParams.OCCUPANCY_SUSTAIN && slot.medianFrequency > 0) {
+        // 현재 음표의 피치와 비교
+        const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
+        if (currentMedianFreq > 0) {
+          const freqRatio = slot.medianFrequency / currentMedianFreq;
+          // 주파수 차이가 ±10% 이내면 연장 (Decay 상태로 간주)
+          if (freqRatio >= 0.9 && freqRatio <= 1.1) {
+            currentNote.slotCount++;
+            currentNote.frequencies.push(slot.medianFrequency);
+            console.log(`[Phase 75] Sustain Bridge: ${slot.measureIndex}:${slot.slotIndex} (occupancy=${(slot.occupancy * 100).toFixed(0)}%)`);
+            continue;
+          }
+        }
+      }
+
       // 현재 음표 종료
       if (currentNote) {
-        // Phase 1: 최소 길이 필터링
-        if (currentNote.slotCount < MIN_NOTE_DURATION_SLOTS) {
+        // Phase 73: 에너지 피크 예외 적용한 최소 길이 필터링 (activeParams)
+        const allowShortNote = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
+                               isEnergyPeak(currentNote.startSlot);
+
+        if (currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS && !allowShortNote) {
           currentNote = null;
           continue;
+        }
+
+        if (allowShortNote) {
+          console.log(`[Phase 73] 에너지 피크 검출: 1슬롯 음표 허용`);
         }
 
         // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
@@ -499,10 +592,9 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         // Phase 44: Pitch Snap 적용
         const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
 
-        // Low Solo 보호 (Phase 51: 100Hz로 롤백, 49차 최적 설정)
-        const LOW_SOLO_THRESHOLD = 100;
+        // Low Solo 보호 (Phase 75: activeParams 사용)
         let finalShift = octaveShift;
-        if (medianFreq > 0 && medianFreq < LOW_SOLO_THRESHOLD) {
+        if (medianFreq > 0 && medianFreq < activeParams.LOW_SOLO_THRESHOLD) {
           finalShift = 0;
         }
 
@@ -552,10 +644,9 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
       const currentCorrectedFreq = currentMedianFreq > 0 ? correctOctaveError(currentMedianFreq, contextFreqs) : 0;
 
-      // Low Solo 보호
-      const LOW_SOLO_THRESHOLD = 100;
+      // Low Solo 보호 (Phase 75: activeParams 사용)
       let currentFinalShift = octaveShift;
-      if (currentMedianFreq > 0 && currentMedianFreq < LOW_SOLO_THRESHOLD) {
+      if (currentMedianFreq > 0 && currentMedianFreq < activeParams.LOW_SOLO_THRESHOLD) {
         currentFinalShift = 0;
       }
 
@@ -583,10 +674,9 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         // Phase 44: Pitch Snap 적용
         const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
 
-        // Low Solo 보호 (Phase 51: 100Hz로 롤백, 49차 최적 설정)
-        const LOW_SOLO_THRESHOLD = 100;
+        // Low Solo 보호 (Phase 75: activeParams 사용)
         let finalShift = octaveShift;
-        if (medianFreq2 > 0 && medianFreq2 < LOW_SOLO_THRESHOLD) {
+        if (medianFreq2 > 0 && medianFreq2 < activeParams.LOW_SOLO_THRESHOLD) {
           finalShift = 0;
         }
 
@@ -594,8 +684,15 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
           ? frequencyToNote(snappedFreq, finalShift)
           : lastValidPitch;
 
-        // Phase 1: 최소 길이 필터링 + 타이밍 오프셋
-        if (currentNote.slotCount >= MIN_NOTE_DURATION_SLOTS) {
+        // Phase 73: 에너지 피크 예외 적용한 최소 길이 필터링 (activeParams)
+        const allowShortNote2 = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
+                                isEnergyPeak(currentNote.startSlot);
+
+        if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNote2) {
+          if (allowShortNote2) {
+            console.log(`[Phase 73] 에너지 피크 검출: 1슬롯 음표 허용`);
+          }
+
           let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
           let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
 
@@ -638,10 +735,9 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     // Phase 44: Pitch Snap 적용
     const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
 
-    // Low Solo 보호
-    const LOW_SOLO_THRESHOLD = 100;
+    // Low Solo 보호 (Phase 75: activeParams 사용)
     let finalShift = octaveShift;
-    if (medianFreqLast > 0 && medianFreqLast < LOW_SOLO_THRESHOLD) {
+    if (medianFreqLast > 0 && medianFreqLast < activeParams.LOW_SOLO_THRESHOLD) {
       finalShift = 0;
     }
 
@@ -649,8 +745,15 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       ? frequencyToNote(snappedFreq, finalShift)
       : lastValidPitch;
 
-    // Phase 1: 최소 길이 필터링 + 타이밍 오프셋
-    if (currentNote.slotCount >= MIN_NOTE_DURATION_SLOTS) {
+    // Phase 73: 에너지 피크 예외 적용한 최소 길이 필터링 (activeParams)
+    const allowShortNoteLast = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
+                               isEnergyPeak(currentNote.startSlot);
+
+    if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNoteLast) {
+      if (allowShortNoteLast) {
+        console.log(`[Phase 73] 에너지 피크 검출: 1슬롯 음표 허용`);
+      }
+
       let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
       let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
 
@@ -682,6 +785,106 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const firstNoteGlobalSlot = firstNote.measureIndex * SLOTS_PER_MEASURE + firstNote.slotIndex;
     console.log(`[Phase 71] 첫 음 위치 존중: ${firstNoteGlobalSlot}슬롯 (강제 정렬 비활성화)`);
   }
+
+  // ========================================
+  // Phase 74-A: Cross-Measure Merge (마디 경계 연결음 병합)
+  // ========================================
+  // 마디를 넘어가는 Tie 음표들이 끊어지는 문제 해결
+  // 같은 피치의 음표가 마디 경계에서 연속되면 병합
+  let crossMeasureMergeCount = 0;
+  for (let i = rawNotes.length - 1; i > 0; i--) {
+    const currNote = rawNotes[i];
+    const prevNote = rawNotes[i - 1];
+
+    if (prevNote.isRest || currNote.isRest) continue;
+
+    // 같은 피치인지 확인
+    if (prevNote.pitch !== currNote.pitch) continue;
+
+    // 이전 음의 끝 슬롯과 현재 음의 시작 슬롯 계산
+    const prevEndSlot = prevNote.measureIndex * SLOTS_PER_MEASURE + prevNote.slotIndex + prevNote.slotCount;
+    const currStartSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex;
+
+    // Phase 75: gap=0인 경우만 병합 (과잉 병합 방지)
+    // 74차에서 gap<=1 허용 시 15슬롯 괴물 음표 발생
+    const gap = currStartSlot - prevEndSlot;
+    if (gap === 0) {
+      // 이전 음표에 현재 음표 길이 흡수
+      const newSlotCount = prevNote.slotCount + gap + currNote.slotCount;
+
+      // MAX_MERGE_SLOTS 제한 체크 (과잉 병합 방지, activeParams)
+      if (newSlotCount > activeParams.MAX_MERGE_SLOTS) {
+        console.log(`[Phase 74-A] Cross-Measure Merge 스킵: ${newSlotCount}슬롯 > ${activeParams.MAX_MERGE_SLOTS}슬롯 제한`);
+        continue;
+      }
+
+      // confidence는 'high' | 'medium' 문자열 - 둘 중 높은 것 선택
+      const mergedConfidence = (prevNote.confidence === 'high' || currNote.confidence === 'high') ? 'high' : 'medium';
+      rawNotes[i - 1] = {
+        ...prevNote,
+        slotCount: newSlotCount,
+        duration: slotCountToDuration(newSlotCount),
+        confidence: mergedConfidence
+      };
+      rawNotes.splice(i, 1); // 현재 음표 제거
+      crossMeasureMergeCount++;
+      console.log(`[Phase 74-A] Cross-Measure Merge: ${prevNote.pitch} (${prevNote.slotCount}→${newSlotCount}슬롯, gap=${gap})`);
+    }
+  }
+  console.log(`[Phase 74-A] Cross-Measure Merge 완료: ${crossMeasureMergeCount}개 병합`);
+
+  // ========================================
+  // Phase 74-B: Legato Smoothing (미세 쉼표 메우기)
+  // ========================================
+  // 같은 피치 음표 사이의 1슬롯 미세 쉼표를 메워서 레가토 표현 개선
+  // Cross-Measure Merge 이후에도 남은 미세 끊김 처리
+  let legatoSmoothCount = 0;
+  for (let i = rawNotes.length - 1; i > 0; i--) {
+    const currNote = rawNotes[i];
+    const prevNote = rawNotes[i - 1];
+
+    if (prevNote.isRest || currNote.isRest) continue;
+    if (prevNote.pitch !== currNote.pitch) continue;
+
+    const prevEndSlot = prevNote.measureIndex * SLOTS_PER_MEASURE + prevNote.slotIndex + prevNote.slotCount;
+    const currStartSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex;
+    const gap = currStartSlot - prevEndSlot;
+
+    // 1슬롯 갭이면 앞 음표를 늘려서 채움
+    if (gap === 1) {
+      rawNotes[i - 1] = {
+        ...prevNote,
+        slotCount: prevNote.slotCount + 1,
+        duration: slotCountToDuration(prevNote.slotCount + 1)
+      };
+      legatoSmoothCount++;
+      console.log(`[Phase 74-B] Legato Smoothing: ${prevNote.pitch} (${prevNote.slotCount}→${prevNote.slotCount + 1}슬롯)`);
+    }
+  }
+  console.log(`[Phase 74-B] Legato Smoothing 완료: ${legatoSmoothCount}개 보정`);
+
+  // ========================================
+  // Phase 74-C: Duration Normalization (짧은 음표 정규화)
+  // ========================================
+  // 1슬롯 미만으로 검출된 음표들을 최소 1슬롯으로 정규화
+  // Low Frequency Recovery로 복구된 저음 등의 짧은 검출 보정
+  let durationNormCount = 0;
+  for (let i = 0; i < rawNotes.length; i++) {
+    const note = rawNotes[i];
+    if (note.isRest) continue;
+
+    // slotCount가 1 미만이면 1로 정규화
+    if (note.slotCount < 1) {
+      rawNotes[i] = {
+        ...note,
+        slotCount: 1,
+        duration: slotCountToDuration(1)
+      };
+      durationNormCount++;
+      console.log(`[Phase 74-C] Duration Normalization: ${note.pitch} (${note.slotCount}→1슬롯)`);
+    }
+  }
+  console.log(`[Phase 74-C] Duration Normalization 완료: ${durationNormCount}개 정규화`);
 
   // ========================================
   // Phase 3: 옥타브 점프 후처리 (DISABLED)

@@ -22,6 +22,7 @@ import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
 import { OutputInstrument } from '@/types/instrument';
 import { compareNotes, analyzeGap, logGapAnalysis } from '@/utils/noteComparison';
 import { GROUND_TRUTH_NOTES } from '@/utils/groundTruthNotes';
+import '@/utils/selfRefiningTest'; // Self-Refining Test 유틸리티 로드
 
 // 곡 데이터에서 가져오기
 const CURRENT_SONG = DEFAULT_SONG;
@@ -77,6 +78,32 @@ export default function FeedbackClientPage() {
     const [myRecordingOnlyMode, setMyRecordingOnlyMode] = useState(false);
     const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
     const [isEditingNotes, setIsEditingNotes] = useState(false);
+    const [isEditConfirmed, setIsEditConfirmed] = useState(false);  // 편집 완료 후 잠금
+
+    // 정확도 표시 State
+    const [accuracyStats, setAccuracyStats] = useState<{
+        pitch: number;
+        timing: number;
+        duration: number;
+        overall: number;
+        matched: number;
+        total: number;
+    } | null>(null);
+
+    // 최적화 State
+    const [optimizationState, setOptimizationState] = useState<{
+        caseCount: number;
+        completeCases: number;
+        isRunning: boolean;
+        result: string | null;
+        error: string | null;
+    }>({
+        caseCount: 0,
+        completeCases: 0,
+        isRunning: false,
+        result: null,
+        error: null
+    });
 
     // Pitch Analysis State
     const [recordedNotesByMeasure, setRecordedNotesByMeasure] = useState<Record<number, NoteData[]>>({});
@@ -209,6 +236,71 @@ export default function FeedbackClientPage() {
 
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
+
+    // 케이스 개수 조회 (컴포넌트 마운트 시)
+    useEffect(() => {
+        const fetchCaseCount = async () => {
+            try {
+                const res = await fetch('/api/pitch-test');
+                if (res.ok) {
+                    const data = await res.json();
+                    setOptimizationState(prev => ({
+                        ...prev,
+                        caseCount: data.caseCount,
+                        completeCases: data.completeCases
+                    }));
+                }
+            } catch (err) {
+                console.log('[Pitch Test] 케이스 조회 실패 (로컬 개발 환경에서만 동작)');
+            }
+        };
+        fetchCaseCount();
+    }, []);
+
+    // 최적화 실행 함수
+    const runOptimization = useCallback(async (mode: 'single' | 'auto' = 'single') => {
+        if (optimizationState.isRunning) return;
+
+        setOptimizationState(prev => ({
+            ...prev,
+            isRunning: true,
+            result: null,
+            error: null
+        }));
+
+        try {
+            const res = await fetch('/api/pitch-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                setOptimizationState(prev => ({
+                    ...prev,
+                    isRunning: false,
+                    result: data.summary || '최적화 완료'
+                }));
+                showToast('success', '최적화 완료!');
+            } else {
+                setOptimizationState(prev => ({
+                    ...prev,
+                    isRunning: false,
+                    error: data.error || '최적화 실패'
+                }));
+                showToast('error', data.error || '최적화 실패');
+            }
+        } catch (err) {
+            setOptimizationState(prev => ({
+                ...prev,
+                isRunning: false,
+                error: '서버 연결 실패 (로컬 개발 환경에서만 동작)'
+            }));
+            showToast('error', '서버 연결 실패');
+        }
+    }, [optimizationState.isRunning, showToast]);
 
     // 재생 중 현재 음표 자동 선택
     useEffect(() => {
@@ -450,7 +542,34 @@ export default function FeedbackClientPage() {
         const targetTime = globalMeasureIndex * measureDuration;
         handleTimeChange(targetTime);
     }, [measureDuration, handleTimeChange]);
-    
+
+    // 편집 모드에서 선택된 음표 위치 변경 시 수직선 동기화
+    const prevSelectedNoteBeatRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (!isEditMode || !storedRecordingRange || selectedNoteIndices.length === 0) {
+            prevSelectedNoteBeatRef.current = null;
+            return;
+        }
+
+        const selectedNote = editedNotes[selectedNoteIndices[0]];
+        if (!selectedNote || selectedNote.isRest) {
+            prevSelectedNoteBeatRef.current = null;
+            return;
+        }
+
+        // 이전 beat와 다를 때만 수직선 이동 (무한 루프 방지)
+        if (prevSelectedNoteBeatRef.current !== null && prevSelectedNoteBeatRef.current !== selectedNote.beat) {
+            const startMeasureBeat = storedRecordingRange.startMeasure * 4;
+            const relativeBeat = selectedNote.beat >= startMeasureBeat
+                ? selectedNote.beat - startMeasureBeat
+                : selectedNote.beat;
+            const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+            const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
+            handleTimeChange(absoluteTime);
+        }
+        prevSelectedNoteBeatRef.current = selectedNote.beat;
+    }, [isEditMode, storedRecordingRange, selectedNoteIndices, editedNotes, handleTimeChange]);
+
     // ============================================
     // Pitch Analysis & Note Grouping
     // ============================================
@@ -472,6 +591,29 @@ export default function FeedbackClientPage() {
             // prerollDuration 전달: 0이면 지연 보정 생략 (트리밍된 상태)
             const pitchFrames = await analyzeAudio(storedAudioBlob, storedPrerollDuration);
             const beatsPerMeasure = Number(SONG_META.time_signature.split('/')[0]);
+
+            // Self-Refining Test: PitchFrame 데이터 export용 전역 저장
+            if (typeof window !== 'undefined') {
+                (window as any).__testPitchFrames = pitchFrames;
+                (window as any).__testBpm = SONG_META.bpm;
+                (window as any).exportTestFrames = () => {
+                    const data = {
+                        bpm: SONG_META.bpm,
+                        frameCount: pitchFrames.length,
+                        frames: pitchFrames
+                    };
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'testFrames.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    console.log('[Test Export] testFrames.json 다운로드 완료');
+                };
+                console.log('[Test Export] window.exportTestFrames() 호출하여 프레임 데이터 저장 가능');
+                console.log('[Test Export] window.exportGroundTruth() 호출하여 정답지 저장 가능 (편집 후 사용)');
+            }
 
             // prerollDuration을 마디 수로 변환 (이미 0이면 보정 불필요)
             const prerollMeasures = Math.round(storedPrerollDuration / measureDuration);
@@ -573,6 +715,59 @@ export default function FeedbackClientPage() {
 
         performAnalysis();
     }, [storedAudioBlob, storedRecordingRange, analyzeAudio, setRawAutoNotes, initializeNotes]);
+
+    // ============================================
+    // Self-Refining Test: exportGroundTruth 함수 등록
+    // 편집된 음표를 groundTruth.json 형식으로 내보내기
+    // ============================================
+    useEffect(() => {
+        if (typeof window === 'undefined' || !storedRecordingRange) return;
+
+        (window as any).exportGroundTruth = () => {
+            // 현재 editedNotes 가져오기 (store에서 직접)
+            const currentEditedNotes = useFeedbackStore.getState().editedNotes;
+            const notesOnly = currentEditedNotes.filter((n: NoteData) => !n.isRest);
+
+            if (notesOnly.length === 0) {
+                console.error('[Test Export] 편집된 음표가 없습니다. 편집 모드에서 음표를 수정한 후 호출하세요.');
+                return;
+            }
+
+            // groundTruth.json 형식으로 변환
+            const groundTruthNotes = notesOnly.map((note: NoteData) => ({
+                measure: note.measureIndex + storedRecordingRange.startMeasure,
+                slot: note.slotIndex,
+                pitch: note.pitch,
+                slots: note.slotCount
+            }));
+
+            const data = {
+                name: `Recording ${new Date().toISOString().split('T')[0]}`,
+                bpm: SONG_META.bpm,
+                description: `${notesOnly.length}개 음표, 마디 ${storedRecordingRange.startMeasure}-${storedRecordingRange.endMeasure}`,
+                notes: groundTruthNotes
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'groundTruth.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            console.log('[Test Export] groundTruth.json 다운로드 완료:', {
+                noteCount: notesOnly.length,
+                bpm: SONG_META.bpm,
+                measureRange: `${storedRecordingRange.startMeasure}-${storedRecordingRange.endMeasure}`
+            });
+        };
+
+        return () => {
+            if (typeof window !== 'undefined') {
+                delete (window as any).exportGroundTruth;
+            }
+        };
+    }, [storedRecordingRange]);
 
     // 악기 변환 모델 로드 (outputInstrument가 'raw'가 아닐 때)
     // Tone.js 기반 폴백 재생
@@ -926,10 +1121,17 @@ export default function FeedbackClientPage() {
         }
     }, [addNote, showToast]);
 
-    // 편집 확정: 정리된 음표+쉼표를 recordedNotesByMeasure에 반영
+    // 편집 확정: 정리된 음표+쉼표를 recordedNotesByMeasure에 반영 + 자동 Export
     const handleConfirmEdit = useCallback(() => {
+        // 이미 확정됨
+        if (isEditConfirmed) {
+            showToast('error', '이미 편집이 확정되었습니다');
+            return;
+        }
+
         // 겹침 제거 + 연속 쉼표 병합된 깨끗한 데이터 가져오기
         const cleanedNotes = getCleanedNotes();
+        const notesOnly = cleanedNotes.filter((n: NoteData) => !n.isRest);
 
         // measure별로 그룹화
         const newNotesByMeasure: Record<number, NoteData[]> = {};
@@ -943,11 +1145,10 @@ export default function FeedbackClientPage() {
         });
 
         console.log('[Edit Confirm] cleanedNotes:', cleanedNotes.length);
-        console.log('[Edit Confirm] notes:', cleanedNotes.filter(n => !n.isRest).length, 'rests:', cleanedNotes.filter(n => n.isRest).length);
-        console.log('[Edit Confirm] 첫 5개 음표 pitch:', cleanedNotes.filter(n => !n.isRest).slice(0, 5).map(n => n.pitch));
+        console.log('[Edit Confirm] notes:', notesOnly.length, 'rests:', cleanedNotes.filter(n => n.isRest).length);
 
         // ============================================
-        // Gap 분석: 자동 감지 vs 수동 편집 비교
+        // 정확도 계산: 자동 감지 vs 수동 편집 비교
         // ============================================
         if (rawAutoNotes.length > 0 && storedRecordingRange) {
             const comparisons = compareNotes(
@@ -957,6 +1158,77 @@ export default function FeedbackClientPage() {
             );
             const analysis = analyzeGap(comparisons);
             logGapAnalysis(analysis);
+
+            // 정확도 상태 업데이트
+            const matchedCount = analysis.comparisons.filter(
+                c => c.matchType !== 'missed' && c.matchType !== 'extra'
+            ).length;
+            setAccuracyStats({
+                pitch: analysis.pitchAccuracy,
+                timing: analysis.timingAccuracy,
+                duration: analysis.durationAccuracy,
+                overall: (analysis.pitchAccuracy + analysis.timingAccuracy + analysis.durationAccuracy) / 3,
+                matched: matchedCount,
+                total: analysis.totalManualNotes
+            });
+        }
+
+        // ============================================
+        // 자동 케이스 저장 (API로 서버에 저장)
+        // ============================================
+        if (typeof window !== 'undefined' && storedRecordingRange) {
+            const testPitchFrames = (window as any).__testPitchFrames;
+
+            if (testPitchFrames && notesOnly.length > 0) {
+                const testFramesData = {
+                    bpm: SONG_META.bpm,
+                    frameCount: testPitchFrames.length,
+                    frames: testPitchFrames
+                };
+
+                const groundTruthNotes = notesOnly.map((note: NoteData) => ({
+                    measure: note.measureIndex + storedRecordingRange.startMeasure,
+                    slot: note.slotIndex,
+                    pitch: note.pitch,
+                    slots: note.slotCount
+                }));
+
+                const groundTruthData = {
+                    name: `Recording ${new Date().toISOString().split('T')[0]}`,
+                    bpm: SONG_META.bpm,
+                    description: `${notesOnly.length}개 음표, 마디 ${storedRecordingRange.startMeasure}-${storedRecordingRange.endMeasure}`,
+                    notes: groundTruthNotes
+                };
+
+                // API로 케이스 저장
+                fetch('/api/pitch-test', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        testFrames: testFramesData,
+                        groundTruth: groundTruthData
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log(`[Auto Save] ${data.caseName} 저장 완료`);
+                        showToast('success', `${data.caseName} 저장 완료`);
+                        // 케이스 카운트 업데이트
+                        setOptimizationState(prev => ({
+                            ...prev,
+                            caseCount: prev.caseCount + 1,
+                            completeCases: prev.completeCases + 1
+                        }));
+                    } else {
+                        console.error('[Auto Save] 저장 실패:', data.error);
+                        showToast('error', '케이스 저장 실패 (로컬 개발 환경에서만 동작)');
+                    }
+                })
+                .catch(err => {
+                    console.log('[Auto Save] 서버 연결 실패 (로컬 개발 환경에서만 동작)');
+                });
+            }
         }
 
         // recordedNotesByMeasure 업데이트
@@ -965,12 +1237,13 @@ export default function FeedbackClientPage() {
         // editedNotes도 업데이트 (재생 시 사용)
         initializeNotes(cleanedNotes);
 
-        // 편집 모드 종료
+        // 편집 모드 종료 및 잠금
         setIsEditPanelOpen(false);
         setEditMode(false);
+        setIsEditConfirmed(true);  // 편집 잠금
 
-        showToast('success', '편집이 확정되었습니다');
-    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast]);
+        showToast('success', '편집이 확정되었습니다 (재편집 불가)');
+    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast, isEditConfirmed]);
 
     // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
     if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {
@@ -1134,43 +1407,157 @@ export default function FeedbackClientPage() {
                             totalNotes={currentNoteInfo.total}
                         />
                     ) : (
-                        /* 평가 카드 (컴팩트) */
-                        <div className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-5">
-                                <div className="text-center">
-                                    <p className="text-xs text-gray-500 uppercase tracking-wide">Score</p>
-                                    <p className="text-4xl font-bold" style={{ color: gradeColor }}>{displayFeedback.score}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xl font-semibold" style={{ color: gradeColor }}>{displayFeedback.grade}</span>
-                                    <span className="text-xl">{GRADE_EMOJIS[displayFeedback.grade]}</span>
-                                </div>
-                                <p className="text-base text-gray-400 italic hidden sm:block">"{displayFeedback.comment}"</p>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    if (storedOutputInstrument === 'raw') {
-                                        showToast('info', '악기 변환을 선택해야 편집 가능합니다');
-                                        return;
-                                    }
-                                    setIsEditPanelOpen(true);
-                                    setEditMode(true);
-                                }}
-                                className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-colors relative group ${
-                                    storedOutputInstrument === 'raw'
-                                        ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                                        : 'hover:bg-white/10 text-gray-400 hover:text-white'
-                                }`}
-                                disabled={storedOutputInstrument === 'raw'}
-                            >
-                                <span className="text-sm">편집모드</span>
-                                <ChevronRight size={16} />
-                                {storedOutputInstrument === 'raw' && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 rounded bg-[#1B1C26] border border-white/20 text-white/70 text-xs whitespace-nowrap">
-                                        악기 변환을 선택해야 편집 가능합니다
+                        /* 평가 카드 + 정확도 표시 */
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-5 py-3">
+                            {/* 상단: 점수 + 편집 버튼 */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-5">
+                                    <div className="text-center">
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide">Score</p>
+                                        <p className="text-4xl font-bold" style={{ color: gradeColor }}>{displayFeedback.score}</p>
                                     </div>
-                                )}
-                            </button>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl font-semibold" style={{ color: gradeColor }}>{displayFeedback.grade}</span>
+                                        <span className="text-xl">{GRADE_EMOJIS[displayFeedback.grade]}</span>
+                                    </div>
+                                    <p className="text-base text-gray-400 italic hidden sm:block">"{displayFeedback.comment}"</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        if (isEditConfirmed) {
+                                            showToast('error', '이미 편집이 확정되었습니다');
+                                            return;
+                                        }
+                                        if (storedOutputInstrument === 'raw') {
+                                            showToast('info', '악기 변환을 선택해야 편집 가능합니다');
+                                            return;
+                                        }
+                                        setIsEditPanelOpen(true);
+                                        setEditMode(true);
+                                    }}
+                                    className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-colors relative group ${
+                                        isEditConfirmed
+                                            ? 'bg-green-500/20 border border-green-500 text-green-400 cursor-not-allowed'
+                                            : storedOutputInstrument === 'raw'
+                                            ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                                            : 'hover:bg-white/10 text-gray-400 hover:text-white'
+                                    }`}
+                                    disabled={storedOutputInstrument === 'raw' || isEditConfirmed}
+                                >
+                                    <span className="text-sm">{isEditConfirmed ? '편집 완료' : '편집모드'}</span>
+                                    {!isEditConfirmed && <ChevronRight size={16} />}
+                                    {storedOutputInstrument === 'raw' && !isEditConfirmed && (
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 rounded bg-[#1B1C26] border border-white/20 text-white/70 text-xs whitespace-nowrap">
+                                            악기 변환을 선택해야 편집 가능합니다
+                                        </div>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* 하단: 정확도 표시 (편집 확정 후) */}
+                            {accuracyStats && (
+                                <div className="mt-4 pt-4 border-t border-white/10">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs text-gray-500 uppercase tracking-wide">AI 분석 정확도</span>
+                                        <span className="text-xs text-gray-400">
+                                            {accuracyStats.matched}/{accuracyStats.total} 음표 매칭
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-3">
+                                        {/* 음정 */}
+                                        <div className="text-center p-2 rounded-lg bg-white/5">
+                                            <p className="text-xs text-gray-400 mb-1">음정</p>
+                                            <p className={`text-lg font-bold ${
+                                                accuracyStats.pitch >= 80 ? 'text-green-400' :
+                                                accuracyStats.pitch >= 60 ? 'text-yellow-400' : 'text-red-400'
+                                            }`}>
+                                                {accuracyStats.pitch.toFixed(1)}%
+                                            </p>
+                                        </div>
+                                        {/* 타이밍 */}
+                                        <div className="text-center p-2 rounded-lg bg-white/5">
+                                            <p className="text-xs text-gray-400 mb-1">타이밍</p>
+                                            <p className={`text-lg font-bold ${
+                                                accuracyStats.timing >= 80 ? 'text-green-400' :
+                                                accuracyStats.timing >= 60 ? 'text-yellow-400' : 'text-red-400'
+                                            }`}>
+                                                {accuracyStats.timing.toFixed(1)}%
+                                            </p>
+                                        </div>
+                                        {/* 길이 */}
+                                        <div className="text-center p-2 rounded-lg bg-white/5">
+                                            <p className="text-xs text-gray-400 mb-1">길이</p>
+                                            <p className={`text-lg font-bold ${
+                                                accuracyStats.duration >= 80 ? 'text-green-400' :
+                                                accuracyStats.duration >= 60 ? 'text-yellow-400' : 'text-red-400'
+                                            }`}>
+                                                {accuracyStats.duration.toFixed(1)}%
+                                            </p>
+                                        </div>
+                                        {/* 종합 + 최적화 버튼 */}
+                                        <div className="text-center p-2 rounded-lg bg-gradient-to-br from-[#7BA7FF]/20 to-[#FF7B7B]/20 border border-white/10 relative">
+                                            <p className="text-xs text-gray-300 mb-1">종합</p>
+                                            <div className="flex items-center justify-center gap-2">
+                                                <p className={`text-xl font-bold ${
+                                                    accuracyStats.overall >= 80 ? 'text-green-400' :
+                                                    accuracyStats.overall >= 60 ? 'text-yellow-400' : 'text-red-400'
+                                                }`}>
+                                                    {accuracyStats.overall.toFixed(1)}%
+                                                </p>
+                                                {/* 최적화 버튼 */}
+                                                <div className="relative group">
+                                                    <button
+                                                        onClick={() => runOptimization('auto')}
+                                                        disabled={optimizationState.isRunning || optimizationState.completeCases === 0}
+                                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-all ${
+                                                            optimizationState.isRunning
+                                                                ? 'bg-purple-500 animate-pulse'
+                                                                : optimizationState.completeCases === 0
+                                                                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                                                    : 'bg-purple-600 hover:bg-purple-500 text-white'
+                                                        }`}
+                                                        title="자동 최적화"
+                                                    >
+                                                        {optimizationState.isRunning ? '⟳' : '⚡'}
+                                                    </button>
+                                                    {/* 호버 패널 */}
+                                                    <div className="absolute right-0 top-full mt-2 hidden group-hover:block w-64 p-3 rounded-lg bg-[#1B1C26] border border-white/20 text-left z-50 shadow-xl">
+                                                        <p className="text-xs text-gray-400 mb-2">파라미터 최적화</p>
+                                                        <p className="text-sm text-white mb-2">
+                                                            {optimizationState.completeCases}/{optimizationState.caseCount} 케이스 준비됨
+                                                        </p>
+                                                        {optimizationState.result && (
+                                                            <div className="p-2 rounded bg-green-500/10 border border-green-500/20 mb-2">
+                                                                <p className="text-xs text-green-400 whitespace-pre-wrap">{optimizationState.result}</p>
+                                                            </div>
+                                                        )}
+                                                        {optimizationState.error && (
+                                                            <div className="p-2 rounded bg-red-500/10 border border-red-500/20 mb-2">
+                                                                <p className="text-xs text-red-400">{optimizationState.error}</p>
+                                                            </div>
+                                                        )}
+                                                        {optimizationState.caseCount === 0 && (
+                                                            <p className="text-xs text-gray-500">
+                                                                편집 확정 후 케이스가 자동 저장됩니다
+                                                            </p>
+                                                        )}
+                                                        {optimizationState.completeCases > 0 && !optimizationState.isRunning && (
+                                                            <p className="text-xs text-purple-400 mt-1">
+                                                                클릭하여 자동 최적화 실행
+                                                            </p>
+                                                        )}
+                                                        {optimizationState.isRunning && (
+                                                            <p className="text-xs text-purple-400 animate-pulse">
+                                                                최적화 실행 중...
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

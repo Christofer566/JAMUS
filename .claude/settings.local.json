@@ -18,7 +18,12 @@
       "Bash(npx tsc:*)",
       "Bash(git checkout:*)",
       "Bash(npm search:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(npx tsx:*)",
+      "Bash(timeout 10 npx tsx:*)",
+      "Bash(timeout 60 npx tsx tests/pitch-accuracy/runner.ts)",
+      "Bash(timeout 120 npx tsx:*)",
+      "Bash(timeout 300 npx tsx:*)"
     ],
     "deny": [],
     "ask": []
