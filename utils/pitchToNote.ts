@@ -412,6 +412,63 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   console.log('[Grid] 슬롯 분포:', { high: highCount, medium: mediumCount, empty: emptyCount });
 
   // ========================================
+  // Phase 72: 저음 재검증 패스 (Low Frequency Recovery)
+  // ========================================
+  // 70-120Hz 대역에서 confidence 미달로 탈락한 슬롯을 재검증
+  // 연속된 저음 프레임이 일정 pitch를 유지하면 음표로 복원
+  const LOW_FREQ_RECOVERY_MIN = 70;   // D2 ~= 73Hz
+  const LOW_FREQ_RECOVERY_MAX = 120;  // A#2 ~= 117Hz
+  const LOW_FREQ_CONFIDENCE_MIN = 0.15; // 저음 전용 낮은 임계값
+  const LOW_FREQ_CONTINUITY_MIN = 3;  // 최소 연속 프레임 수
+  const LOW_FREQ_VARIANCE_MAX = 0.15; // 주파수 편차 허용 범위 (±15%)
+
+  let recoveredCount = 0;
+
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+
+    // 이미 유효한 슬롯은 스킵
+    if (slot.confidence !== 'excluded') continue;
+
+    // 해당 슬롯의 저음역대 프레임 수집 (낮은 confidence 허용)
+    const lowFreqFrames = slot.frames.filter(
+      f => f.frequency >= LOW_FREQ_RECOVERY_MIN &&
+           f.frequency <= LOW_FREQ_RECOVERY_MAX &&
+           f.confidence >= LOW_FREQ_CONFIDENCE_MIN
+    );
+
+    // 최소 연속 프레임 수 충족 확인
+    if (lowFreqFrames.length < LOW_FREQ_CONTINUITY_MIN) continue;
+
+    // 주파수 일관성 검사 (median 기준 ±15% 이내)
+    const freqs = lowFreqFrames.map(f => f.frequency);
+    const medianFreq = median(freqs);
+    const allWithinVariance = freqs.every(
+      f => Math.abs(f - medianFreq) / medianFreq <= LOW_FREQ_VARIANCE_MAX
+    );
+
+    if (!allWithinVariance) continue;
+
+    // 저음 복원: 슬롯을 유효한 음표로 승격
+    slot.confidence = 'medium';
+    slot.medianFrequency = medianFreq;
+    slot.occupancy = lowFreqFrames.length / slot.frames.length;
+
+    // 저음은 옥타브 시프트 없이 원음 유지
+    const snappedFreq = pitchSnap(medianFreq);
+    slot.pitch = frequencyToNote(snappedFreq, 0); // finalShift = 0
+
+    recoveredCount++;
+    emptyCount--;
+    mediumCount++;
+  }
+
+  if (recoveredCount > 0) {
+    console.log(`[Phase 72] 저음 복원: ${recoveredCount}개 슬롯 복구 (70-120Hz 대역)`);
+    console.log('[Grid] 슬롯 분포 (복원 후):', { high: highCount, medium: mediumCount, empty: emptyCount });
+  }
+
+  // ========================================
   // Step 3: 연속 슬롯 병합 → 음표 생성
   // ========================================
   const rawNotes: NoteData[] = [];
