@@ -79,6 +79,7 @@ export default function FeedbackClientPage() {
     const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [isEditConfirmed, setIsEditConfirmed] = useState(false);  // 편집 완료 후 잠금
+    const [rawRecordingMode, setRawRecordingMode] = useState(false);  // Phase 78: 녹음 듣기 모드
 
     // 정확도 표시 State
     const [accuracyStats, setAccuracyStats] = useState<{
@@ -429,13 +430,15 @@ export default function FeedbackClientPage() {
     const handlePlayPause = useCallback(async () => {
         const userAudio = userAudioRef.current;
         const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+        // Phase 78: rawRecordingMode가 활성화되면 폴백 모드여도 원본 녹음 재생
+        const shouldPlayRawRecording = rawRecordingMode || storedOutputInstrument === 'raw';
 
         if (isPlaying) {
             console.log('🎤 [handlePlayPause] 정지 요청');
             webAudio.pause();
 
-            // 폴백 모드: Tone.js 재생 정지
-            if (isFallbackMode) {
+            // 폴백 모드: Tone.js 재생 정지 (rawRecordingMode가 아닐 때만)
+            if (isFallbackMode && !rawRecordingMode) {
                 voiceToInstrument.stopFallbackPlayback();
                 console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 정지');
             }
@@ -447,6 +450,7 @@ export default function FeedbackClientPage() {
             }
             setIsPlaying(false);
         } else {
+            // JAM 볼륨 조정 (rawRecordingMode는 JAM 반주 유지)
             if (myRecordingOnlyMode || instrumentOnlyMode) {
                 webAudio.setVolume(0);
             } else {
@@ -454,8 +458,13 @@ export default function FeedbackClientPage() {
             }
             await webAudio.play();
 
-            // 폴백 모드: Tone.js로 음표 재생
-            if (isFallbackMode && editedNotes.length > 0 && storedRecordingRange) {
+            // Phase 78: rawRecordingMode가 활성화되면 Tone.js 대신 원본 녹음 재생
+            if (shouldPlayRawRecording) {
+                // 원본 재생 모드 (녹음 듣기)
+                syncUserAudio(webAudio.currentTime, true);
+                console.log('🎤 [handlePlayPause] 녹음 듣기 모드 - 원본 재생');
+            } else if (isFallbackMode && editedNotes.length > 0 && storedRecordingRange) {
+                // 폴백 모드: Tone.js로 음표 재생
                 // 모든 음표의 beat를 상대 beat로 통일 (절대/상대 beat 혼재 문제 해결)
                 const startMeasureBeat = storedRecordingRange.startMeasure * 4;
                 const notesOnlyNotes = editedNotes
@@ -483,13 +492,13 @@ export default function FeedbackClientPage() {
                     relativeStartTime  // 녹음 시작점 기준 시간
                 );
             } else {
-                // 원본 재생 모드
+                // 기본 원본 재생 모드
                 syncUserAudio(webAudio.currentTime, true);
             }
 
             setIsPlaying(true);
         }
-    }, [webAudio, isPlaying, myRecordingOnlyMode, instrumentOnlyMode, syncUserAudio, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument]);
+    }, [webAudio, isPlaying, myRecordingOnlyMode, instrumentOnlyMode, rawRecordingMode, syncUserAudio, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument]);
 
     const handleTimeChange = useCallback(async (newTime: number) => {
         let clampedTime = Math.max(0, Math.min(newTime, duration));
@@ -543,22 +552,26 @@ export default function FeedbackClientPage() {
         handleTimeChange(targetTime);
     }, [measureDuration, handleTimeChange]);
 
-    // 편집 모드에서 선택된 음표 위치 변경 시 수직선 동기화
-    const prevSelectedNoteBeatRef = useRef<number | null>(null);
+    // 편집 모드에서 선택된 음표 변경 시 수직선 동기화
+    const prevSelectedNoteRef = useRef<{ index: number; beat: number } | null>(null);
     useEffect(() => {
         if (!isEditMode || !storedRecordingRange || selectedNoteIndices.length === 0) {
-            prevSelectedNoteBeatRef.current = null;
+            prevSelectedNoteRef.current = null;
             return;
         }
 
-        const selectedNote = editedNotes[selectedNoteIndices[0]];
+        const selectedIndex = selectedNoteIndices[0];
+        const selectedNote = editedNotes[selectedIndex];
         if (!selectedNote || selectedNote.isRest) {
-            prevSelectedNoteBeatRef.current = null;
+            prevSelectedNoteRef.current = null;
             return;
         }
 
-        // 이전 beat와 다를 때만 수직선 이동 (무한 루프 방지)
-        if (prevSelectedNoteBeatRef.current !== null && prevSelectedNoteBeatRef.current !== selectedNote.beat) {
+        // 다른 음표 선택 또는 같은 음표의 위치 변경 시 수직선 이동
+        const prev = prevSelectedNoteRef.current;
+        const shouldMove = !prev || prev.index !== selectedIndex || prev.beat !== selectedNote.beat;
+
+        if (shouldMove) {
             const startMeasureBeat = storedRecordingRange.startMeasure * 4;
             const relativeBeat = selectedNote.beat >= startMeasureBeat
                 ? selectedNote.beat - startMeasureBeat
@@ -567,7 +580,7 @@ export default function FeedbackClientPage() {
             const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
             handleTimeChange(absoluteTime);
         }
-        prevSelectedNoteBeatRef.current = selectedNote.beat;
+        prevSelectedNoteRef.current = { index: selectedIndex, beat: selectedNote.beat };
     }, [isEditMode, storedRecordingRange, selectedNoteIndices, editedNotes, handleTimeChange]);
 
     // ============================================
@@ -870,6 +883,12 @@ export default function FeedbackClientPage() {
         webAudio.setVolume(enabled ? 0 : 1);
     }, [webAudio]);
 
+    // Phase 78: 녹음 듣기 모드 토글 (악기 변환 상태에서 원본 녹음 재생)
+    const handleToggleRawRecording = useCallback((enabled: boolean) => {
+        setRawRecordingMode(enabled);
+        // JAM 반주는 계속 재생 (음소거 안함)
+    }, []);
+
     const handleToggleJamOnly = useCallback((enabled: boolean) => {
         setJamOnlyMode(enabled);
         if (enabled && webAudio.currentTime < introEndTime) {
@@ -1008,6 +1027,19 @@ export default function FeedbackClientPage() {
                             return;
                         }
                         break;
+                    case 'KeyR':
+                        e.preventDefault();
+                        reset();
+                        return;
+                    case 'KeyE':
+                        e.preventDefault();
+                        {
+                            const result = addNote();
+                            if (!result.success && result.message) {
+                                showToast('error', result.message);
+                            }
+                        }
+                        return;
                 }
             }
 
@@ -1032,6 +1064,13 @@ export default function FeedbackClientPage() {
                         toggleInstrumentOnlyMode();
                     }
                     break;
+                case 'KeyD':
+                    e.preventDefault();
+                    // 악기 변환 모드에서만 녹음 듣기 토글
+                    if (storedOutputInstrument !== 'raw') {
+                        handleToggleRawRecording(!rawRecordingMode);
+                    }
+                    break;
             }
         };
         const handleKeyUp = () => setPressedKey(null);
@@ -1041,7 +1080,7 @@ export default function FeedbackClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, storedOutputInstrument, toggleInstrumentOnlyMode, instrumentOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo, selectPrevNote, selectNextNote, selectedNoteIndices, editedNotes, conversionState.isFallbackMode, voiceToInstrument, storedRecordingRange, handleTimeChange]);
+    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, storedOutputInstrument, toggleInstrumentOnlyMode, instrumentOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo, reset, addNote, showToast, selectPrevNote, selectNextNote, selectedNoteIndices, editedNotes, conversionState.isFallbackMode, voiceToInstrument, storedRecordingRange, handleTimeChange, handleToggleRawRecording, rawRecordingMode]);
     
     const [isUserAudioReady, setIsUserAudioReady] = useState(false);
     const audioCreatedRef = useRef(false);
@@ -1579,33 +1618,49 @@ export default function FeedbackClientPage() {
                         {/* Feed 스타일의 컨트롤러 영역 */}
                         <div className="flex items-center justify-between pt-4">
                             {/* 좌측: 녹음/악기만 듣기 Toggle (모드에 따라 선택) */}
-                            {storedOutputInstrument === 'raw' ? (
-                                /* 원본 모드: 내 녹음만 듣기 */
-                                <button
-                                    type="button"
-                                    onClick={() => handleToggleMyRecordingOnly(!myRecordingOnlyMode)}
-                                    className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
-                                        myRecordingOnlyMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
-                                    }`}
-                                    title="내 녹음만 듣기 (S)"
-                                >
-                                    내 녹음만 듣기
-                                    <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
-                                </button>
-                            ) : (
-                                /* 폴백 모드: 악기만 듣기 */
-                                <button
-                                    type="button"
-                                    onClick={() => toggleInstrumentOnlyMode()}
-                                    className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[120px] ${
-                                        instrumentOnlyMode ? 'bg-[#FFD166]/20 border border-[#FFD166] text-[#FFD166]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
-                                    }`}
-                                    title="악기만 듣기 (S)"
-                                >
-                                    악기만 듣기
-                                    <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                                {storedOutputInstrument === 'raw' ? (
+                                    /* 원본 모드: 내 녹음만 듣기 */
+                                    <button
+                                        type="button"
+                                        onClick={() => handleToggleMyRecordingOnly(!myRecordingOnlyMode)}
+                                        className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[90px] ${
+                                            myRecordingOnlyMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                        }`}
+                                        title="내 녹음만 듣기 (S)"
+                                    >
+                                        내 녹음만 듣기
+                                        <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
+                                    </button>
+                                ) : (
+                                    /* 폴백 모드: 악기만 듣기 + 녹음 듣기 버튼 */
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleInstrumentOnlyMode()}
+                                            className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[90px] ${
+                                                instrumentOnlyMode ? 'bg-[#FFD166]/20 border border-[#FFD166] text-[#FFD166]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                            }`}
+                                            title="악기만 듣기 (S)"
+                                        >
+                                            악기만 듣기
+                                            <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">S</span>
+                                        </button>
+                                        {/* Phase 78: 녹음 듣기 버튼 (악기 변환 모드에서 원본 재생) */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleRawRecording(!rawRecordingMode)}
+                                            className={`relative flex flex-col items-center px-3 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap min-w-[90px] ${
+                                                rawRecordingMode ? 'bg-[#FF7B7B]/20 border border-[#FF7B7B] text-[#FF7B7B]' : 'border border-gray-600 text-gray-300 hover:bg-white/10'
+                                            }`}
+                                            title="녹음 듣기 (D)"
+                                        >
+                                            녹음 듣기
+                                            <span className="absolute -bottom-5 text-xs font-medium text-[#9B9B9B]">D</span>
+                                        </button>
+                                    </>
+                                )}
+                            </div>
 
                             {/* 중앙: 재생 컨트롤 */}
                             <div className="flex items-center gap-3">

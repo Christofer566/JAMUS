@@ -40,7 +40,7 @@ export const OUTPUT_INSTRUMENT_OPTIONS: InstrumentOption[] = [
 
 // 기본값
 export const DEFAULT_INPUT_INSTRUMENT: InputInstrument = 'voice';
-export const DEFAULT_OUTPUT_INSTRUMENT: OutputInstrument = 'raw';
+export const DEFAULT_OUTPUT_INSTRUMENT: OutputInstrument = 'piano';  // Phase 78: raw → piano
 
 // 변환 상태 초기값
 export const INITIAL_CONVERSION_STATE: ConversionState = {

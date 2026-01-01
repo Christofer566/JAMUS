@@ -4,6 +4,93 @@ import { useState, useCallback } from 'react';
 import { PitchFrame } from '@/types/pitch';
 import { getSharedAudioContext } from '@/utils/sharedAudioContext';
 
+// ============================================
+// Phase 77: Pitch Detection Tunable Parameters
+// ============================================
+export interface PitchDetectionParams {
+  // 1. 윈도우 크기 파라미터
+  FRAME_SIZE: number;               // 2048-8192 (기본 4096)
+  FRAME_SIZE_LONG: number;          // 4096-16384 (기본 8192, 저음용)
+  HOP_SIZE: number;                 // 256-1024 (기본 512)
+
+  // 2. RMS 임계값 파라미터
+  RMS_THRESHOLD_NORMAL: number;     // 0.003-0.010 (기본 0.005)
+  RMS_THRESHOLD_LOW_FREQ: number;   // 0.005-0.015 (기본 0.008)
+
+  // 3. 신뢰도 임계값 파라미터
+  CONFIDENCE_THRESHOLD_NORMAL: number;  // 0.40-0.70 (기본 0.50)
+  CONFIDENCE_THRESHOLD_LOW: number;     // 0.20-0.40 (기본 0.30)
+
+  // 4. 주파수 범위 파라미터
+  LOW_FREQ_THRESHOLD: number;       // 150-300 (기본 220)
+  VOICE_MIN_FREQ: number;           // 50-80 (기본 65)
+  VOICE_MAX_FREQ: number;           // 800-1200 (기본 1047)
+
+  // 5. 연속성 가중치 파라미터
+  CONTINUITY_HIGH_RATIO: number;    // 1.5-2.0 (기본 1.8)
+  CONTINUITY_LOW_RATIO: number;     // 0.45-0.65 (기본 0.55)
+  CONTINUITY_PENALTY: number;       // 0.3-0.7 (기본 0.5)
+
+  // 6. YIN/MPM 파라미터
+  YIN_THRESHOLD: number;            // 0.10-0.25 (기본 0.15)
+  MPM_CUTOFF: number;               // 0.4-0.7 (기본 0.5)
+
+  // 7. 저음 2배음 보정 파라미터
+  VERY_LOW_NOTE_MAX: number;        // 80-120 (기본 100)
+  HARMONIC_DETECTION_MIN: number;   // 120-160 (기본 140)
+  HARMONIC_DETECTION_MAX: number;   // 180-240 (기본 210)
+}
+
+const DEFAULT_PITCH_PARAMS: PitchDetectionParams = {
+  // 1. 윈도우 크기
+  FRAME_SIZE: 4096,
+  FRAME_SIZE_LONG: 8192,
+  HOP_SIZE: 512,
+
+  // 2. RMS 임계값
+  RMS_THRESHOLD_NORMAL: 0.005,
+  RMS_THRESHOLD_LOW_FREQ: 0.008,
+
+  // 3. 신뢰도 임계값
+  CONFIDENCE_THRESHOLD_NORMAL: 0.50,
+  CONFIDENCE_THRESHOLD_LOW: 0.30,
+
+  // 4. 주파수 범위
+  LOW_FREQ_THRESHOLD: 220,
+  VOICE_MIN_FREQ: 65,
+  VOICE_MAX_FREQ: 1047,
+
+  // 5. 연속성 가중치
+  CONTINUITY_HIGH_RATIO: 1.8,
+  CONTINUITY_LOW_RATIO: 0.55,
+  CONTINUITY_PENALTY: 0.5,
+
+  // 6. YIN/MPM
+  YIN_THRESHOLD: 0.15,
+  MPM_CUTOFF: 0.5,
+
+  // 7. 저음 2배음 보정
+  VERY_LOW_NOTE_MAX: 100,
+  HARMONIC_DETECTION_MIN: 140,
+  HARMONIC_DETECTION_MAX: 210
+};
+
+let activePitchParams: PitchDetectionParams = { ...DEFAULT_PITCH_PARAMS };
+
+export function setPitchDetectionParams(params: Partial<PitchDetectionParams>): void {
+  activePitchParams = { ...activePitchParams, ...params };
+  console.log('[Pitch Detection] 파라미터 업데이트:', activePitchParams);
+}
+
+export function getPitchDetectionParams(): PitchDetectionParams {
+  return { ...activePitchParams };
+}
+
+export function resetPitchDetectionParams(): void {
+  activePitchParams = { ...DEFAULT_PITCH_PARAMS };
+  console.log('[Pitch Detection] 파라미터 초기화');
+}
+
 interface UsePitchAnalyzerReturn {
   isAnalyzing: boolean;
   error: string | null;
@@ -55,12 +142,11 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
       const sampleRate = renderedBuffer.sampleRate;
 
       // 3. 프레임 단위 MacLeod 알고리즘 분석
-      // Phase 52: Multi-Window Analysis - 저음역대 하이브리드 분석
+      // Phase 52/77: Multi-Window Analysis - 저음역대 하이브리드 분석 (activePitchParams 사용)
       const frames: PitchFrame[] = [];
-      const frameSize = 4096; // 기본 윈도우 (시간 분해능 유지)
-      const frameSizeLong = 8192; // Phase 52: 긴 윈도우 (저음 주파수 정밀도)
-      const hopSize = 512;
-      const LOW_FREQ_THRESHOLD = 220; // 220Hz 이하면 긴 윈도우로 재분석
+      const frameSize = activePitchParams.FRAME_SIZE;
+      const frameSizeLong = activePitchParams.FRAME_SIZE_LONG;
+      const hopSize = activePitchParams.HOP_SIZE;
 
       // 통계용 변수
       let rmsFilteredCount = 0;
@@ -101,13 +187,11 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         // 디버깅: 0~5초 구간 데이터 수집
         const isDebugRange = time < 5;
 
-        // Phase 55: 저음역대(200Hz 이하) RMS 임계값 낮춤 (0.008)
+        // Phase 55/77: 저음역대(200Hz 이하) RMS 임계값 낮춤 (activePitchParams 사용)
         // 저음은 에너지가 낮아서 일반 임계값으로는 놓치기 쉬움
-        const RMS_THRESHOLD_NORMAL = 0.005;
-        const RMS_THRESHOLD_LOW_FREQ = 0.008; // 저음용 (더 민감)
 
         // 일단 기본 임계값으로 체크, 저음 감지 후 재평가
-        if (rms < RMS_THRESHOLD_LOW_FREQ) { // 저음 임계값보다도 낮으면 완전 무음
+        if (rms < activePitchParams.RMS_THRESHOLD_LOW_FREQ) { // 저음 임계값보다도 낮으면 완전 무음
           frames.push({ time, frequency: 0, confidence: 0 });
           rmsFilteredCount++;
           if (isDebugRange) {
@@ -117,7 +201,7 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         }
 
         // 저음 구간(0.008~0.005)은 일단 분석 진행 (저음일 수 있음)
-        const isLowRmsZone = rms >= RMS_THRESHOLD_LOW_FREQ && rms < RMS_THRESHOLD_NORMAL;
+        const isLowRmsZone = rms >= activePitchParams.RMS_THRESHOLD_LOW_FREQ && rms < activePitchParams.RMS_THRESHOLD_NORMAL;
 
         // ========================================
         // Phase 62: MPM + YIN + HPS 앙상블 분석
@@ -125,10 +209,10 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         let result = detectPitchEnsemble(frame, sampleRate);
 
         // ========================================
-        // Phase 52: Multi-Window Analysis (55차 황금 설정 유지)
-        // 220Hz 이하 저음역대 감지 시 긴 윈도우로 재분석
+        // Phase 52/77: Multi-Window Analysis (activePitchParams 사용)
+        // 저음역대 감지 시 긴 윈도우로 재분석
         // ========================================
-        if (result.frequency > 0 && result.frequency <= LOW_FREQ_THRESHOLD && result.confidence >= 0.3) {
+        if (result.frequency > 0 && result.frequency <= activePitchParams.LOW_FREQ_THRESHOLD && result.confidence >= 0.3) {
           const resultLong = detectPitchEnsemble(frameLong, sampleRate);
 
           // 긴 윈도우 결과가 더 신뢰할 만하면 채택
@@ -147,25 +231,25 @@ export function usePitchAnalyzer(): UsePitchAnalyzerReturn {
         }
 
         // ========================================
-        // Phase 52: 연속성 가중치 (Continuity Weighting)
+        // Phase 52/77: 연속성 가중치 (Continuity Weighting, activePitchParams 사용)
         // 이전 프레임과 1옥타브 이상 차이나면 신뢰도 낮춤
         // ========================================
-        // Phase 67: 연속성 로그 제거
         let adjustedConfidence = result.confidence;
         if (prevValidFreq > 0 && result.frequency > 0) {
           const freqRatio = result.frequency / prevValidFreq;
-          if (freqRatio > 1.8 || freqRatio < 0.55) {
-            adjustedConfidence = result.confidence * 0.5;
+          if (freqRatio > activePitchParams.CONTINUITY_HIGH_RATIO || freqRatio < activePitchParams.CONTINUITY_LOW_RATIO) {
+            adjustedConfidence = result.confidence * activePitchParams.CONTINUITY_PENALTY;
             continuityAdjustCount++;
           }
         }
 
-        // Phase 2: 사람 목소리 범위 검증 (C2: 65Hz ~ C6: 1047Hz) + Confidence 0.5 이상
-        // Phase 52: 연속성 조정된 신뢰도 사용
-        // Phase 55: 저음역대(200Hz 이하) + 저RMS 구간은 신뢰도 임계값 완화 (0.5 → 0.3)
-        const confidenceThreshold = (isLowRmsZone && result.frequency <= 200 && result.frequency > 0) ? 0.3 : 0.5;
+        // Phase 2/77: 사람 목소리 범위 검증 (activePitchParams 사용)
+        // 저음역대 + 저RMS 구간은 신뢰도 임계값 완화
+        const confidenceThreshold = (isLowRmsZone && result.frequency <= activePitchParams.LOW_FREQ_THRESHOLD && result.frequency > 0)
+          ? activePitchParams.CONFIDENCE_THRESHOLD_LOW
+          : activePitchParams.CONFIDENCE_THRESHOLD_NORMAL;
 
-        if (result.frequency >= 65 && result.frequency <= 1047 && adjustedConfidence >= confidenceThreshold) {
+        if (result.frequency >= activePitchParams.VOICE_MIN_FREQ && result.frequency <= activePitchParams.VOICE_MAX_FREQ && adjustedConfidence >= confidenceThreshold) {
           frames.push({
             time,
             frequency: result.frequency,
@@ -270,7 +354,7 @@ function detectPitchMPM(
   correctionFactor?: number;
 } {
   const bufferSize = buffer.length;
-  const cutoff = 0.5; // 정확도 유지
+  const cutoff = activePitchParams.MPM_CUTOFF; // Phase 77: activePitchParams 사용
 
   // 1. Normalized Square Difference Function (NSDF)
   const nsdf = new Float32Array(bufferSize);
@@ -415,7 +499,7 @@ function detectPitchYIN(
   sampleRate: number
 ): { frequency: number; confidence: number } {
   const bufferSize = buffer.length;
-  const yinThreshold = 0.15; // YIN 표준 임계값
+  const yinThreshold = activePitchParams.YIN_THRESHOLD; // Phase 77: activePitchParams 사용
 
   // 최적화: 음성 주파수 범위에 해당하는 tau만 계산
   // 65Hz ~ 1047Hz → tau = sampleRate/freq
@@ -612,23 +696,20 @@ function detectPitchEnsemble(
   const ratio = mpmFreq / yinFreq;
 
   // ========================================
-  // Phase 64: 저음 2배음 강제 보정
+  // Phase 64/77: 저음 2배음 강제 보정 (activePitchParams 사용)
   // ========================================
   // D2(73Hz) ~ G2(98Hz) 범위의 저음이 140-200Hz로 검출되는 경우
   // 둘 다 2배음을 검출했을 가능성이 높음 → 강제로 /2 적용
-  const VERY_LOW_NOTE_MAX = 100; // D2~G2 범위 상한
-  const HARMONIC_DETECTION_MIN = 140; // 2배음 검출 시 하한 (140Hz)
-  const HARMONIC_DETECTION_MAX = 210; // 2배음 검출 시 상한 (210Hz)
 
   // MPM과 YIN이 비슷하고 (±10%), 둘 다 140-210Hz 범위면 2배음으로 판단
   if (ratio > 0.9 && ratio < 1.1 &&
-      mpmFreq >= HARMONIC_DETECTION_MIN && mpmFreq <= HARMONIC_DETECTION_MAX &&
-      yinFreq >= HARMONIC_DETECTION_MIN && yinFreq <= HARMONIC_DETECTION_MAX) {
+      mpmFreq >= activePitchParams.HARMONIC_DETECTION_MIN && mpmFreq <= activePitchParams.HARMONIC_DETECTION_MAX &&
+      yinFreq >= activePitchParams.HARMONIC_DETECTION_MIN && yinFreq <= activePitchParams.HARMONIC_DETECTION_MAX) {
     // 평균 주파수의 절반이 저음 범위(65-100Hz)에 해당하면 보정
     const avgFreq = (mpmFreq + yinFreq) / 2;
     const correctedFreq = avgFreq / 2;
 
-    if (correctedFreq >= 65 && correctedFreq <= VERY_LOW_NOTE_MAX) {
+    if (correctedFreq >= activePitchParams.VOICE_MIN_FREQ && correctedFreq <= activePitchParams.VERY_LOW_NOTE_MAX) {
       console.log(`[Phase 64] 저음 2배음 보정: ${avgFreq.toFixed(0)}Hz → ${correctedFreq.toFixed(0)}Hz`);
       return {
         frequency: correctedFreq,

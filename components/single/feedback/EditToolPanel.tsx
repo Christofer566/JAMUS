@@ -65,29 +65,41 @@ export const EditToolPanel: React.FC<EditToolPanelProps> = ({
           <Redo size={16} />
           이후
         </button>
-        <button onClick={onReset} className={buttonStyle}>
-          <RotateCcw size={16} />
-          리셋
-        </button>
+        <div className="relative">
+          <button onClick={onReset} className={buttonStyle} title="리셋 (R)">
+            <RotateCcw size={16} />
+            리셋
+          </button>
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[10px] font-medium text-[#9B9B9B]">R</span>
+        </div>
 
         <div className="w-px h-7 bg-white/20" />
 
         {/* 이전/다음 음표 */}
-        <button onClick={onPrevNote} className={buttonStyle} title="이전 음표 (Q)">
-          <ChevronUp size={16} />
-          이전
-        </button>
+        <div className="relative">
+          <button onClick={onPrevNote} className={buttonStyle} title="이전 음표 (Q)">
+            <ChevronUp size={16} />
+            이전
+          </button>
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[10px] font-medium text-[#9B9B9B]">Q</span>
+        </div>
         <div className="px-2 py-1 text-sm text-gray-300 font-mono">
           {currentNoteIndex !== null ? `${currentNoteIndex + 1}/${totalNotes}` : '-/-'}
         </div>
-        <button onClick={onNextNote} className={buttonStyle} title="다음 음표 (W)">
-          <ChevronDown size={16} />
-          다음
-        </button>
-        <button onClick={onAddNote} className={buttonStyle} title="새 음표 추가">
-          <Plus size={16} />
-          새 음표
-        </button>
+        <div className="relative">
+          <button onClick={onNextNote} className={buttonStyle} title="다음 음표 (W)">
+            <ChevronDown size={16} />
+            다음
+          </button>
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[10px] font-medium text-[#9B9B9B]">W</span>
+        </div>
+        <div className="relative">
+          <button onClick={onAddNote} className={buttonStyle} title="새 음표 추가 (E)">
+            <Plus size={16} />
+            새 음표
+          </button>
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[10px] font-medium text-[#9B9B9B]">E</span>
+        </div>
 
         <div className="w-px h-7 bg-white/20" />
 
@@ -134,6 +146,9 @@ export const EditToolPanel: React.FC<EditToolPanelProps> = ({
               <h4 className="font-bold text-white text-sm mb-3">📌 조작 안내</h4>
               <ul className="space-y-1.5 text-xs text-gray-400">
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">Q/W</span> 이전/다음 음표</li>
+                <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">E</span> 새 음표 추가</li>
+                <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">R</span> 리셋</li>
+                <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">D</span> 녹음 듣기</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">↑↓</span> 음정 (반음)</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">←→</span> 위치 (슬롯)</li>
                 <li><span className="font-mono bg-white/10 px-1.5 py-0.5 rounded">Shift+←→</span> 길이</li>

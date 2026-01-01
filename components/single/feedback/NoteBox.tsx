@@ -65,15 +65,11 @@ const NoteBox: React.FC<NoteBoxProps> = ({
   const top = pitchToY(note.pitch, containerHeight);
   const height = 8; // 음표 박스 높이 (작게)
 
-  // 색상 결정
-  const isYellow = note.confidence === 'medium';
-
+  // 색상 결정 (노란색 제거 - 모든 음표 동일 색상)
   const baseStyle = 'absolute rounded-[2px] transition-colors duration-100 cursor-pointer';
   const colorStyle = isSelected
     ? 'bg-[#7BA7FF]/50 border border-[#7BA7FF] shadow-md'
-    : isYellow
-      ? 'bg-[#FFD700]/40 border border-[#FFD700]/60'
-      : 'bg-white/40 border border-white/60';
+    : 'bg-white/40 border border-white/60';
 
   // 드래그 시작 처리
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

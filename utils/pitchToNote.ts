@@ -21,37 +21,76 @@ const A4_MIDI = 69;
 // Self-Refining: 런타임 조정 가능 파라미터 시스템
 // ============================================
 export interface TunableParams {
-  // 저음 복원 파라미터
+  // ========================================
+  // 1. 저음 복원 파라미터
+  // ========================================
   LOW_FREQ_RECOVERY_MAX: number;      // 70-150Hz (현재 120)
-  LOW_SOLO_THRESHOLD: number;         // 100-150Hz (현재 130)
+  LOW_SOLO_THRESHOLD: number;         // 100-150Hz (현재 150)
   LOW_FREQ_CONFIDENCE_MIN: number;    // 0.10-0.30 (현재 0.15)
 
-  // 점유율 파라미터
-  OCCUPANCY_MIN: number;              // 0.50-0.80 (현재 0.70)
-  OCCUPANCY_SUSTAIN: number;          // 0.30-0.60 (현재 0.50)
+  // ========================================
+  // 2. 점유율 파라미터
+  // ========================================
+  OCCUPANCY_MIN: number;              // 0.50-0.80 (현재 0.75)
+  OCCUPANCY_HIGH: number;             // 0.60-0.80 (현재 0.70) - 새로 추가
+  OCCUPANCY_SUSTAIN: number;          // 0.30-0.60 (현재 0.55)
 
-  // 에너지 피크 파라미터
-  ENERGY_PEAK_CONFIDENCE_MIN: number; // 0.50-0.90 (현재 0.75)
-  ENERGY_PEAK_OCCUPANCY_MIN: number;  // 0.70-0.95 (현재 0.90)
+  // ========================================
+  // 3. 에너지 피크 파라미터
+  // ========================================
+  ENERGY_PEAK_CONFIDENCE_MIN: number; // 0.50-0.90 (현재 0.80)
+  ENERGY_PEAK_OCCUPANCY_MIN: number;  // 0.70-0.95 (현재 0.95)
 
-  // 음표 길이 파라미터
-  MIN_NOTE_DURATION_SLOTS: number;    // 1-3 (현재 2)
+  // ========================================
+  // 4. 음표 길이 파라미터
+  // ========================================
+  MIN_NOTE_DURATION_SLOTS: number;    // 1-3 (현재 1)
+  MAX_MERGE_SLOTS: number;            // 6-16 (현재 8)
 
-  // Cross-Measure Merge 최대 슬롯 (과잉 병합 방지)
-  MAX_MERGE_SLOTS: number;            // 6-12 (현재 무제한→8 추천)
+  // ========================================
+  // 5. 그리드 분석 파라미터 (새로 추가)
+  // ========================================
+  PITCH_CONFIDENCE_MIN: number;       // 0.20-0.50 (현재 0.35) - 프레임 레벨 신뢰도
+  GRID_SNAP_TOLERANCE: number;        // 0.10-0.25 (현재 0.15) - 박자 스냅 허용
+  TIMING_OFFSET_SLOTS: number;        // 1-5 (현재 3) - 타이밍 보정 오프셋
+
+  // ========================================
+  // 6. 음역대별 차별화 파라미터 (새로 추가)
+  // ========================================
+  MID_FREQ_MIN: number;               // 150-250Hz (현재 200) - 중음역대 시작
+  HIGH_FREQ_MIN: number;              // 400-600Hz (현재 500) - 고음역대 시작
+  LOW_FREQ_OCCUPANCY_BONUS: number;   // 0.0-0.15 (현재 0.10) - 저음 점유율 보너스
 }
 
-// 기본값 (자동 최적화 7차 최고 기록: 63.8%)
+// 기본값 (Phase 77: 파라미터 세분화)
 const DEFAULT_PARAMS: TunableParams = {
-  LOW_FREQ_RECOVERY_MAX: 120,
-  LOW_SOLO_THRESHOLD: 150,         // 130→150: D3=147Hz까지 보호
+  // 1. 저음 복원
+  LOW_FREQ_RECOVERY_MAX: 120,      // 저음 복구 상한
+  LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
   LOW_FREQ_CONFIDENCE_MIN: 0.15,
-  OCCUPANCY_MIN: 0.75,             // 0.70→0.75: 노이즈 필터링 강화
-  OCCUPANCY_SUSTAIN: 0.55,         // 0.50→0.55: Sustain 확장
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.80, // 0.75→0.80: 엄격한 피크 감지
-  ENERGY_PEAK_OCCUPANCY_MIN: 0.95, // 0.90→0.95: 엄격한 피크 점유율
-  MIN_NOTE_DURATION_SLOTS: 1,      // 2→1: 1슬롯 음표 허용
-  MAX_MERGE_SLOTS: 8               // 16→8: 과잉 병합 방지
+
+  // 2. 점유율
+  OCCUPANCY_MIN: 0.75,             // 노이즈 필터링
+  OCCUPANCY_HIGH: 0.70,            // 70% 이상 = high confidence
+  OCCUPANCY_SUSTAIN: 0.55,         // Sustain 확장
+
+  // 3. 에너지 피크
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.80, // 엄격한 피크 감지
+  ENERGY_PEAK_OCCUPANCY_MIN: 0.95, // 엄격한 피크 점유율
+
+  // 4. 음표 길이
+  MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
+  MAX_MERGE_SLOTS: 8,              // 과잉 병합 방지
+
+  // 5. 그리드 분석 (새로 추가)
+  PITCH_CONFIDENCE_MIN: 0.35,      // 프레임 레벨 신뢰도
+  GRID_SNAP_TOLERANCE: 0.15,       // 박자 스냅 허용
+  TIMING_OFFSET_SLOTS: 3,          // 타이밍 보정 오프셋
+
+  // 6. 음역대별 차별화 (새로 추가)
+  MID_FREQ_MIN: 200,               // 중음역대 시작 (G3)
+  HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
+  LOW_FREQ_OCCUPANCY_BONUS: 0.10   // 저음 점유율 보너스
 };
 
 // 현재 활성 파라미터 (런타임 조정 가능)
@@ -75,11 +114,9 @@ export function resetTunableParams(): void {
 // 그리드 분석 파라미터 (고정)
 const SLOTS_PER_MEASURE = 16;           // 1마디 = 16슬롯
 const RMS_THRESHOLD = 0.018;            // Phase 40: 0.02 → 0.018 (Missed 음표 구출, Gemini 제안)
-const OCCUPANCY_HIGH = 0.70;            // 70% 이상 = 확실
-const PITCH_CONFIDENCE_MIN = 0.35;      // Phase 40: 0.5 → 0.35 (음정 구출 강화, Gemini 제안)
-const GRID_SNAP_TOLERANCE = 0.15;       // 박자 경계 ±15% 허용
 const DEFAULT_PITCH = 'C4';             // 음정 감지 실패 시 기본값
-const TIMING_OFFSET_SLOTS = 3;          // Phase 35: 2 → 3 (32차 +1슬롯 패턴 보정, Gemini 제안)
+// Phase 77: OCCUPANCY_HIGH, PITCH_CONFIDENCE_MIN, GRID_SNAP_TOLERANCE, TIMING_OFFSET_SLOTS
+//           는 activeParams로 이동 (런타임 튜닝 가능)
 
 // 악보 표시 적정 범위 (오선지 중심)
 // Phase 15: 4 → 3 (남자 키 정답지 C3-C4 영역에 맞춤)
@@ -332,7 +369,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // Step 1: 옥타브 자동 조정 계산 (MPM 보정 고려)
   // ========================================
   const allValidFrames = frames.filter(
-    f => f.confidence >= PITCH_CONFIDENCE_MIN && f.frequency > 0
+    f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency > 0
   );
   const allValidFreqs = allValidFrames.map(f => f.frequency);
 
@@ -401,7 +438,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     slot.occupancy = soundFrames.length / slotFrames.length;
 
     // 점유율에 따른 confidence 판정 (activeParams 사용)
-    if (slot.occupancy >= OCCUPANCY_HIGH) {
+    if (slot.occupancy >= activeParams.OCCUPANCY_HIGH) {
       slot.confidence = 'high';
       highCount++;
     } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
@@ -417,7 +454,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     // 음정 결정 (유효 프레임의 중간값)
     // Phase 2: 사람 목소리 범위 (C2: 65Hz ~ C6: 1047Hz)
     const validFramesInSlot = slotFrames.filter(
-      f => f.confidence >= PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
+      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
     );
     const validFreqs = validFramesInSlot.map(f => f.frequency);
 
@@ -450,7 +487,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       slot.soundStartOffset = offsetRatio;
 
       // 슬롯 시작 대비 15% 이상 벗어나면 confidence를 medium으로
-      if (offsetRatio > GRID_SNAP_TOLERANCE && slot.confidence === 'high') {
+      if (offsetRatio > activeParams.GRID_SNAP_TOLERANCE && slot.confidence === 'high') {
         slot.confidence = 'medium';
         highCount--;
         mediumCount++;
@@ -602,8 +639,8 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
           ? frequencyToNote(snappedFreq, finalShift)
           : lastValidPitch;
 
-        // Phase 1: 타이밍 오프셋 적용
-        let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+        // Phase 1: 타이밍 오프셋 적용 (activeParams 사용)
+        let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
         let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
 
         // 마디 경계 처리
@@ -693,7 +730,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
             console.log(`[Phase 73] 에너지 피크 검출: 1슬롯 음표 허용`);
           }
 
-          let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+          let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
           let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
 
           if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
@@ -754,7 +791,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         console.log(`[Phase 73] 에너지 피크 검출: 1슬롯 음표 허용`);
       }
 
-      let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+      let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
       let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
 
       if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
@@ -885,6 +922,176 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     }
   }
   console.log(`[Phase 74-C] Duration Normalization 완료: ${durationNormCount}개 정규화`);
+
+  // ========================================
+  // Phase 76: Two-Pass Gap Recovery - 비활성화
+  // ========================================
+  // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
+  // 향후 프레임 품질 개선 후 재활성화 검토
+  /*
+
+  for (let i = 0; i < rawNotes.length - 1; i++) {
+    const currNote = rawNotes[i];
+    const nextNote = rawNotes[i + 1];
+
+    if (currNote.isRest || nextNote.isRest) continue;
+
+    // 현재 음표 끝 슬롯과 다음 음표 시작 슬롯 계산 (rawNotes는 TIMING_OFFSET_SLOTS 이동됨)
+    const currEndSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex + currNote.slotCount;
+    const nextStartSlot = nextNote.measureIndex * SLOTS_PER_MEASURE + nextNote.slotIndex;
+    const gapSize = nextStartSlot - currEndSlot;
+
+    // gap이 충분히 크면 복구 시도
+    if (gapSize >= GAP_RECOVERY_MIN_SLOTS) {
+      // 원본 slots 위치로 역산 (TIMING_OFFSET_SLOTS 빼기)
+      const origCurrEndSlot = currEndSlot - TIMING_OFFSET_SLOTS;
+      const origNextStartSlot = nextStartSlot - TIMING_OFFSET_SLOTS;
+
+      console.log(`[Phase 76] Gap 발견: size=${gapSize}, origRange=[${origCurrEndSlot}-${origNextStartSlot}]`);
+
+      // gap 구간의 슬롯들 재분석 (원본 slots 배열 기준)
+      const gapSlots = slots.filter(s => {
+        const slotPos = s.measureIndex * SLOTS_PER_MEASURE + s.slotIndex;
+        return slotPos >= origCurrEndSlot && slotPos < origNextStartSlot;
+      });
+
+      console.log(`[Phase 76] gapSlots: ${gapSlots.length}개`);
+
+      // 완화된 기준으로 유효 슬롯 찾기
+      const validGapSlots = gapSlots.filter(s => {
+        if (s.frames.length === 0) return false;
+
+        // 완화된 기준: occupancy 또는 유효 프레임 비율
+        const soundFrames = s.frames.filter(f => f.frequency > 0 || f.confidence > 0);
+        const relaxedOccupancy = soundFrames.length / s.frames.length;
+        if (relaxedOccupancy < GAP_RECOVERY_OCCUPANCY) return false;
+
+        // 유효 주파수 프레임 확인 (완화된 confidence)
+        const validFrames = s.frames.filter(
+          f => f.confidence >= GAP_RECOVERY_CONFIDENCE && f.frequency >= 65 && f.frequency <= 1047
+        );
+        return validFrames.length >= 2; // 최소 2프레임 (품질 보장)
+      });
+
+      console.log(`[Phase 76] validGapSlots: ${validGapSlots.length}개`);
+
+      if (validGapSlots.length === 0) continue;
+
+      // 연속된 유효 슬롯 그룹핑
+      let groupStart = validGapSlots[0];
+      let groupSlotCount = 1;
+      let groupFreqs: number[] = [];
+
+      const collectFreqs = (slot: SlotData): number[] => {
+        return slot.frames
+          .filter(f => f.confidence >= GAP_RECOVERY_CONFIDENCE && f.frequency >= 65 && f.frequency <= 1047)
+          .map(f => f.frequency);
+      };
+
+      groupFreqs.push(...collectFreqs(groupStart));
+
+      for (let j = 1; j < validGapSlots.length; j++) {
+        const prevSlot = validGapSlots[j - 1];
+        const currSlot = validGapSlots[j];
+        const prevPos = prevSlot.measureIndex * SLOTS_PER_MEASURE + prevSlot.slotIndex;
+        const currPos = currSlot.measureIndex * SLOTS_PER_MEASURE + currSlot.slotIndex;
+
+        if (currPos === prevPos + 1) {
+          // 연속 슬롯: 그룹에 추가
+          groupSlotCount++;
+          groupFreqs.push(...collectFreqs(currSlot));
+        } else {
+          // 연속 끊김: 이전 그룹으로 음표 생성
+          if (groupSlotCount >= 1 && groupFreqs.length >= 2) {
+            const medianFreq = median(groupFreqs);
+            const snappedFreq = pitchSnap(medianFreq);
+
+            // Low Solo 보호 (150Hz 이하는 옥타브 시프트 없음)
+            let finalShift = octaveShift;
+            if (medianFreq < activeParams.LOW_SOLO_THRESHOLD) {
+              finalShift = 0;
+            }
+
+            const recoveredPitch = frequencyToNote(snappedFreq, finalShift);
+
+            // 타이밍 오프셋 적용
+            let adjustedSlotIndex = groupStart.slotIndex + TIMING_OFFSET_SLOTS;
+            let adjustedMeasureIndex = groupStart.measureIndex;
+            if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
+              adjustedSlotIndex -= SLOTS_PER_MEASURE;
+              adjustedMeasureIndex++;
+            }
+
+            recoveredNotes.push({
+              pitch: recoveredPitch,
+              duration: slotCountToDuration(groupSlotCount),
+              beat: (adjustedMeasureIndex * SLOTS_PER_MEASURE + adjustedSlotIndex) / 4,
+              measureIndex: adjustedMeasureIndex,
+              slotIndex: adjustedSlotIndex,
+              slotCount: groupSlotCount,
+              confidence: 'medium',
+              isRest: false
+            });
+            gapRecoveryCount++;
+            console.log(`[Phase 76] Gap Recovery: ${recoveredPitch} (${groupSlotCount}슬롯) at orig gap [${origCurrEndSlot}-${origNextStartSlot}]`);
+          }
+
+          // 새 그룹 시작
+          groupStart = currSlot;
+          groupSlotCount = 1;
+          groupFreqs = collectFreqs(currSlot);
+        }
+      }
+
+      // 마지막 그룹 처리
+      if (groupSlotCount >= 1 && groupFreqs.length >= 2) {
+        const medianFreq = median(groupFreqs);
+        const snappedFreq = pitchSnap(medianFreq);
+
+        let finalShift = octaveShift;
+        if (medianFreq < activeParams.LOW_SOLO_THRESHOLD) {
+          finalShift = 0;
+        }
+
+        const recoveredPitch = frequencyToNote(snappedFreq, finalShift);
+
+        let adjustedSlotIndex = groupStart.slotIndex + TIMING_OFFSET_SLOTS;
+        let adjustedMeasureIndex = groupStart.measureIndex;
+        if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
+          adjustedSlotIndex -= SLOTS_PER_MEASURE;
+          adjustedMeasureIndex++;
+        }
+
+        recoveredNotes.push({
+          pitch: recoveredPitch,
+          duration: slotCountToDuration(groupSlotCount),
+          beat: (adjustedMeasureIndex * SLOTS_PER_MEASURE + adjustedSlotIndex) / 4,
+          measureIndex: adjustedMeasureIndex,
+          slotIndex: adjustedSlotIndex,
+          slotCount: groupSlotCount,
+          confidence: 'medium',
+          isRest: false
+        });
+        gapRecoveryCount++;
+        console.log(`[Phase 76] Gap Recovery: ${recoveredPitch} (${groupSlotCount}슬롯) at orig gap [${origCurrEndSlot}-${origNextStartSlot}]`);
+      }
+    }
+  }
+
+  // 복구된 음표 추가
+  if (recoveredNotes.length > 0) {
+    rawNotes.push(...recoveredNotes);
+    // 다시 슬롯 순서로 정렬
+    rawNotes.sort((a, b) => {
+      const slotA = a.measureIndex * SLOTS_PER_MEASURE + a.slotIndex;
+      const slotB = b.measureIndex * SLOTS_PER_MEASURE + b.slotIndex;
+      return slotA - slotB;
+    });
+    console.log(`[Phase 76] Gap Recovery 완료: ${gapRecoveryCount}개 음표 복구`);
+  } else {
+    console.log('[Phase 76] Gap Recovery: 복구할 음표 없음');
+  }
+  */
 
   // ========================================
   // Phase 3: 옥타브 점프 후처리 (DISABLED)

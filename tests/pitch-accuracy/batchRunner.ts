@@ -64,15 +64,33 @@ interface GroundTruthNote {
 }
 
 interface TunableParams {
+  // 1. 저음 복원 파라미터
   LOW_FREQ_RECOVERY_MAX: number;
   LOW_SOLO_THRESHOLD: number;
   LOW_FREQ_CONFIDENCE_MIN: number;
+
+  // 2. 점유율 파라미터
   OCCUPANCY_MIN: number;
+  OCCUPANCY_HIGH: number;
   OCCUPANCY_SUSTAIN: number;
+
+  // 3. 에너지 피크 파라미터
   ENERGY_PEAK_CONFIDENCE_MIN: number;
   ENERGY_PEAK_OCCUPANCY_MIN: number;
+
+  // 4. 음표 길이 파라미터
   MIN_NOTE_DURATION_SLOTS: number;
   MAX_MERGE_SLOTS: number;
+
+  // 5. 그리드 분석 파라미터
+  PITCH_CONFIDENCE_MIN: number;
+  GRID_SNAP_TOLERANCE: number;
+  TIMING_OFFSET_SLOTS: number;
+
+  // 6. 음역대별 차별화 파라미터
+  MID_FREQ_MIN: number;
+  HIGH_FREQ_MIN: number;
+  LOW_FREQ_OCCUPANCY_BONUS: number;
 }
 
 interface CaseResult {
@@ -107,35 +125,50 @@ interface IterationRecord {
 }
 
 // ============================================
-// 자동 최적화 7차 최고 기록 (63.8%)
+// Phase 77: 세분화된 파라미터 (pitchToNote.ts 동기화)
 // ============================================
-const GOLDEN_PARAMS_75: TunableParams = {
-  LOW_FREQ_RECOVERY_MAX: 120,
-  LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
+const GOLDEN_PARAMS_77: TunableParams = {
+  // 1. 저음 복원
+  LOW_FREQ_RECOVERY_MAX: 120,  // 150Hz 시도 실패 (61.7%→54.9%)
+  LOW_SOLO_THRESHOLD: 150,
   LOW_FREQ_CONFIDENCE_MIN: 0.15,
-  OCCUPANCY_MIN: 0.75,             // 노이즈 필터링 강화
-  OCCUPANCY_SUSTAIN: 0.55,         // Sustain 확장
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.80, // 엄격한 피크 감지
-  ENERGY_PEAK_OCCUPANCY_MIN: 0.95,  // 엄격한 피크 점유율
-  MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
-  MAX_MERGE_SLOTS: 8               // 과잉 병합 방지
+
+  // 2. 점유율
+  OCCUPANCY_MIN: 0.75,
+  OCCUPANCY_HIGH: 0.70,
+  OCCUPANCY_SUSTAIN: 0.55,
+
+  // 3. 에너지 피크
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
+  ENERGY_PEAK_OCCUPANCY_MIN: 0.95,
+
+  // 4. 음표 길이
+  MIN_NOTE_DURATION_SLOTS: 1,
+  MAX_MERGE_SLOTS: 8,
+
+  // 5. 그리드 분석
+  PITCH_CONFIDENCE_MIN: 0.35,
+  GRID_SNAP_TOLERANCE: 0.15,
+  TIMING_OFFSET_SLOTS: 3,
+
+  // 6. 음역대별 차별화
+  MID_FREQ_MIN: 200,
+  HIGH_FREQ_MIN: 500,
+  LOW_FREQ_OCCUPANCY_BONUS: 0.10
 };
 
-let activeParams: TunableParams = { ...GOLDEN_PARAMS_75 };
+let activeParams: TunableParams = { ...GOLDEN_PARAMS_77 };
 
 // ============================================
-// 상수
+// 상수 (Phase 77: 일부는 activeParams로 이동)
 // ============================================
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const A4_FREQ = 440;
 const A4_MIDI = 69;
 const SLOTS_PER_MEASURE = 16;
-const OCCUPANCY_HIGH = 0.70;
-const PITCH_CONFIDENCE_MIN = 0.35;
-const GRID_SNAP_TOLERANCE = 0.15;
 const DEFAULT_PITCH = 'C4';
-const TIMING_OFFSET_SLOTS = 3;
 const TARGET_MIN_OCTAVE = 3;
+// Phase 77: OCCUPANCY_HIGH, PITCH_CONFIDENCE_MIN, GRID_SNAP_TOLERANCE, TIMING_OFFSET_SLOTS는 activeParams에서 사용
 
 // ============================================
 // 헬퍼 함수들 (runner.ts와 동일)
@@ -250,7 +283,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   const totalSlots = totalMeasures * SLOTS_PER_MEASURE;
 
   const allValidFrames = frames.filter(
-    f => f.confidence >= PITCH_CONFIDENCE_MIN && f.frequency > 0
+    f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency > 0
   );
   const allValidFreqs = allValidFrames.map(f => f.frequency);
 
@@ -284,7 +317,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
     slot.occupancy = soundFrames.length / slotFrames.length;
 
-    if (slot.occupancy >= OCCUPANCY_HIGH) {
+    if (slot.occupancy >= activeParams.OCCUPANCY_HIGH) {
       slot.confidence = 'high';
     } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
       slot.confidence = 'medium';
@@ -294,7 +327,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     }
 
     const validFramesInSlot = slotFrames.filter(
-      f => f.confidence >= PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
+      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
     );
     const validFreqs = validFramesInSlot.map(f => f.frequency);
 
@@ -316,7 +349,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     if (firstSoundFrame) {
       const offsetRatio = (firstSoundFrame.time - startTime) / slotDuration;
       slot.soundStartOffset = offsetRatio;
-      if (offsetRatio > GRID_SNAP_TOLERANCE && slot.confidence === 'high') {
+      if (offsetRatio > activeParams.GRID_SNAP_TOLERANCE && slot.confidence === 'high') {
         slot.confidence = 'medium';
       }
     }
@@ -408,7 +441,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
         const finalPitch = snappedFreq > 0 ? frequencyToNote(snappedFreq, finalShift) : lastValidPitch;
 
-        let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+        let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
         let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
         if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
           adjustedSlotIndex -= SLOTS_PER_MEASURE;
@@ -480,7 +513,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
                                 isEnergyPeak(currentNote.startSlot);
 
         if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNote2) {
-          let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+          let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
           let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
           if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
             adjustedSlotIndex -= SLOTS_PER_MEASURE;
@@ -530,7 +563,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
                                isEnergyPeak(currentNote.startSlot);
 
     if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNoteLast) {
-      let adjustedSlotIndex = currentNote.startSlot.slotIndex + TIMING_OFFSET_SLOTS;
+      let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
       let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
       if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
         adjustedSlotIndex -= SLOTS_PER_MEASURE;
@@ -573,6 +606,10 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       rawNotes.splice(i, 1);
     }
   }
+
+  // Phase 76: Two-Pass Gap Recovery - 비활성화
+  // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
+  // 향후 프레임 품질 개선 후 재활성화 검토
 
   return rawNotes;
 }
@@ -908,7 +945,7 @@ async function runBatchAutoOptimization(datasetsDir: string, testDir: string): P
   const history: IterationRecord[] = [];
   let best = {
     iteration: 0,
-    params: { ...GOLDEN_PARAMS_75 },
+    params: { ...GOLDEN_PARAMS_77 },
     result: { cases: [], averages: { pitch: 0, timing: 0, duration: 0, overall: 0 }, totalNotes: 0, totalMatched: 0 } as BatchResult
   };
 
@@ -916,7 +953,7 @@ async function runBatchAutoOptimization(datasetsDir: string, testDir: string): P
   let exitReason = '';
 
   // 초기 테스트
-  activeParams = { ...GOLDEN_PARAMS_75 };
+  activeParams = { ...GOLDEN_PARAMS_77 };
   let prevResult = runBatchTest(datasetsDir);
 
   console.log(`\n  [0차] 초기 테스트 (${prevResult.cases.length}개 케이스)`);
