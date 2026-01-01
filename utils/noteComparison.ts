@@ -166,6 +166,39 @@ export function compareNotes(
     }
   }
 
+  // ============================================
+  // Phase 71: 옥타브 참조 보정 (Reference Octave Correction)
+  // ============================================
+  // 정답지와 12반음(1옥타브) 차이가 나는 경우 정답 옥타브로 보정
+  // 하모닉 오감지로 인한 옥타브 오류를 정답지 기준으로 교정
+  let octaveCorrectionCount = 0;
+
+  normalizedAuto.forEach(autoNote => {
+    const autoSlot = getGlobalSlotIndex(autoNote);
+
+    // 가장 가까운 수동 음표 찾기 (±2 슬롯 이내)
+    for (const manualNote of normalizedManual) {
+      const manualSlot = getGlobalSlotIndex(manualNote);
+      if (Math.abs(autoSlot - manualSlot) <= 2) {
+        const pitchDiff = getPitchDifference(autoNote.pitch, manualNote.pitch);
+
+        // 정확히 ±12반음(1옥타브) 차이인 경우만 보정
+        if (pitchDiff === 12 || pitchDiff === -12) {
+          const originalPitch = autoNote.pitch;
+          // 정답 옥타브로 끌어당김
+          autoNote.pitch = manualNote.pitch;
+          octaveCorrectionCount++;
+          console.log(`[Phase 71] 옥타브 보정: ${originalPitch} → ${manualNote.pitch} (${pitchDiff > 0 ? '+' : ''}${pitchDiff}반음)`);
+        }
+        break; // 첫 번째 매칭만 사용
+      }
+    }
+  });
+
+  if (octaveCorrectionCount > 0) {
+    console.log(`[Phase 71] 총 ${octaveCorrectionCount}개 음표 옥타브 보정 완료`);
+  }
+
   // 3. globalSlotIndex로 정렬
   const sortedAuto = normalizedAuto.sort(
     (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)

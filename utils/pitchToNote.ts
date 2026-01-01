@@ -616,32 +616,14 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   }
 
   // ========================================
-  // Phase 66: 첫 음 기준 상대 정렬 (활성화)
+  // Phase 71: 첫 음 강제 정렬 완전 비활성화
   // ========================================
-  // 감지된 첫 번째 음표의 시작점을 슬롯 0에 맞추고 전체 타임라인 재정렬
+  // 연주자의 의도적 공백(쉼표)을 존중
+  // 하드웨어 지연은 Pull-back으로만 보정
   if (rawNotes.length > 0) {
     const firstNote = rawNotes[0];
     const firstNoteGlobalSlot = firstNote.measureIndex * SLOTS_PER_MEASURE + firstNote.slotIndex;
-
-    // 최대 2마디(32슬롯)까지만 조정, 그 이상은 비정상
-    if (firstNoteGlobalSlot > 0 && firstNoteGlobalSlot < 32) {
-      // 모든 음표를 firstNoteGlobalSlot만큼 앞으로 이동
-      for (let i = 0; i < rawNotes.length; i++) {
-        const note = rawNotes[i];
-        const currentGlobalSlot = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex;
-        const newGlobalSlot = currentGlobalSlot - firstNoteGlobalSlot;
-
-        // 음수 슬롯 방지 (안전장치)
-        if (newGlobalSlot < 0) continue;
-
-        rawNotes[i] = {
-          ...note,
-          measureIndex: Math.floor(newGlobalSlot / SLOTS_PER_MEASURE),
-          slotIndex: newGlobalSlot % SLOTS_PER_MEASURE,
-          beat: newGlobalSlot / 4
-        };
-      }
-    }
+    console.log(`[Phase 71] 첫 음 위치 존중: ${firstNoteGlobalSlot}슬롯 (강제 정렬 비활성화)`);
   }
 
   // ========================================

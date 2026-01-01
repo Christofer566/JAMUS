@@ -528,9 +528,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     // ========================================
                     // Phase 55: Pull-back (황금 설정 - 타이밍 83.3%, 피치 61.1%)
                     // 고정 지연 + 추가 버퍼로 단순하고 안정적인 싱크
-                    // Phase 63: +50ms 추가 보정 (모든 음표 +1슬롯 밀림 해결)
+                    // Phase 71: -50ms (전체 +1슬롯 밀림 현상 해결)
                     // ========================================
-                    const PULLBACK_BUFFER_MS = 200; // 추가 버퍼 (150 + 50)
+                    const PULLBACK_BUFFER_MS = 150; // 추가 버퍼 (150)
                     const pullbackSeconds = (staticLatencyRef.current + PULLBACK_BUFFER_MS) / 1000;
                     const startMarker = Math.max(0, rawStartMarker - pullbackSeconds);
 
