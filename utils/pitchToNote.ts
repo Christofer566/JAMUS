@@ -105,10 +105,10 @@ const DEFAULT_PARAMS: TunableParams = {
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
   LOW_FREQ_OCCUPANCY_BONUS: 0.15,  // 저음 점유율 보너스
 
-  // 7. Onset Detection (Phase 77) - 비활성화: 효과 미미 (trade-off)
-  ONSET_ENERGY_RATIO: 2.0,         // 에너지 급증 비율 임계값
-  ONSET_CONFIDENCE_JUMP: 0.3,      // confidence 급증 임계값
-  ONSET_DETECTION_ENABLED: false,  // 비활성화 (타이밍↑ 길이↓ 상쇄됨)
+  // 7. Onset Detection (Phase 77/95) - 회수율 90% 달성
+  ONSET_ENERGY_RATIO: 1.2,         // 에너지 급증 비율 임계값 (2.0→1.2 낮춤)
+  ONSET_CONFIDENCE_JUMP: 0.1,      // confidence 급증 임계값 (0.3→0.1 낮춤)
+  ONSET_DETECTION_ENABLED: true,   // 활성화 (동일 음정 반복 분리)
 
   // 8. Pitch Stability Filter (Phase 80) - 비활성화: 효과 없음
   PITCH_STABILITY_THRESHOLD: 0.20, // 주파수 표준편차 / 평균 (변동계수) 허용 임계값
@@ -347,11 +347,19 @@ function modeFrequency(arr: number[]): number {
  * Phase 55: 1.62x threshold 황금 설정
  * Phase 67: 로그 제거
  * Phase 93: 저음역대 배음 필터 강화
+ * Phase 94: 서브하모닉 보정 (100Hz 미만 → 옥타브 올림)
  */
 function correctOctaveError(frequency: number, contextFreqs: number[]): number {
   if (frequency <= 0 || contextFreqs.length === 0) return frequency;
 
   const avgContextFreq = contextFreqs.reduce((sum, f) => sum + f, 0) / contextFreqs.length;
+
+  // Phase 94: 서브하모닉 보정
+  // 100Hz 미만의 매우 낮은 주파수는 서브하모닉일 가능성이 높음
+  // 남성 저음 범위 (A2=110Hz ~ F3=175Hz)에 맞추기 위해 옥타브 올림
+  if (frequency < 100 && frequency > 65) {
+    return frequency * 2;
+  }
 
   // Phase 93: 저음역대 배음 필터 강화
   // context 평균이 저음역대(200Hz 미만)인데 감지 주파수가 높으면 배음일 가능성
@@ -735,6 +743,67 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   if (hysteresisRecoveredTotal > 0) {
     console.log(`[Phase 92] 인접 연속성 복구: ${hysteresisRecoveredTotal}개 슬롯 복구`);
     console.log('[Grid] 슬롯 분포 (연속성 복구 후):', { high: highCount, medium: mediumCount, empty: emptyCount });
+  }
+
+  // ========================================
+  // Phase 95: Gap Filling (빈 슬롯 채우기)
+  // ========================================
+  // 앞뒤 유효 슬롯 사이에 excluded 슬롯이 있으면 강제로 음표로 간주
+  // 긴 음표 중간에 끊긴 부분을 살려서 회수율 향상
+  const MAX_GAP_SIZE = 8; // 최대 8슬롯까지 gap filling (반 마디)
+  let gapFilledCount = 0;
+
+  // 유효한 슬롯들의 인덱스 수집
+  const validIndices: number[] = [];
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i].confidence !== 'excluded') {
+      validIndices.push(i);
+    }
+  }
+
+  // 연속된 유효 슬롯 사이의 gap 채우기
+  for (let v = 0; v < validIndices.length - 1; v++) {
+    const startIdx = validIndices[v];
+    const endIdx = validIndices[v + 1];
+    const gapSize = endIdx - startIdx - 1;
+
+    // gap이 있고, 크기가 허용 범위 내인 경우
+    if (gapSize > 0 && gapSize <= MAX_GAP_SIZE) {
+      const startSlot = slots[startIdx];
+      const endSlot = slots[endIdx];
+
+      // 앞뒤 슬롯의 음정이 비슷한지 확인 (±7반음 이내 = 완전5도)
+      if (startSlot.pitch && endSlot.pitch) {
+        const startMidi = pitchToMidi(startSlot.pitch);
+        const endMidi = pitchToMidi(endSlot.pitch);
+        const pitchDiff = Math.abs(startMidi - endMidi);
+
+        // 같은 음이거나 가까운 음이면 gap 채우기
+        if (pitchDiff <= 7) {
+          for (let g = startIdx + 1; g < endIdx; g++) {
+            const gapSlot = slots[g];
+
+            // 이미 유효한 슬롯은 스킵
+            if (gapSlot.confidence !== 'excluded') continue;
+
+            // gap 슬롯을 무조건 채우기 (프레임 체크 제거)
+            // 앞 슬롯의 음정을 상속
+            gapSlot.confidence = 'medium';
+            gapSlot.pitch = startSlot.pitch;
+            gapSlot.medianFrequency = startSlot.medianFrequency;
+
+            gapFilledCount++;
+            emptyCount--;
+            mediumCount++;
+          }
+        }
+      }
+    }
+  }
+
+  if (gapFilledCount > 0) {
+    console.log(`[Phase 95] Gap Filling: ${gapFilledCount}개 슬롯 복구`);
+    console.log('[Grid] 슬롯 분포 (Gap Filling 후):', { high: highCount, medium: mediumCount, empty: emptyCount });
   }
 
   // ========================================

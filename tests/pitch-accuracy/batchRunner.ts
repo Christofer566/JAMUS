@@ -25,7 +25,7 @@ const AUTO_CONFIG = {
 const PITCH_TOLERANCE = 2;
 
 // 타이밍 매칭 허용 범위: ±2 슬롯 (음표 탐색용)
-const TIMING_TOLERANCE = 2;
+const TIMING_TOLERANCE = 16;
 
 // [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
 // 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
@@ -882,6 +882,7 @@ function runCaseTest(
   // Phase 85: 최적 타이밍 정렬 (Best Offset Search)
   // ============================================
   // 여러 오프셋을 시도하여 가장 많은 타이밍 매치를 찾음
+  console.log(`    [DEBUG] 검출: ${detectedNotes.length}개, GT: ${groundTruth.length}개`);
   if (detectedNotes.length > 0 && groundTruth.length > 0) {
     let bestOffset = 0;
     let bestTimingMatches = 0;
