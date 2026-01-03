@@ -17,6 +17,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // ============================================
+// pitchToNote.ts에서 핵심 로직 import (동기화)
+// ============================================
+import {
+  convertToNotes,
+  setTunableParams,
+  getTunableParams,
+  TunableParams,
+  frequencyToNote,
+  pitchToMidi
+} from '../../utils/pitchToNote';
+import { PitchFrame } from '../../types/pitch';
+import { NoteData } from '../../types/note';
+
+// ============================================
 // 자동 최적화 설정
 // ============================================
 const AUTO_CONFIG = {
@@ -80,28 +94,8 @@ interface BestRecord {
 }
 
 // ============================================
-// 타입 정의
+// 타입 정의 (PitchFrame, NoteData는 import됨)
 // ============================================
-interface PitchFrame {
-  time: number;
-  frequency: number;
-  confidence: number;
-  isMpmCorrected?: boolean;
-  originalFrequency?: number;
-  correctionFactor?: number;
-}
-
-interface NoteData {
-  pitch: string;
-  duration: string;
-  beat: number;
-  measureIndex: number;
-  slotIndex: number;
-  slotCount: number;
-  confidence: 'high' | 'medium';
-  isRest: boolean;
-}
-
 interface GroundTruthNote {
   measure: number;
   slot: number;
@@ -129,75 +123,63 @@ interface ErrorDetail {
 }
 
 // ============================================
-// 튜닝 가능 파라미터 (pitchToNote.ts Phase 75와 동기화)
+// TunableParams는 pitchToNote.ts에서 import됨
 // ============================================
-interface TunableParams {
-  // 1. 저음 복원 파라미터
-  LOW_FREQ_RECOVERY_MAX: number;
-  LOW_SOLO_THRESHOLD: number;
-  LOW_FREQ_CONFIDENCE_MIN: number;
-
-  // 2. 점유율 파라미터
-  OCCUPANCY_MIN: number;
-  OCCUPANCY_HIGH: number;
-  OCCUPANCY_SUSTAIN: number;
-
-  // 3. 에너지 피크 파라미터
-  ENERGY_PEAK_CONFIDENCE_MIN: number;
-  ENERGY_PEAK_OCCUPANCY_MIN: number;
-
-  // 4. 음표 길이 파라미터
-  MIN_NOTE_DURATION_SLOTS: number;
-  MAX_MERGE_SLOTS: number;
-
-  // 5. 그리드 분석 파라미터
-  PITCH_CONFIDENCE_MIN: number;
-  GRID_SNAP_TOLERANCE: number;
-  TIMING_OFFSET_SLOTS: number;
-
-  // 6. 음역대별 차별화 파라미터
-  MID_FREQ_MIN: number;
-  HIGH_FREQ_MIN: number;
-  LOW_FREQ_OCCUPANCY_BONUS: number;
-}
 
 // ============================================
 // Phase 75: 황금 설정 (절대 변경 금지)
 // goldenSettings75.json에서 로드하며, 개선되지 않으면 자동 롤백
+// pitchToNote.ts의 setTunableParams()를 사용하여 동기화
 // ============================================
 function loadGoldenParams75(): TunableParams {
   const goldenPath = path.join(path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'), 'goldenSettings75.json');
 
+  let params: Partial<TunableParams>;
+
   if (fs.existsSync(goldenPath)) {
     const data = JSON.parse(fs.readFileSync(goldenPath, 'utf-8'));
     console.log(`  [LOCKED] 75차 황금 설정 로드됨 (${data.lockedAt})`);
-    return data.params as TunableParams;
+    params = data.params as Partial<TunableParams>;
+  } else {
+    // 파일 없을 경우 하드코딩된 기본값
+    console.log('  [WARNING] goldenSettings75.json not found, using hardcoded defaults');
+    params = {
+      LOW_FREQ_RECOVERY_MAX: 120,
+      LOW_SOLO_THRESHOLD: 150,
+      LOW_FREQ_CONFIDENCE_MIN: 0.15,
+      OCCUPANCY_MIN: 0.75,
+      OCCUPANCY_HIGH: 0.70,
+      OCCUPANCY_SUSTAIN: 0.55,
+      ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
+      ENERGY_PEAK_OCCUPANCY_MIN: 0.95,
+      MIN_NOTE_DURATION_SLOTS: 1,
+      MAX_MERGE_SLOTS: 8,
+      PITCH_CONFIDENCE_MIN: 0.35,
+      GRID_SNAP_TOLERANCE: 0.15,
+      TIMING_OFFSET_SLOTS: 3,
+      MID_FREQ_MIN: 200,
+      HIGH_FREQ_MIN: 500,
+      LOW_FREQ_OCCUPANCY_BONUS: 0.10,
+      // Phase 77-80 파라미터
+      ONSET_ENERGY_RATIO: 2.0,
+      ONSET_CONFIDENCE_JUMP: 0.3,
+      ONSET_DETECTION_ENABLED: false,
+      PITCH_STABILITY_THRESHOLD: 0.20,
+      PITCH_STABILITY_ENABLED: false
+    };
   }
 
-  // 파일 없을 경우 하드코딩된 기본값
-  console.log('  [WARNING] goldenSettings75.json not found, using hardcoded defaults');
-  return {
-    LOW_FREQ_RECOVERY_MAX: 120,
-    LOW_SOLO_THRESHOLD: 150,
-    LOW_FREQ_CONFIDENCE_MIN: 0.15,
-    OCCUPANCY_MIN: 0.75,
-    OCCUPANCY_HIGH: 0.70,
-    OCCUPANCY_SUSTAIN: 0.55,
-    ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
-    ENERGY_PEAK_OCCUPANCY_MIN: 0.95,
-    MIN_NOTE_DURATION_SLOTS: 1,
-    MAX_MERGE_SLOTS: 8,
-    PITCH_CONFIDENCE_MIN: 0.35,
-    GRID_SNAP_TOLERANCE: 0.15,
-    TIMING_OFFSET_SLOTS: 3,
-    MID_FREQ_MIN: 200,
-    HIGH_FREQ_MIN: 500,
-    LOW_FREQ_OCCUPANCY_BONUS: 0.10
-  };
+  // pitchToNote.ts의 activeParams와 동기화
+  setTunableParams(params);
+  return getTunableParams();
 }
 
 // 75차 황금 설정 (런타임에 로드)
 let GOLDEN_PARAMS_75: TunableParams;
+
+// 현재 활성 파라미터 (getTunableParams()로 초기화, setTunableParams()로 변경)
+// pitchToNote.ts와 동기화된 activeParams 로컬 복사본
+let activeParams: TunableParams;
 
 // ============================================
 // 절대 변경 금지 파라미터 (useRecorder.ts에서 관리)
@@ -218,547 +200,27 @@ const FAILED_ATTEMPTS = [
   { param: 'RMS', value: 0.012, result: '노이즈 폭증 - 숨소리까지 음표로 인식' },
 ];
 
-let activeParams: TunableParams;
-
 // ============================================
-// 상수 (Phase 75: 일부는 activeParams로 이동)
+// 상수 (테스트 전용)
 // ============================================
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const SLOTS_PER_MEASURE = 16;
 const A4_FREQ = 440;
 const A4_MIDI = 69;
-const SLOTS_PER_MEASURE = 16;
-const DEFAULT_PITCH = 'C4';
-const TARGET_MIN_OCTAVE = 3;
 let START_MEASURE = 9; // 녹음 시작 마디 (groundTruth에서 동적으로 설정됨)
-// Phase 75: OCCUPANCY_HIGH, PITCH_CONFIDENCE_MIN, GRID_SNAP_TOLERANCE, TIMING_OFFSET_SLOTS는 activeParams에서 사용
 
 // ============================================
-// 헬퍼 함수들
+// 헬퍼 함수들 (frequencyToNote, pitchToMidi는 pitchToNote.ts에서 import)
 // ============================================
-function frequencyToNote(hz: number, octaveShift: number = 0): string {
-  if (hz <= 0) return 'rest';
-
-  const midiNote = Math.round(12 * Math.log2(hz / A4_FREQ) + A4_MIDI);
-  let octave = Math.floor(midiNote / 12) - 1 + octaveShift;
-  const noteIndex = ((midiNote % 12) + 12) % 12;
-
-  const LOW_FREQ_OCTAVE_GUARDRAIL = 200;
-  if (hz <= LOW_FREQ_OCTAVE_GUARDRAIL && octave >= 4) {
-    octave = octave - 1;
-  }
-
-  if (octave >= 5) {
-    octave = octave - 1;
-  }
-
-  return `${NOTE_NAMES[noteIndex]}${octave}`;
-}
-
-function frequencyToOctave(hz: number): number {
-  if (hz <= 0) return -1;
-  const midiNote = Math.round(12 * Math.log2(hz / A4_FREQ) + A4_MIDI);
-  return Math.floor(midiNote / 12) - 1;
-}
-
-function pitchSnap(hz: number): number {
-  if (hz <= 0) return hz;
-
-  const exactMidi = 12 * Math.log2(hz / A4_FREQ) + A4_MIDI;
-  const nearestMidi = Math.round(exactMidi);
-  const centsDeviation = (exactMidi - nearestMidi) * 100;
-
-  const LOW_FREQ_THRESHOLD = 200;
-  const SNAP_THRESHOLD_NORMAL = 50;
-  const SNAP_THRESHOLD_LOW = 75;
-
-  const snapThreshold = hz <= LOW_FREQ_THRESHOLD ? SNAP_THRESHOLD_LOW : SNAP_THRESHOLD_NORMAL;
-
-  if (Math.abs(centsDeviation) <= snapThreshold) {
-    return A4_FREQ * Math.pow(2, (nearestMidi - A4_MIDI) / 12);
-  }
-
-  return hz;
-}
-
-function pitchToMidi(pitch: string): number {
-  if (pitch === 'rest') return -1;
-
-  const match = pitch.match(/^([A-G])([#b]?)(\d)$/);
-  if (!match) return -1;
-
-  const [, noteName, accidental, octave] = match;
-  const noteIndex = NOTE_NAMES.indexOf(noteName + (accidental === '#' ? '#' : ''));
-  if (noteIndex === -1) {
-    const baseIndex = NOTE_NAMES.indexOf(noteName);
-    if (accidental === 'b' && baseIndex > 0) {
-      return (parseInt(octave) + 1) * 12 + baseIndex - 1;
-    }
-    return -1;
-  }
-
-  return (parseInt(octave) + 1) * 12 + noteIndex;
-}
-
-function isSimilarPitch(pitch1: string, pitch2: string): boolean {
-  if (pitch1 === 'rest' || pitch2 === 'rest') return pitch1 === pitch2;
-
-  const midi1 = pitchToMidi(pitch1);
-  const midi2 = pitchToMidi(pitch2);
-
-  if (midi1 === -1 || midi2 === -1) return false;
-
-  return Math.abs(midi1 - midi2) <= 1;
-}
-
-function slotCountToDuration(slotCount: number): string {
-  if (slotCount >= 16) return 'w';
-  if (slotCount >= 8) return 'h';
-  if (slotCount >= 4) return 'q';
-  if (slotCount >= 2) return '8';
-  return '16';
-}
-
-function median(arr: number[]): number {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function correctOctaveError(frequency: number, contextFreqs: number[]): number {
-  if (frequency <= 0 || contextFreqs.length === 0) return frequency;
-
-  const avgContextFreq = contextFreqs.reduce((sum, f) => sum + f, 0) / contextFreqs.length;
-
-  if (frequency > avgContextFreq * 1.62) {
-    return frequency / 2;
-  }
-
-  if (frequency < avgContextFreq * 0.55) {
-    return frequency * 2;
-  }
-
-  return frequency;
-}
+// midiToFreq는 오류 분석에만 사용 (테스트 전용)
+// convertToNotes는 pitchToNote.ts에서 import됨
 
 // ============================================
-// Slot 분석 타입
+// 정확도 테스트를 위해 convertToNotes 결과에서 쉼표 제외
+// (pitchToNote.ts의 convertToNotes를 그대로 사용)
 // ============================================
-interface SlotData {
-  measureIndex: number;
-  slotIndex: number;
-  globalSlotIndex: number;
-  startTime: number;
-  endTime: number;
-  frames: PitchFrame[];
-  occupancy: number;
-  medianFrequency: number;
-  pitch: string;
-  confidence: 'high' | 'medium' | 'excluded';
-  soundStartOffset: number;
-}
+// NOTE: convertToNotes는 이제 import된 함수를 사용합니다.
+// 아래 REMOVE_BLOCK_START ~ REMOVE_BLOCK_END 사이의 중복 코드는 제거되었습니다.
 
-// ============================================
-// 메인 변환 함수 (pitchToNote.ts 로직 복제)
-// ============================================
-function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
-  if (frames.length === 0) {
-    return [];
-  }
-
-  const safeBpm = bpm > 0 ? bpm : 120;
-  const beatDuration = 60 / safeBpm;
-  const slotDuration = beatDuration / 4;
-  const measureDuration = beatDuration * 4;
-
-  const totalDuration = frames[frames.length - 1].time;
-  const totalMeasures = Math.ceil(totalDuration / measureDuration);
-  const totalSlots = totalMeasures * SLOTS_PER_MEASURE;
-
-  // Phase 64 제거: 무조건 /2 보정은 정상 음표까지 파괴
-  // 대신 원본 frames 사용 (보정은 usePitchAnalyzer에서만 수행)
-  const correctedFrames = frames;
-
-  // Step 1: 옥타브 자동 조정 (correctedFrames 사용, activeParams 사용)
-  const allValidFrames = correctedFrames.filter(
-    f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency > 0
-  );
-  const allValidFreqs = allValidFrames.map(f => f.frequency);
-
-  const rawShift = allValidFreqs.length > 0
-    ? frequencyToOctave(median(allValidFreqs))
-    : 4;
-
-  const targetShift = TARGET_MIN_OCTAVE;
-  const octaveShift = targetShift - rawShift;
-
-  // Step 2: 슬롯 그리드 생성
-  const slots: SlotData[] = [];
-
-  for (let globalSlot = 0; globalSlot < totalSlots; globalSlot++) {
-    const measureIndex = Math.floor(globalSlot / SLOTS_PER_MEASURE);
-    const slotIndex = globalSlot % SLOTS_PER_MEASURE;
-    const startTime = globalSlot * slotDuration;
-    const endTime = (globalSlot + 1) * slotDuration;
-
-    const slotFrames = correctedFrames.filter(f => f.time >= startTime && f.time < endTime);
-
-    const slot: SlotData = {
-      measureIndex,
-      slotIndex,
-      globalSlotIndex: globalSlot,
-      startTime,
-      endTime,
-      frames: slotFrames,
-      occupancy: 0,
-      medianFrequency: 0,
-      pitch: DEFAULT_PITCH,
-      confidence: 'excluded',
-      soundStartOffset: 0
-    };
-
-    if (slotFrames.length === 0) {
-      slot.confidence = 'excluded';
-      slots.push(slot);
-      continue;
-    }
-
-    const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
-    slot.occupancy = soundFrames.length / slotFrames.length;
-
-    if (slot.occupancy >= activeParams.OCCUPANCY_HIGH) {
-      slot.confidence = 'high';
-    } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
-      slot.confidence = 'medium';
-    } else {
-      slot.confidence = 'excluded';
-      slots.push(slot);
-      continue;
-    }
-
-    const validFramesInSlot = slotFrames.filter(
-      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
-    );
-    const validFreqs = validFramesInSlot.map(f => f.frequency);
-
-    if (validFreqs.length > 0) {
-      slot.medianFrequency = median(validFreqs);
-
-      const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-
-      // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
-      const isLowFreq = slot.medianFrequency < activeParams.LOW_SOLO_THRESHOLD;
-      const correctedFreq = isLowFreq
-        ? slot.medianFrequency
-        : correctOctaveError(slot.medianFrequency, contextFreqs);
-      const snappedFreq = pitchSnap(correctedFreq);
-
-      // 저음역대는 옥타브 시프트도 적용하지 않음
-      const finalShift = isLowFreq ? 0 : octaveShift;
-
-      slot.pitch = frequencyToNote(snappedFreq, finalShift);
-    }
-
-    const firstSoundFrame = soundFrames[0];
-    if (firstSoundFrame) {
-      const offsetRatio = (firstSoundFrame.time - startTime) / slotDuration;
-      slot.soundStartOffset = offsetRatio;
-
-      if (offsetRatio > activeParams.GRID_SNAP_TOLERANCE && slot.confidence === 'high') {
-        slot.confidence = 'medium';
-      }
-    }
-
-    slots.push(slot);
-  }
-
-  // Phase 72: 저음 재검증 패스
-  const LOW_FREQ_RECOVERY_MIN = 70;
-  const LOW_FREQ_CONTINUITY_MIN = 3;
-  const LOW_FREQ_VARIANCE_MAX = 0.15;
-
-  for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i];
-
-    if (slot.confidence !== 'excluded') continue;
-
-    const lowFreqFrames = slot.frames.filter(
-      f => f.frequency >= LOW_FREQ_RECOVERY_MIN &&
-           f.frequency <= activeParams.LOW_FREQ_RECOVERY_MAX &&
-           f.confidence >= activeParams.LOW_FREQ_CONFIDENCE_MIN
-    );
-
-    if (lowFreqFrames.length < LOW_FREQ_CONTINUITY_MIN) continue;
-
-    const freqs = lowFreqFrames.map(f => f.frequency);
-    const medianFreq = median(freqs);
-    const allWithinVariance = freqs.every(
-      f => Math.abs(f - medianFreq) / medianFreq <= LOW_FREQ_VARIANCE_MAX
-    );
-
-    if (!allWithinVariance) continue;
-
-    slot.confidence = 'medium';
-    slot.medianFrequency = medianFreq;
-    slot.occupancy = lowFreqFrames.length / slot.frames.length;
-
-    const snappedFreq = pitchSnap(medianFreq);
-    slot.pitch = frequencyToNote(snappedFreq, 0);
-  }
-
-  // Step 3: 연속 슬롯 병합
-  const rawNotes: NoteData[] = [];
-  let currentNote: {
-    startSlot: SlotData;
-    slotCount: number;
-    frequencies: number[];
-    confidence: 'high' | 'medium';
-  } | null = null;
-
-  let lastValidPitch = DEFAULT_PITCH;
-
-  const isEnergyPeak = (slot: SlotData): boolean => {
-    if (slot.occupancy < activeParams.ENERGY_PEAK_OCCUPANCY_MIN) return false;
-
-    const frameConfidences = slot.frames
-      .filter(f => f.frequency > 0)
-      .map(f => f.confidence);
-
-    if (frameConfidences.length === 0) return false;
-
-    const avgConfidence = frameConfidences.reduce((a, b) => a + b, 0) / frameConfidences.length;
-    return avgConfidence >= activeParams.ENERGY_PEAK_CONFIDENCE_MIN;
-  };
-
-  for (const slot of slots) {
-    if (slot.confidence === 'excluded') {
-      // Sustain Bridge
-      if (currentNote && slot.occupancy >= activeParams.OCCUPANCY_SUSTAIN && slot.medianFrequency > 0) {
-        const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-        if (currentMedianFreq > 0) {
-          const freqRatio = slot.medianFrequency / currentMedianFreq;
-          if (freqRatio >= 0.9 && freqRatio <= 1.1) {
-            currentNote.slotCount++;
-            currentNote.frequencies.push(slot.medianFrequency);
-            continue;
-          }
-        }
-      }
-
-      if (currentNote) {
-        const allowShortNote = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
-                               isEnergyPeak(currentNote.startSlot);
-
-        if (currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS && !allowShortNote) {
-          currentNote = null;
-          continue;
-        }
-
-        const medianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-        const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-
-        // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
-        const isLowFreq = medianFreq > 0 && medianFreq < activeParams.LOW_SOLO_THRESHOLD;
-        const correctedFreq = medianFreq > 0
-          ? (isLowFreq ? medianFreq : correctOctaveError(medianFreq, contextFreqs))
-          : 0;
-        const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
-
-        const finalShift = isLowFreq ? 0 : octaveShift;
-
-        const finalPitch = snappedFreq > 0
-          ? frequencyToNote(snappedFreq, finalShift)
-          : lastValidPitch;
-
-        let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
-        let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
-
-        if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
-          adjustedSlotIndex -= SLOTS_PER_MEASURE;
-          adjustedMeasureIndex++;
-        }
-
-        rawNotes.push({
-          pitch: finalPitch,
-          duration: slotCountToDuration(currentNote.slotCount),
-          beat: (adjustedMeasureIndex * SLOTS_PER_MEASURE + adjustedSlotIndex) / 4,
-          measureIndex: adjustedMeasureIndex,
-          slotIndex: adjustedSlotIndex,
-          slotCount: currentNote.slotCount,
-          confidence: currentNote.confidence,
-          isRest: false
-        });
-
-        lastValidPitch = finalPitch;
-        currentNote = null;
-      }
-      continue;
-    }
-
-    if (currentNote === null) {
-      currentNote = {
-        startSlot: slot,
-        slotCount: 1,
-        frequencies: slot.medianFrequency > 0 ? [slot.medianFrequency] : [],
-        confidence: slot.confidence
-      };
-    } else {
-      const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-      const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-
-      // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
-      const isCurrentLowFreq = currentMedianFreq > 0 && currentMedianFreq < activeParams.LOW_SOLO_THRESHOLD;
-      const currentCorrectedFreq = currentMedianFreq > 0
-        ? (isCurrentLowFreq ? currentMedianFreq : correctOctaveError(currentMedianFreq, contextFreqs))
-        : 0;
-
-      const currentFinalShift = isCurrentLowFreq ? 0 : octaveShift;
-
-      const currentPitch = currentCorrectedFreq > 0
-        ? frequencyToNote(currentCorrectedFreq, currentFinalShift)
-        : lastValidPitch;
-
-      if (isSimilarPitch(currentPitch, slot.pitch)) {
-        currentNote.slotCount++;
-        if (slot.medianFrequency > 0) {
-          currentNote.frequencies.push(slot.medianFrequency);
-        }
-        if (slot.confidence === 'medium') {
-          currentNote.confidence = 'medium';
-        }
-      } else {
-        const medianFreq2 = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-
-        // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
-        const isLowFreq2 = medianFreq2 > 0 && medianFreq2 < activeParams.LOW_SOLO_THRESHOLD;
-        const correctedFreq = medianFreq2 > 0
-          ? (isLowFreq2 ? medianFreq2 : correctOctaveError(medianFreq2, contextFreqs))
-          : 0;
-        const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
-
-        const finalShift = isLowFreq2 ? 0 : octaveShift;
-
-        const finalPitch = snappedFreq > 0
-          ? frequencyToNote(snappedFreq, finalShift)
-          : lastValidPitch;
-
-        const allowShortNote2 = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
-                                isEnergyPeak(currentNote.startSlot);
-
-        if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNote2) {
-          let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
-          let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
-
-          if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
-            adjustedSlotIndex -= SLOTS_PER_MEASURE;
-            adjustedMeasureIndex++;
-          }
-
-          rawNotes.push({
-            pitch: finalPitch,
-            duration: slotCountToDuration(currentNote.slotCount),
-            beat: (adjustedMeasureIndex * SLOTS_PER_MEASURE + adjustedSlotIndex) / 4,
-            measureIndex: adjustedMeasureIndex,
-            slotIndex: adjustedSlotIndex,
-            slotCount: currentNote.slotCount,
-            confidence: currentNote.confidence,
-            isRest: false
-          });
-
-          lastValidPitch = finalPitch;
-        }
-
-        currentNote = {
-          startSlot: slot,
-          slotCount: 1,
-          frequencies: slot.medianFrequency > 0 ? [slot.medianFrequency] : [],
-          confidence: slot.confidence
-        };
-      }
-    }
-  }
-
-  // 마지막 음표 처리
-  if (currentNote) {
-    const medianFreqLast = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-    const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
-
-    // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
-    const isLowFreqLast = medianFreqLast > 0 && medianFreqLast < activeParams.LOW_SOLO_THRESHOLD;
-    const correctedFreq = medianFreqLast > 0
-      ? (isLowFreqLast ? medianFreqLast : correctOctaveError(medianFreqLast, contextFreqs))
-      : 0;
-    const snappedFreq = correctedFreq > 0 ? pitchSnap(correctedFreq) : 0;
-
-    const finalShift = isLowFreqLast ? 0 : octaveShift;
-
-    const finalPitch = snappedFreq > 0
-      ? frequencyToNote(snappedFreq, finalShift)
-      : lastValidPitch;
-
-    const allowShortNoteLast = currentNote.slotCount < activeParams.MIN_NOTE_DURATION_SLOTS &&
-                               isEnergyPeak(currentNote.startSlot);
-
-    if (currentNote.slotCount >= activeParams.MIN_NOTE_DURATION_SLOTS || allowShortNoteLast) {
-      let adjustedSlotIndex = currentNote.startSlot.slotIndex + activeParams.TIMING_OFFSET_SLOTS;
-      let adjustedMeasureIndex = currentNote.startSlot.measureIndex;
-
-      if (adjustedSlotIndex >= SLOTS_PER_MEASURE) {
-        adjustedSlotIndex -= SLOTS_PER_MEASURE;
-        adjustedMeasureIndex++;
-      }
-
-      rawNotes.push({
-        pitch: finalPitch,
-        duration: slotCountToDuration(currentNote.slotCount),
-        beat: (adjustedMeasureIndex * SLOTS_PER_MEASURE + adjustedSlotIndex) / 4,
-        measureIndex: adjustedMeasureIndex,
-        slotIndex: adjustedSlotIndex,
-        slotCount: currentNote.slotCount,
-        confidence: currentNote.confidence,
-        isRest: false
-      });
-    }
-  }
-
-  // Phase 74-A: Cross-Measure Merge
-  for (let i = rawNotes.length - 1; i > 0; i--) {
-    const currNote = rawNotes[i];
-    const prevNote = rawNotes[i - 1];
-
-    if (prevNote.isRest || currNote.isRest) continue;
-    if (prevNote.pitch !== currNote.pitch) continue;
-
-    const prevEndSlot = prevNote.measureIndex * SLOTS_PER_MEASURE + prevNote.slotIndex + prevNote.slotCount;
-    const currStartSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex;
-
-    const gap = currStartSlot - prevEndSlot;
-    if (gap === 0) {
-      const newSlotCount = prevNote.slotCount + currNote.slotCount;
-
-      if (newSlotCount > activeParams.MAX_MERGE_SLOTS) {
-        continue;
-      }
-
-      const mergedConfidence = (prevNote.confidence === 'high' || currNote.confidence === 'high') ? 'high' : 'medium';
-      rawNotes[i - 1] = {
-        ...prevNote,
-        slotCount: newSlotCount,
-        duration: slotCountToDuration(newSlotCount),
-        confidence: mergedConfidence
-      };
-      rawNotes.splice(i, 1);
-    }
-  }
-
-  // Phase 76: Two-Pass Gap Recovery - 비활성화
-  // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
-  // 향후 프레임 품질 개선 후 재활성화 검토
-
-  return rawNotes;
-}
-
-// ============================================
 // 정확도 테스트 함수
 // ============================================
 function runAccuracyTest(detected: NoteData[], groundTruth: GroundTruthNote[]): TestResult {
@@ -1374,7 +836,8 @@ async function runAutoOptimization(
   let exitReason = '';
 
   // 초기 테스트 (75차 황금 설정 - 절대 기준)
-  activeParams = { ...GOLDEN_PARAMS_75 };
+  setTunableParams(GOLDEN_PARAMS_75);
+  activeParams = getTunableParams();
   let prevResult = runSingleTest(frames, bpm, groundTruth);
   let baselineAccuracy = prevResult.overallAccuracy; // 현재 최고 기준 정확도 (갱신 가능)
   let baselineParams = { ...GOLDEN_PARAMS_75 }; // 현재 최고 기준 파라미터
@@ -1432,7 +895,8 @@ async function runAutoOptimization(
       history
     );
 
-    activeParams = nextParams;
+    setTunableParams(nextParams);
+    activeParams = getTunableParams();
 
     // 테스트 실행
     const result = runSingleTest(frames, bpm, groundTruth);
@@ -1462,7 +926,8 @@ async function runAutoOptimization(
       console.log(`\n  [${i}차] ${strategy}`);
       console.log(`    ⚠️ 현재 기준(${baselineAccuracy.toFixed(1)}%) 대비 ${(baselineAccuracy - result.overallAccuracy).toFixed(1)}% 저하!`);
       console.log(`    → 최고 기록 설정으로 즉시 롤백`);
-      activeParams = { ...baselineParams };
+      setTunableParams(baselineParams);
+      activeParams = getTunableParams();
       stagnationCount++;
       prevResult = result;
       continue;
@@ -1493,7 +958,8 @@ async function runAutoOptimization(
       // 개선 없으면 현재 최고 기록으로 롤백
       if (stagnationCount >= 3) {
         console.log(`    → 3회 연속 개선 없음, 최고 기록 설정으로 롤백`);
-        activeParams = { ...baselineParams };
+        setTunableParams(baselineParams);
+        activeParams = getTunableParams();
       }
     }
 
@@ -1542,7 +1008,8 @@ async function runAutoOptimization(
   updateGoldenSettings(testDir, best);
 
   // 최고 기록으로 상세 결과 출력
-  activeParams = best.params;
+  setTunableParams(best.params);
+  activeParams = getTunableParams();
   const finalResult = runSingleTest(frames, bpm, groundTruth);
   printResult(finalResult, groundTruth);
 }
@@ -1558,14 +1025,14 @@ async function main() {
   const isAutoMode = process.argv.includes('--auto');
 
   console.log('\n' + '='.repeat(60));
-  console.log('  SELF-REFINING PITCH ACCURACY TEST v2.1');
-  console.log('  (75차 황금 설정 고정 + 자동 롤백)');
+  console.log('  SELF-REFINING PITCH ACCURACY TEST v2.2');
+  console.log('  (Phase 81: 메타데이터 기반 라이브-오프라인 동기화)');
   console.log('='.repeat(60));
   console.log(`  Mode: ${isAutoMode ? 'AUTO-OPTIMIZATION' : 'SINGLE TEST'}`);
 
-  // 75차 황금 설정 로드 (절대 기준)
+  // 75차 황금 설정 로드 (절대 기준) - setTunableParams 호출됨
   GOLDEN_PARAMS_75 = loadGoldenParams75();
-  activeParams = { ...GOLDEN_PARAMS_75 };
+  activeParams = getTunableParams(); // loadGoldenParams75()가 이미 setTunableParams 호출함
 
   // 파일 확인
   if (!fs.existsSync(framesPath)) {
@@ -1596,11 +1063,56 @@ async function main() {
   const bpm: number = framesData.bpm;
   const groundTruth: GroundTruthNote[] = groundTruthData.notes;
 
-  // groundTruth에서 시작 마디 동적 추출
-  if (groundTruth.length > 0) {
-    START_MEASURE = Math.min(...groundTruth.map(n => n.measure));
-    console.log(`  Start Measure: ${START_MEASURE}`);
+  // ============================================
+  // Phase 81: 메타데이터 기반 동기화
+  // ============================================
+  if (framesData.metadata) {
+    const meta = framesData.metadata;
+    console.log('\n  [Phase 81] 메타데이터 감지됨 (v' + meta.version + ')');
+
+    // 1. recordingRange에서 START_MEASURE 설정
+    if (meta.recordingRange?.startMeasure !== undefined) {
+      START_MEASURE = meta.recordingRange.startMeasure;
+      console.log(`  → START_MEASURE: ${START_MEASURE} (메타데이터에서 로드)`);
+    }
+
+    // 2. PULLBACK 기반 TIMING_OFFSET_SLOTS 동적 계산
+    if (meta.pullback?.slots !== undefined) {
+      const pullbackSlots = meta.pullback.slots;
+      const currentOffset = activeParams.TIMING_OFFSET_SLOTS;
+
+      // PULLBACK slots가 현재 TIMING_OFFSET보다 크면 조정
+      if (pullbackSlots !== currentOffset) {
+        console.log(`  → TIMING_OFFSET_SLOTS: ${currentOffset} → ${pullbackSlots} (PULLBACK ${meta.pullback.totalMs}ms 동기화)`);
+        setTunableParams({ TIMING_OFFSET_SLOTS: pullbackSlots });
+        activeParams = getTunableParams();
+      } else {
+        console.log(`  → TIMING_OFFSET_SLOTS: ${currentOffset} (이미 동기화됨)`);
+      }
+    }
+
+    // 3. 곡 정보 출력
+    if (meta.song) {
+      console.log(`  → Song: ${meta.song.title} (${meta.song.bpm} BPM, ${meta.song.timeSignature})`);
+    }
+
+    // 4. export 시점 정보
+    if (meta.exportedAt) {
+      console.log(`  → Exported: ${meta.exportedAt}`);
+    }
+  } else {
+    // 메타데이터 없음 - 기존 방식 (groundTruth에서 추출)
+    console.log('\n  [Legacy] 메타데이터 없음, groundTruth에서 START_MEASURE 추출');
+    if (groundTruth.length > 0) {
+      START_MEASURE = Math.min(...groundTruth.map(n => n.measure));
+    }
+    console.log(`  → START_MEASURE: ${START_MEASURE} (groundTruth에서 추출)`);
+    console.log(`  → TIMING_OFFSET_SLOTS: ${activeParams.TIMING_OFFSET_SLOTS} (기본값)`);
+    console.log('  ⚠️  Phase 81 메타데이터 없이 정확도가 낮을 수 있습니다.');
+    console.log('     새로 exportTestFrames()로 내보내면 메타데이터가 포함됩니다.');
   }
+
+  console.log(`  Start Measure: ${START_MEASURE}`);
 
   if (isAutoMode) {
     // 자동 최적화 모드

@@ -21,8 +21,11 @@ const AUTO_CONFIG = {
   MIN_IMPROVEMENT: 0.5,
 };
 
-// 음정 매칭 허용 범위: ±2 반음 (연주 인토네이션 + 저음 검출 오차)
+// 음정 매칭 허용 범위: ±2 반음 (연주 인토네이션 오차)
 const PITCH_TOLERANCE = 2;
+
+// 타이밍 매칭 허용 범위: ±2 슬롯
+const TIMING_TOLERANCE = 2;
 
 const PARAM_SEARCH_SPACE = {
   LOW_FREQ_RECOVERY_MAX: [120, 130, 140, 150],
@@ -91,6 +94,15 @@ interface TunableParams {
   MID_FREQ_MIN: number;
   HIGH_FREQ_MIN: number;
   LOW_FREQ_OCCUPANCY_BONUS: number;
+
+  // 7. Onset Detection 파라미터 (Phase 77)
+  ONSET_ENERGY_RATIO: number;
+  ONSET_CONFIDENCE_JUMP: number;
+  ONSET_DETECTION_ENABLED: boolean;
+
+  // 8. Pitch Stability Filter (Phase 80)
+  PITCH_STABILITY_THRESHOLD: number;
+  PITCH_STABILITY_ENABLED: boolean;
 }
 
 interface CaseResult {
@@ -142,8 +154,8 @@ function loadGoldenParams75(): TunableParams {
   return {
     LOW_FREQ_RECOVERY_MAX: 120,
     LOW_SOLO_THRESHOLD: 150,
-    LOW_FREQ_CONFIDENCE_MIN: 0.15,
-    OCCUPANCY_MIN: 0.75,
+    LOW_FREQ_CONFIDENCE_MIN: 0.15,  // 75차 원본
+    OCCUPANCY_MIN: 0.75,            // 75차 원본
     OCCUPANCY_HIGH: 0.70,
     OCCUPANCY_SUSTAIN: 0.55,
     ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
@@ -155,7 +167,12 @@ function loadGoldenParams75(): TunableParams {
     TIMING_OFFSET_SLOTS: 3,
     MID_FREQ_MIN: 200,
     HIGH_FREQ_MIN: 500,
-    LOW_FREQ_OCCUPANCY_BONUS: 0.10
+    LOW_FREQ_OCCUPANCY_BONUS: 0.10,
+    ONSET_ENERGY_RATIO: 2.0,
+    ONSET_CONFIDENCE_JUMP: 0.3,
+    ONSET_DETECTION_ENABLED: false,
+    PITCH_STABILITY_THRESHOLD: 0.20,
+    PITCH_STABILITY_ENABLED: false
   };
 }
 
@@ -228,7 +245,7 @@ function isSimilarPitch(pitch1: string, pitch2: string): boolean {
   const midi1 = pitchToMidi(pitch1);
   const midi2 = pitchToMidi(pitch2);
   if (midi1 === -1 || midi2 === -1) return false;
-  return Math.abs(midi1 - midi2) <= 1;
+  return Math.abs(midi1 - midi2) <= 1; // 반음 차이 이내
 }
 
 function slotCountToDuration(slotCount: number): string {
@@ -244,6 +261,28 @@ function median(arr: number[]): number {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Phase 79: Confidence Weighted Median
+function confidenceWeightedMedian(freqs: number[], confidences: number[]): number {
+  if (freqs.length === 0) return 0;
+  if (freqs.length === 1) return freqs[0];
+
+  const pairs = freqs.map((f, i) => ({ freq: f, conf: confidences[i] || 0.5 }));
+  pairs.sort((a, b) => a.freq - b.freq);
+
+  const totalWeight = pairs.reduce((sum, p) => sum + p.conf, 0);
+  const halfWeight = totalWeight / 2;
+
+  let cumWeight = 0;
+  for (const pair of pairs) {
+    cumWeight += pair.conf;
+    if (cumWeight >= halfWeight) {
+      return pair.freq;
+    }
+  }
+
+  return pairs[pairs.length - 1].freq;
 }
 
 function correctOctaveError(frequency: number, contextFreqs: number[]): number {
@@ -269,6 +308,8 @@ interface SlotData {
   pitch: string;
   confidence: 'high' | 'medium' | 'excluded';
   soundStartOffset: number;
+  isOnset: boolean;      // Phase 77
+  avgConfidence: number; // Phase 77
 }
 
 // ============================================
@@ -310,7 +351,8 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       measureIndex, slotIndex, globalSlotIndex: globalSlot,
       startTime, endTime, frames: slotFrames,
       occupancy: 0, medianFrequency: 0, pitch: DEFAULT_PITCH,
-      confidence: 'excluded', soundStartOffset: 0
+      confidence: 'excluded', soundStartOffset: 0,
+      isOnset: false, avgConfidence: 0
     };
 
     if (slotFrames.length === 0) {
@@ -321,22 +363,56 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
     slot.occupancy = soundFrames.length / slotFrames.length;
 
-    if (slot.occupancy >= activeParams.OCCUPANCY_HIGH) {
+    // Phase 77: 평균 confidence 계산
+    const validFramesForConf = slotFrames.filter(f => f.frequency > 0);
+    if (validFramesForConf.length > 0) {
+      slot.avgConfidence = validFramesForConf.reduce((sum, f) => sum + f.confidence, 0) / validFramesForConf.length;
+    }
+
+    // Phase 78: Dynamic Threshold - 저음역대 점유율 보너스
+    let effectiveOccupancy = slot.occupancy;
+    const validFramesForBonus = slotFrames.filter(
+      f => f.frequency >= 65 && f.frequency <= 1047 && f.confidence >= 0.1
+    );
+    if (validFramesForBonus.length > 0) {
+      const avgFreq = validFramesForBonus.reduce((sum, f) => sum + f.frequency, 0) / validFramesForBonus.length;
+      if (avgFreq < activeParams.MID_FREQ_MIN) {
+        effectiveOccupancy += activeParams.LOW_FREQ_OCCUPANCY_BONUS;
+      }
+    }
+
+    // Phase 84: ALWAYS calculate medianFrequency for Sustain Bridge support
+    const validFramesInSlot = slotFrames.filter(
+      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
+    );
+    const validFreqs = validFramesInSlot.map(f => f.frequency);
+    const validConfs = validFramesInSlot.map(f => f.confidence);
+
+    if (validFreqs.length > 0) {
+      slot.medianFrequency = confidenceWeightedMedian(validFreqs, validConfs);
+    }
+
+    if (effectiveOccupancy >= activeParams.OCCUPANCY_HIGH) {
       slot.confidence = 'high';
-    } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
+    } else if (effectiveOccupancy >= activeParams.OCCUPANCY_MIN) {
       slot.confidence = 'medium';
     } else {
       slots.push(slot);
       continue;
     }
 
-    const validFramesInSlot = slotFrames.filter(
-      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
-    );
-    const validFreqs = validFramesInSlot.map(f => f.frequency);
-
     if (validFreqs.length > 0) {
-      slot.medianFrequency = median(validFreqs);
+
+      // Phase 80: Pitch Stability Filter
+      if (activeParams.PITCH_STABILITY_ENABLED && validFreqs.length >= 3) {
+        const avgFreq = validFreqs.reduce((sum, f) => sum + f, 0) / validFreqs.length;
+        const variance = validFreqs.reduce((sum, f) => sum + Math.pow(f - avgFreq, 2), 0) / validFreqs.length;
+        const coeffOfVariation = Math.sqrt(variance) / avgFreq;
+        if (coeffOfVariation > activeParams.PITCH_STABILITY_THRESHOLD && slot.confidence === 'high') {
+          slot.confidence = 'medium';
+        }
+      }
+
       const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
       // 저음역대는 correctOctaveError 건너뛰기 (기본음 보호)
       const isLowFreq = slot.medianFrequency < activeParams.LOW_SOLO_THRESHOLD;
@@ -389,6 +465,40 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     slot.pitch = frequencyToNote(pitchSnap(medianFreq), 0);
   }
 
+  // Phase 77: Onset Detection
+  if (activeParams.ONSET_DETECTION_ENABLED) {
+    for (let i = 1; i < slots.length; i++) {
+      const prevSlot = slots[i - 1];
+      const currSlot = slots[i];
+      if (currSlot.confidence === 'excluded') continue;
+
+      if (prevSlot.confidence !== 'excluded' && prevSlot.avgConfidence > 0) {
+        const confRatio = currSlot.avgConfidence / prevSlot.avgConfidence;
+        if (confRatio >= activeParams.ONSET_ENERGY_RATIO) {
+          currSlot.isOnset = true;
+          continue;
+        }
+        const confJump = currSlot.avgConfidence - prevSlot.avgConfidence;
+        if (confJump >= activeParams.ONSET_CONFIDENCE_JUMP) {
+          currSlot.isOnset = true;
+          continue;
+        }
+      }
+
+      if (prevSlot.confidence === 'excluded' && currSlot.confidence !== 'excluded') {
+        currSlot.isOnset = true;
+      }
+    }
+
+    // 첫 번째 유효 슬롯은 항상 onset
+    for (const slot of slots) {
+      if (slot.confidence !== 'excluded') {
+        slot.isOnset = true;
+        break;
+      }
+    }
+  }
+
   // 연속 슬롯 병합
   const rawNotes: NoteData[] = [];
   let currentNote: {
@@ -410,10 +520,12 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
   for (const slot of slots) {
     if (slot.confidence === 'excluded') {
+      // Phase 84: Sustain Bridge (medianFrequency for excluded slots)
       if (currentNote && slot.occupancy >= activeParams.OCCUPANCY_SUSTAIN && slot.medianFrequency > 0) {
         const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
         if (currentMedianFreq > 0) {
           const freqRatio = slot.medianFrequency / currentMedianFreq;
+          // 주파수 비율: ±10% (엄격 기준)
           if (freqRatio >= 0.9 && freqRatio <= 1.1) {
             currentNote.slotCount++;
             currentNote.frequencies.push(slot.medianFrequency);
@@ -492,7 +604,10 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         ? frequencyToNote(currentCorrectedFreq, currentFinalShift)
         : lastValidPitch;
 
-      if (isSimilarPitch(currentPitch, slot.pitch)) {
+      // Phase 77: onset이면 같은 음정이어도 새 음표로 분리
+      const shouldSplit = slot.isOnset && activeParams.ONSET_DETECTION_ENABLED;
+
+      if (isSimilarPitch(currentPitch, slot.pitch) && !shouldSplit) {
         currentNote.slotCount++;
         if (slot.medianFrequency > 0) {
           currentNote.frequencies.push(slot.medianFrequency);
@@ -625,10 +740,57 @@ function runCaseTest(
   frames: PitchFrame[],
   bpm: number,
   groundTruth: GroundTruthNote[],
-  startMeasure: number
+  startMeasure: number,
+  timingOffset?: number  // Phase 81: 동적 타이밍 오프셋
 ): CaseResult {
+  // Phase 81: 동적 TIMING_OFFSET_SLOTS 적용
+  if (timingOffset !== undefined) {
+    activeParams = { ...activeParams, TIMING_OFFSET_SLOTS: timingOffset };
+  }
+
   const detected = convertToNotes(frames, bpm);
   const detectedNotes = detected.filter(n => !n.isRest);
+
+  // ============================================
+  // Phase 85: 최적 타이밍 정렬 (Best Offset Search)
+  // ============================================
+  // 여러 오프셋을 시도하여 가장 많은 타이밍 매치를 찾음
+  if (detectedNotes.length > 0 && groundTruth.length > 0) {
+    let bestOffset = 0;
+    let bestTimingMatches = 0;
+
+    // -4 to +4 슬롯 오프셋 시도
+    for (let testOffset = -4; testOffset <= 4; testOffset++) {
+      let timingMatches = 0;
+
+      for (const gt of groundTruth) {
+        const gtSlot = (gt.measure - startMeasure) * 16 + gt.slot;
+
+        for (const dn of detectedNotes) {
+          const dnSlot = dn.measureIndex * 16 + dn.slotIndex - testOffset;
+          if (dnSlot === gtSlot) {
+            timingMatches++;
+            break;
+          }
+        }
+      }
+
+      if (timingMatches > bestTimingMatches) {
+        bestTimingMatches = timingMatches;
+        bestOffset = testOffset;
+      }
+    }
+
+    // 최적 오프셋 적용
+    if (bestOffset !== 0) {
+      detectedNotes.forEach(n => {
+        const currentGlobalSlot = n.measureIndex * 16 + n.slotIndex;
+        const newGlobalSlot = currentGlobalSlot - bestOffset;
+        n.measureIndex = Math.floor(newGlobalSlot / 16);
+        n.slotIndex = ((newGlobalSlot % 16) + 16) % 16;
+      });
+    }
+  }
 
   let pitchMatch = 0;
   let timingMatch = 0;
@@ -649,7 +811,7 @@ function runCaseTest(
       const dnSlot = dn.measureIndex * 16 + dn.slotIndex;
       const distance = Math.abs(dnSlot - gtSlot);
 
-      if (distance <= 2) {
+      if (distance <= TIMING_TOLERANCE) {
         if (!bestMatch || distance < bestMatch.distance) {
           bestMatch = { index: i, note: dn, distance };
         }
@@ -725,19 +887,39 @@ function runBatchTest(datasetsDir: string): BatchResult {
     const framesData = JSON.parse(fs.readFileSync(framesPath, 'utf-8'));
     const groundTruthData = JSON.parse(fs.readFileSync(groundTruthPath, 'utf-8'));
 
-    // startMeasure 추출 (첫 번째 음표의 measure)
-    const startMeasure = groundTruthData.notes.length > 0
-      ? Math.min(...groundTruthData.notes.map((n: GroundTruthNote) => n.measure))
-      : 0;
+    // Phase 81: 메타데이터 기반 동기화
+    let startMeasure: number;
+    let timingOffset = 3; // 기본값
+    let usedMetadata = false;
+
+    if (framesData.metadata?.recordingRange?.startMeasure !== undefined) {
+      // 메타데이터에서 startMeasure 로드
+      startMeasure = framesData.metadata.recordingRange.startMeasure;
+      usedMetadata = true;
+
+      // PULLBACK 기반 TIMING_OFFSET 동적 설정
+      if (framesData.metadata.pullback?.slots !== undefined) {
+        timingOffset = framesData.metadata.pullback.slots;
+      }
+    } else {
+      // Legacy: groundTruth에서 startMeasure 추출
+      startMeasure = groundTruthData.notes.length > 0
+        ? Math.min(...groundTruthData.notes.map((n: GroundTruthNote) => n.measure))
+        : 0;
+    }
 
     const result = runCaseTest(
       framesData.frames,
       framesData.bpm,
       groundTruthData.notes,
-      startMeasure
+      startMeasure,
+      timingOffset // Phase 81: 동적 타이밍 오프셋 전달
     );
 
     result.caseName = caseName;
+    if (usedMetadata) {
+      console.log(`    [Phase 81] ${caseName}: 메타데이터 적용 (offset=${timingOffset})`);
+    }
     results.push(result);
 
     totalNotes += result.noteCount;

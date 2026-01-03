@@ -331,7 +331,7 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
     };
   }
 
-  // 정확도 계산
+  // 정확도 계산 (엄격한 기준 - 정확히 일치해야 함)
   const pitchCorrect = matched.filter(c => c.pitchDiff === 0).length;
   const timingCorrect = matched.filter(c => c.timingDiff === 0).length;
   const durationCorrect = matched.filter(c => c.durationDiff === 0).length;

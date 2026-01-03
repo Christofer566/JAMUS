@@ -60,22 +60,35 @@ export interface TunableParams {
   MID_FREQ_MIN: number;               // 150-250Hz (현재 200) - 중음역대 시작
   HIGH_FREQ_MIN: number;              // 400-600Hz (현재 500) - 고음역대 시작
   LOW_FREQ_OCCUPANCY_BONUS: number;   // 0.0-0.15 (현재 0.10) - 저음 점유율 보너스
+
+  // ========================================
+  // 7. Onset Detection 파라미터 (Phase 77)
+  // ========================================
+  ONSET_ENERGY_RATIO: number;         // 1.5-3.0 (현재 2.0) - 에너지 급증 비율 임계값
+  ONSET_CONFIDENCE_JUMP: number;      // 0.2-0.5 (현재 0.3) - confidence 급증 임계값
+  ONSET_DETECTION_ENABLED: boolean;   // true/false - 온셋 검출 활성화
+
+  // ========================================
+  // 8. Pitch Stability Filter (Phase 80)
+  // ========================================
+  PITCH_STABILITY_THRESHOLD: number;  // 0.15-0.30 (현재 0.20) - 변동계수 허용 임계값
+  PITCH_STABILITY_ENABLED: boolean;   // true/false - 음정 안정성 필터 활성화
 }
 
-// 기본값 (Phase 77: 파라미터 세분화)
+// 기본값 (Phase 75: 원본 황금 설정 - 타이밍 92.9%, 음정 71.4%, 길이 64.3%)
 const DEFAULT_PARAMS: TunableParams = {
   // 1. 저음 복원
   LOW_FREQ_RECOVERY_MAX: 120,      // 저음 복구 상한
   LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.15,
+  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // 75차 원본값
 
   // 2. 점유율
-  OCCUPANCY_MIN: 0.75,             // 노이즈 필터링
+  OCCUPANCY_MIN: 0.75,             // 75차 원본값
   OCCUPANCY_HIGH: 0.70,            // 70% 이상 = high confidence
-  OCCUPANCY_SUSTAIN: 0.55,         // Sustain 확장
+  OCCUPANCY_SUSTAIN: 0.45,         // Sustain 확장 (길이 정확도 개선)
 
   // 3. 에너지 피크
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.80, // 엄격한 피크 감지
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.70, // Phase 85: 피크 감지 완화 (64.7%)
   ENERGY_PEAK_OCCUPANCY_MIN: 0.95, // 엄격한 피크 점유율
 
   // 4. 음표 길이
@@ -90,7 +103,16 @@ const DEFAULT_PARAMS: TunableParams = {
   // 6. 음역대별 차별화 (새로 추가)
   MID_FREQ_MIN: 200,               // 중음역대 시작 (G3)
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
-  LOW_FREQ_OCCUPANCY_BONUS: 0.10   // 저음 점유율 보너스
+  LOW_FREQ_OCCUPANCY_BONUS: 0.10,  // 저음 점유율 보너스
+
+  // 7. Onset Detection (Phase 77) - 비활성화: 효과 미미 (trade-off)
+  ONSET_ENERGY_RATIO: 2.0,         // 에너지 급증 비율 임계값
+  ONSET_CONFIDENCE_JUMP: 0.3,      // confidence 급증 임계값
+  ONSET_DETECTION_ENABLED: false,  // 비활성화 (타이밍↑ 길이↓ 상쇄됨)
+
+  // 8. Pitch Stability Filter (Phase 80) - 비활성화: 효과 없음
+  PITCH_STABILITY_THRESHOLD: 0.20, // 주파수 표준편차 / 평균 (변동계수) 허용 임계값
+  PITCH_STABILITY_ENABLED: false   // 비활성화 (변화 없음)
 };
 
 // 현재 활성 파라미터 (런타임 조정 가능)
@@ -209,7 +231,7 @@ export function pitchSnap(hz: number): number {
   return hz;
 }
 
-function pitchToMidi(pitch: string): number {
+export function pitchToMidi(pitch: string): number {
   if (pitch === 'rest') return -1;
 
   const match = pitch.match(/^([A-G])([#b]?)(\d)$/);
@@ -252,6 +274,34 @@ function median(arr: number[]): number {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Phase 79: Confidence Weighted Median
+ * 높은 confidence 프레임에 가중치를 부여한 중앙값 계산
+ * - 각 주파수를 confidence 기준으로 정렬 후 가중 중앙값 사용
+ */
+function confidenceWeightedMedian(freqs: number[], confidences: number[]): number {
+  if (freqs.length === 0) return 0;
+  if (freqs.length === 1) return freqs[0];
+
+  // (freq, confidence) 쌍 생성 후 주파수로 정렬
+  const pairs = freqs.map((f, i) => ({ freq: f, conf: confidences[i] || 0.5 }));
+  pairs.sort((a, b) => a.freq - b.freq);
+
+  // 가중 중앙값: confidence 합의 50%에 도달하는 지점의 주파수
+  const totalWeight = pairs.reduce((sum, p) => sum + p.conf, 0);
+  const halfWeight = totalWeight / 2;
+
+  let cumWeight = 0;
+  for (const pair of pairs) {
+    cumWeight += pair.conf;
+    if (cumWeight >= halfWeight) {
+      return pair.freq;
+    }
+  }
+
+  return pairs[pairs.length - 1].freq;
 }
 
 /**
@@ -330,6 +380,8 @@ interface SlotData {
   pitch: string;
   confidence: 'high' | 'medium' | 'excluded';
   soundStartOffset: number; // 슬롯 시작 대비 소리 시작 오프셋 (0-1)
+  isOnset: boolean;        // Phase 77: 에너지 급증에 의한 온셋 감지 여부
+  avgConfidence: number;   // Phase 77: 슬롯 내 평균 confidence
 }
 
 // ============================================
@@ -423,7 +475,9 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       medianFrequency: 0,
       pitch: DEFAULT_PITCH,
       confidence: 'excluded',
-      soundStartOffset: 0
+      soundStartOffset: 0,
+      isOnset: false,           // Phase 77: 초기값
+      avgConfidence: 0          // Phase 77: 초기값
     };
 
     if (slotFrames.length === 0) {
@@ -437,11 +491,41 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
     slot.occupancy = soundFrames.length / slotFrames.length;
 
+    // Phase 77: 평균 confidence 계산 (유효 프레임만)
+    const validFramesForConf = slotFrames.filter(f => f.frequency > 0);
+    if (validFramesForConf.length > 0) {
+      slot.avgConfidence = validFramesForConf.reduce((sum, f) => sum + f.confidence, 0) / validFramesForConf.length;
+    }
+
+    // Phase 78: Dynamic Threshold - 저음역대 점유율 보너스 적용
+    // 저음(< MID_FREQ_MIN)은 자연적으로 confidence가 낮으므로 보너스 적용
+    let effectiveOccupancy = slot.occupancy;
+    const validFramesForBonus = slotFrames.filter(
+      f => f.frequency >= 65 && f.frequency <= 1047 && f.confidence >= 0.1
+    );
+    if (validFramesForBonus.length > 0) {
+      const avgFreq = validFramesForBonus.reduce((sum, f) => sum + f.frequency, 0) / validFramesForBonus.length;
+      if (avgFreq < activeParams.MID_FREQ_MIN) {
+        effectiveOccupancy += activeParams.LOW_FREQ_OCCUPANCY_BONUS;
+      }
+    }
+
+    // Phase 84: ALWAYS calculate medianFrequency for Sustain Bridge support
+    const validFramesInSlot = slotFrames.filter(
+      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
+    );
+    const validFreqs = validFramesInSlot.map(f => f.frequency);
+    const validConfs = validFramesInSlot.map(f => f.confidence);
+
+    if (validFreqs.length > 0) {
+      slot.medianFrequency = confidenceWeightedMedian(validFreqs, validConfs);
+    }
+
     // 점유율에 따른 confidence 판정 (activeParams 사용)
-    if (slot.occupancy >= activeParams.OCCUPANCY_HIGH) {
+    if (effectiveOccupancy >= activeParams.OCCUPANCY_HIGH) {
       slot.confidence = 'high';
       highCount++;
-    } else if (slot.occupancy >= activeParams.OCCUPANCY_MIN) {
+    } else if (effectiveOccupancy >= activeParams.OCCUPANCY_MIN) {
       slot.confidence = 'medium';
       mediumCount++;
     } else {
@@ -453,14 +537,22 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
     // 음정 결정 (유효 프레임의 중간값)
     // Phase 2: 사람 목소리 범위 (C2: 65Hz ~ C6: 1047Hz)
-    const validFramesInSlot = slotFrames.filter(
-      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
-    );
-    const validFreqs = validFramesInSlot.map(f => f.frequency);
-
     if (validFreqs.length > 0) {
-      // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
-      slot.medianFrequency = median(validFreqs);
+
+      // Phase 80: Pitch Stability Filter - 슬롯 내 음정 변동이 심하면 confidence 하향
+      if (activeParams.PITCH_STABILITY_ENABLED && validFreqs.length >= 3) {
+        const avgFreq = validFreqs.reduce((sum, f) => sum + f, 0) / validFreqs.length;
+        const variance = validFreqs.reduce((sum, f) => sum + Math.pow(f - avgFreq, 2), 0) / validFreqs.length;
+        const stdDev = Math.sqrt(variance);
+        const coeffOfVariation = stdDev / avgFreq; // 변동계수 (CV)
+
+        // 변동계수가 임계값을 초과하면 confidence를 medium으로 하향
+        if (coeffOfVariation > activeParams.PITCH_STABILITY_THRESHOLD && slot.confidence === 'high') {
+          slot.confidence = 'medium';
+          highCount--;
+          mediumCount++;
+        }
+      }
 
       // Phase 2: 옥타브 자동 보정 (주변 문맥 기반)
       const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
@@ -557,6 +649,62 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   }
 
   // ========================================
+  // Phase 77: Onset Detection (에너지 급증 감지)
+  // ========================================
+  // 연속된 슬롯 사이에서 에너지/confidence가 급증하면 새 음표 시작점으로 표시
+  // 이 정보는 Step 3에서 같은 피치여도 강제로 분리하는 데 사용
+  if (activeParams.ONSET_DETECTION_ENABLED) {
+    let onsetCount = 0;
+
+    for (let i = 1; i < slots.length; i++) {
+      const prevSlot = slots[i - 1];
+      const currSlot = slots[i];
+
+      // 현재 슬롯이 유효한 음표인 경우에만 검사
+      if (currSlot.confidence === 'excluded') continue;
+
+      // 이전 슬롯과 현재 슬롯 모두 유효해야 의미있는 비교
+      if (prevSlot.confidence !== 'excluded' && prevSlot.avgConfidence > 0) {
+        // Confidence 급증 체크
+        const confRatio = currSlot.avgConfidence / prevSlot.avgConfidence;
+        if (confRatio >= activeParams.ONSET_ENERGY_RATIO) {
+          currSlot.isOnset = true;
+          onsetCount++;
+          continue;
+        }
+
+        // Confidence 점프 체크 (절대값)
+        const confJump = currSlot.avgConfidence - prevSlot.avgConfidence;
+        if (confJump >= activeParams.ONSET_CONFIDENCE_JUMP) {
+          currSlot.isOnset = true;
+          onsetCount++;
+          continue;
+        }
+      }
+
+      // 이전 슬롯이 excluded이고 현재가 유효하면 = 새 음표 시작
+      // (currSlot.confidence !== 'excluded'는 661줄에서 이미 검증됨)
+      if (prevSlot.confidence === 'excluded') {
+        currSlot.isOnset = true;
+        onsetCount++;
+      }
+    }
+
+    // 첫 번째 유효한 슬롯은 항상 onset
+    for (const slot of slots) {
+      if (slot.confidence !== 'excluded') {
+        slot.isOnset = true;
+        onsetCount++;
+        break;
+      }
+    }
+
+    if (onsetCount > 0) {
+      console.log(`[Phase 77] Onset Detection: ${onsetCount}개 onset 감지`);
+    }
+  }
+
+  // ========================================
   // Step 3: 연속 슬롯 병합 → 음표 생성
   // ========================================
   const rawNotes: NoteData[] = [];
@@ -596,7 +744,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
         if (currentMedianFreq > 0) {
           const freqRatio = slot.medianFrequency / currentMedianFreq;
-          // 주파수 차이가 ±10% 이내면 연장 (Decay 상태로 간주)
+          // Phase 84: 주파수 비율 ±10% (엄격 기준)
           if (freqRatio >= 0.9 && freqRatio <= 1.1) {
             currentNote.slotCount++;
             currentNote.frequencies.push(slot.medianFrequency);
@@ -691,7 +839,10 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         ? frequencyToNote(currentCorrectedFreq, currentFinalShift)
         : lastValidPitch;
 
-      if (isSimilarPitch(currentPitch, slot.pitch)) {
+      // Phase 77: onset 플래그가 있으면 같은 음정이어도 새 음표로 분리
+      const shouldSplit = slot.isOnset && activeParams.ONSET_DETECTION_ENABLED;
+
+      if (isSimilarPitch(currentPitch, slot.pitch) && !shouldSplit) {
         // 병합
         currentNote.slotCount++;
         if (slot.medianFrequency > 0) {

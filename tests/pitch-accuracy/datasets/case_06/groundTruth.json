@@ -1,0 +1,103 @@
+{
+  "name": "Recording 2026-01-03",
+  "bpm": 142,
+  "description": "16개 음표, 마디 9-17",
+  "notes": [
+    {
+      "measure": 18,
+      "slot": 4,
+      "pitch": "C4",
+      "slots": 12
+    },
+    {
+      "measure": 19,
+      "slot": 4,
+      "pitch": "F3",
+      "slots": 12
+    },
+    {
+      "measure": 20,
+      "slot": 4,
+      "pitch": "A#3",
+      "slots": 12
+    },
+    {
+      "measure": 21,
+      "slot": 4,
+      "pitch": "G3",
+      "slots": 12
+    },
+    {
+      "measure": 22,
+      "slot": 4,
+      "pitch": "A3",
+      "slots": 4
+    },
+    {
+      "measure": 22,
+      "slot": 12,
+      "pitch": "A3",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 4,
+      "pitch": "F#3",
+      "slots": 4
+    },
+    {
+      "measure": 23,
+      "slot": 12,
+      "pitch": "F#3",
+      "slots": 4
+    },
+    {
+      "measure": 24,
+      "slot": 2,
+      "pitch": "G3",
+      "slots": 2
+    },
+    {
+      "measure": 24,
+      "slot": 6,
+      "pitch": "G3",
+      "slots": 2
+    },
+    {
+      "measure": 24,
+      "slot": 10,
+      "pitch": "G3",
+      "slots": 2
+    },
+    {
+      "measure": 24,
+      "slot": 14,
+      "pitch": "G3",
+      "slots": 2
+    },
+    {
+      "measure": 25,
+      "slot": 2,
+      "pitch": "D3",
+      "slots": 2
+    },
+    {
+      "measure": 25,
+      "slot": 6,
+      "pitch": "D3",
+      "slots": 2
+    },
+    {
+      "measure": 25,
+      "slot": 10,
+      "pitch": "D3",
+      "slots": 2
+    },
+    {
+      "measure": 25,
+      "slot": 14,
+      "pitch": "D3",
+      "slots": 2
+    }
+  ]
+}
