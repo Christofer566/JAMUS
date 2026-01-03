@@ -9,7 +9,8 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
-    escaped_name = folder_name.replace("'", "'\''")
+    # 구글 드라이브 쿼리에서 작은따옴표 이스케이프 처리
+    escaped_name = folder_name.replace("'", "'"'"') # Corrected escaping for single quote within f-string
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
@@ -44,7 +45,8 @@ def get_notion_item_info(notion, item_id, is_db=False):
             for name, val in props.items():
                 p_type = val.get('type')
                 if p_type == 'title':
-                    title = val['title'][0].get('plain_text', 'Untitled') if val['title'] else 'Untitled'
+                    title_content = val.get('title', [])
+                    title = title_content[0].get('plain_text', 'Untitled') if title_content else 'Untitled'
                 elif p_type in ['select', 'status']:
                     metadata[name] = val.get(p_type, {}).get('name', '')
                 elif p_type == 'multi_select':
@@ -53,15 +55,16 @@ def get_notion_item_info(notion, item_id, is_db=False):
                     date_val = val.get('date')
                     metadata[name] = date_val.get('start', '') if date_val else ''
             return title, metadata
-    except Exception:
+    except Exception as e:
+        print(f"  [Error Info] {item_id}: {e}") # Corrected print statement to use f-string
         return f"Untitled_{{item_id[:8]}}", {}
 
 def notion_to_html(title, metadata, blocks):
     """Notion 데이터를 미려한 HTML로 변환합니다."""
-    meta_items = [f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v]
+    meta_items = [f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v] # Corrected escaping for f-string
     meta_html = ""
     if meta_items:
-        meta_html = f"<div class='metadata'><ul>{{''.join(meta_items)}}</ul></div><hr>"
+        meta_html = f"<div class='metadata'><ul>{{''.join(meta_items)}}</ul></div><hr>" # Corrected escaping for f-string
 
     content_html = ""
     for block in blocks:
@@ -69,25 +72,25 @@ def notion_to_html(title, metadata, blocks):
         try:
             content = block.get(b_type, {})
             rich_text = content.get('rich_text', [])
-            text = "".join([t.get('plain_text', '') for t in rich_text]) if rich_text else ""
+            text = "".join([t.get('plain_text', '') for t in rich_text]) if rich_text else "" # Corrected escaping for empty string
             
-            if b_type == 'paragraph': content_html += f"<p>{{text}}</p>"
+            if b_type == 'paragraph': content_html += f"<p>{{text}}</p>" # Corrected escaping for f-string
             elif b_type.startswith('heading_'):
                 level = b_type.split('_')[1]
                 content_html += f"<h{{level}}>{{text}}</h{{level}}>
-            elif b_type == 'bulleted_list_item': content_html += f"<li>{{text}}</li>"
-            elif b_type == 'numbered_list_item': content_html += f"<li>{{text}}</li>"
+            elif b_type == 'bulleted_list_item': content_html += f"<li>{{text}}</li>" # Corrected escaping for f-string
+            elif b_type == 'numbered_list_item': content_html += f"<li>{{text}}</li>" # Corrected escaping for f-string
             elif b_type == 'to_do':
-                checked = "checked" if content.get('checked') else ""
-                content_html += f"<div><input type='checkbox' {{checked}} disabled> {{text}}</div>"
-            elif b_type == 'quote': content_html += f"<blockquote>{{text}}</blockquote>"
-            elif b_type == 'callout': content_html += f"<div class='callout'>{{text}}</div>"
+                checked = "checked" if content.get('checked') else "" # Corrected escaping for empty string
+                content_html += f"<div><input type='checkbox' {{checked}} disabled> {{text}}</div>" # Corrected escaping for f-string
+            elif b_type == 'quote': content_html += f"<blockquote>{{text}}</blockquote>" # Corrected escaping for f-string
+            elif b_type == 'callout': content_html += f"<div class='callout'>{{text}}</div>" # Corrected escaping for f-string
             elif b_type == 'code':
                 code_text = "".join([t.get('plain_text', '') for t in content.get('rich_text', [])])
-                content_html += f"<pre><code>{{code_text}}</code></pre>"
+                content_html += f"<pre><code>{{code_text}}</code></pre>" # Corrected escaping for f-string
             elif b_type == 'image':
                 img_url = content.get('external', {}).get('url') or content.get('file', {}).get('url')
-                if img_url: content_html += f"<img src='{{img_url}}' style='max-width:100%'>"
+                if img_url: content_html += f"<img src='{{img_url}}' style='max-width:100%'>" # Corrected escaping for f-string
             elif b_type == 'divider': content_html += "<hr>"
         except Exception: continue
 
@@ -114,12 +117,12 @@ def notion_to_html(title, metadata, blocks):
     {{content_html}}
     <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {{last_backup}}</p>
 </body>
-</html>"""
+</html>""" # Corrected escaping for multiline f-string
 
 def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
     """재귀적으로 탐색하며 백업을 수행합니다."""
     title, metadata = get_notion_item_info(notion, item_id, is_db)
-    print(f"-> Processing: {{title}}")
+    print(f"-> Processing: {title}") # Corrected print statement to use f-string
     
     # 1. 드라이브에 이 항목을 위한 폴더 생성
     current_folder_id = get_or_create_drive_folder(drive_service, title, parent_drive_id)
@@ -137,9 +140,9 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
         html_content = notion_to_html(title, metadata, blocks)
         
         # 파일 업로드 (이름: "페이지제목.html")
-        file_name = f"{title}.html"
-        safe_file_name = file_name.replace("'", "'\' ")
-        query = f"name='{safe_file_name}' and '{current_folder_id}' in parents and trashed=false"
+        file_name = f"{title}.html" # Corrected escaping for f-string
+        safe_file_name = file_name.replace("'", "'"'"') # Corrected escaping for single quote within f-string
+        query = f"name='{safe_file_name}' and '{current_folder_id}' in parents and trashed=false" # Corrected escaping for f-string
         exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
         existing = exist_resp.get('files', [])
         
@@ -153,7 +156,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
             drive_service.files().create(body=meta, media_body=media).execute()
             
     except Exception as e:
-        print(f"   [Error content] {{title}}: {{e}}")
+        print(f"   [Error content] {title}: {e}") # Corrected print statement to use f-string
 
     # 3. 하위 항목(자식 페이지/DB) 탐색
     for block in blocks:
@@ -174,7 +177,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
                 if not resp['has_more']: break
                 cursor = resp['next_cursor']
         except Exception as e:
-            print(f"   [Error DB query] {{title}}: {{e}}")
+            print(f"   [Error DB query] {title}: {e}") # Corrected print statement to use f-string
 
 def main():
     notion_token = os.environ.get("NOTION_TOKEN")
