@@ -77,15 +77,15 @@ export interface TunableParams {
 
 // 기본값 (goldenSettings75.json 1차와 동기화 - 84.8% 달성)
 const DEFAULT_PARAMS: TunableParams = {
-  // 1. 저음 복원
+  // 1. 저음 복원 (2옥타브 지원 강화)
   LOW_FREQ_RECOVERY_MAX: 180,      // 저음 복구 상한 (F#3까지)
   LOW_SOLO_THRESHOLD: 200,         // G3=196Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // 저음 confidence 임계값
+  LOW_FREQ_CONFIDENCE_MIN: 0.10,   // 저음 confidence 임계값 (0.15→0.10 낮춤)
 
-  // 2. 점유율
-  OCCUPANCY_MIN: 0.45,             // Phase 92 연속성 복구 지원
-  OCCUPANCY_HIGH: 0.58,            // high 판정 기준
-  OCCUPANCY_SUSTAIN: 0.40,         // sustain 판정 기준
+  // 2. 점유율 (goldenSettings75와 동기화)
+  OCCUPANCY_MIN: 0.10,             // 최소 점유율 (0.45→0.10)
+  OCCUPANCY_HIGH: 0.25,            // high 판정 기준 (0.58→0.25)
+  OCCUPANCY_SUSTAIN: 0.25,         // sustain 기준 - 길이 정확도 개선 (0.40→0.25)
 
   // 3. 에너지 피크
   ENERGY_PEAK_CONFIDENCE_MIN: 0.75, // 에너지 피크 confidence
@@ -93,22 +93,22 @@ const DEFAULT_PARAMS: TunableParams = {
 
   // 4. 음표 길이
   MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
-  MAX_MERGE_SLOTS: 8,              // 과잉 병합 방지
+  MAX_MERGE_SLOTS: 16,             // 병합 허용 범위 (8→16)
 
   // 5. 그리드 분석
-  PITCH_CONFIDENCE_MIN: 0.30,      // 프레임 confidence 임계값
+  PITCH_CONFIDENCE_MIN: 0.10,      // 프레임 confidence 임계값 (0.30→0.10 저음 지원)
   GRID_SNAP_TOLERANCE: 0.15,       // 박자 스냅 허용
   TIMING_OFFSET_SLOTS: 3,          // 타이밍 보정 오프셋
 
   // 6. 음역대별 차별화
   MID_FREQ_MIN: 250,               // 중음역대 시작 (B3까지 저음 보너스)
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
-  LOW_FREQ_OCCUPANCY_BONUS: 0.15,  // 저음 점유율 보너스
+  LOW_FREQ_OCCUPANCY_BONUS: 0.20,  // 저음 점유율 보너스 (0.15→0.20 증가)
 
-  // 7. Onset Detection (Phase 77/95) - 회수율 90% 달성
-  ONSET_ENERGY_RATIO: 1.2,         // 에너지 급증 비율 임계값 (2.0→1.2 낮춤)
-  ONSET_CONFIDENCE_JUMP: 0.1,      // confidence 급증 임계값 (0.3→0.1 낮춤)
-  ONSET_DETECTION_ENABLED: true,   // 활성화 (동일 음정 반복 분리)
+  // 7. Onset Detection (Phase 77) - 비활성화 (실제 녹음에서 과분리 발생)
+  ONSET_ENERGY_RATIO: 2.0,         // 에너지 급증 비율 임계값
+  ONSET_CONFIDENCE_JUMP: 0.3,      // confidence 급증 임계값
+  ONSET_DETECTION_ENABLED: false,  // 비활성화 (테스트 vs 실제 녹음 차이)
 
   // 8. Pitch Stability Filter (Phase 80) - 비활성화: 효과 없음
   PITCH_STABILITY_THRESHOLD: 0.20, // 주파수 표준편차 / 평균 (변동계수) 허용 임계값
@@ -354,10 +354,11 @@ function correctOctaveError(frequency: number, contextFreqs: number[]): number {
 
   const avgContextFreq = contextFreqs.reduce((sum, f) => sum + f, 0) / contextFreqs.length;
 
-  // Phase 94: 서브하모닉 보정
+  // Phase 94: 서브하모닉 보정 (Phase 96에서 조건 완화)
   // 100Hz 미만의 매우 낮은 주파수는 서브하모닉일 가능성이 높음
-  // 남성 저음 범위 (A2=110Hz ~ F3=175Hz)에 맞추기 위해 옥타브 올림
-  if (frequency < 100 && frequency > 65) {
+  // 단, context 평균이 저음(150Hz 이하)이면 2옥타브 의도적 연주로 간주
+  // Phase 96: avgContextFreq < 150Hz 조건 추가 (2옥타브 지원)
+  if (frequency < 100 && frequency > 65 && avgContextFreq >= 150) {
     return frequency * 2;
   }
 
@@ -368,6 +369,15 @@ function correctOctaveError(frequency: number, contextFreqs: number[]): number {
     if (frequency > avgContextFreq * 1.5) {
       return frequency / 2;
     }
+  }
+
+  // Phase 96: 2옥타브 배음 보정
+  // 160-200Hz 영역은 E2(82Hz), F#2(93Hz), G2(98Hz)의 2배 배음일 수 있음
+  // 직전/직후 context에 70-80Hz(D2 영역) 프레임이 있으면 배음으로 간주
+  const hasLowContext = contextFreqs.some(f => f >= 70 && f <= 85);
+  if (hasLowContext && frequency >= 160 && frequency <= 200) {
+    // 2배 배음을 원래 주파수로 복원
+    return frequency / 2;
   }
 
   // Phase 55: 배음 필터 (1.62x threshold - 황금 설정)
@@ -573,7 +583,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
       }
 
       // Phase 2: 옥타브 자동 보정 (주변 문맥 기반)
-      const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
+      const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
       const correctedFreq = correctOctaveError(slot.medianFrequency, contextFreqs);
 
       // Phase 44: Pitch Snap 적용 (±50 cents 범위 내 반음 스냅)
@@ -750,7 +760,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // ========================================
   // 앞뒤 유효 슬롯 사이에 excluded 슬롯이 있으면 강제로 음표로 간주
   // 긴 음표 중간에 끊긴 부분을 살려서 회수율 향상
-  const MAX_GAP_SIZE = 8; // 최대 8슬롯까지 gap filling (반 마디)
+  const MAX_GAP_SIZE = 6; // Phase 96: 6슬롯 (균형점)
   let gapFilledCount = 0;
 
   // 유효한 슬롯들의 인덱스 수집
@@ -929,7 +939,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
         // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
         const medianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-        const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
+        const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
         const correctedFreq = medianFreq > 0 ? correctOctaveError(medianFreq, contextFreqs) : 0;
 
         // Phase 44: Pitch Snap 적용
@@ -984,7 +994,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     } else {
       // 연속 슬롯 확인: 음정이 반음 이내면 병합
       const currentMedianFreq = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-      const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
+      const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
       const currentCorrectedFreq = currentMedianFreq > 0 ? correctOctaveError(currentMedianFreq, contextFreqs) : 0;
 
       // Low Solo 보호 (Phase 75: activeParams 사용)
@@ -1014,7 +1024,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
         // 음정 다름 → 현재 음표 종료 후 새 음표 시작
         // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
         const medianFreq2 = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-        const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
+        const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
         const correctedFreq = medianFreq2 > 0 ? correctOctaveError(medianFreq2, contextFreqs) : 0;
 
         // Phase 44: Pitch Snap 적용
@@ -1075,7 +1085,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   if (currentNote) {
     // Phase 63 복구: median 사용 (66차 Mode 필터 비활성화)
     const medianFreqLast = currentNote.frequencies.length > 0 ? median(currentNote.frequencies) : 0;
-    const contextFreqs = allValidFreqs.slice(0, Math.min(100, allValidFreqs.length));
+    const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
     const correctedFreq = medianFreqLast > 0 ? correctOctaveError(medianFreqLast, contextFreqs) : 0;
 
     // Phase 44: Pitch Snap 적용
