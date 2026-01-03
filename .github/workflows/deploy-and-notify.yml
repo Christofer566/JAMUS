@@ -513,7 +513,9 @@ jobs:
       - name: Run Notion to Google Drive Sync
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
           GDRIVE_FOLDER_ID: "1kYWkO4shselSCG-nmR8t4Wx6c-7l22So"
           NOTION_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
         run: python sync_notion_to_drive.py

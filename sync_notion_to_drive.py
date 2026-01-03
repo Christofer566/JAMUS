@@ -1,16 +1,14 @@
 import os
 import json
 from notion_client import Client
-from google.oauth2.service_account import Credentials
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
 
 def get_page_title(notion, page_id):
-    """Notion 페이지의 제목을 가져옵니다."""
     try:
         page_props = notion.pages.retrieve(page_id)
-        # 페이지 제목 속성 추출 (Notion API 버전에 따라 다를 수 있음)
         properties = page_props.get('properties', {})
         for prop in properties.values():
             if prop['type'] == 'title':
@@ -22,7 +20,6 @@ def get_page_title(notion, page_id):
     return "Untitled"
 
 def notion_blocks_to_html(blocks):
-    """Notion 블록을 간단한 HTML로 변환합니다."""
     html = ""
     for block in blocks:
         block_type = block['type']
@@ -46,12 +43,9 @@ def notion_blocks_to_html(blocks):
                 html += "<hr>\n"
         except Exception:
             continue
-            
-    # 기본 HTML 구조 감싸기
     return f"<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Notion Backup</title><style>body{{font-family:sans-serif;line-height:1.6;padding:20px;max-width:800px;margin:auto;}}</style></head><body>{html}</body></html>"
 
 def get_all_blocks(notion, page_id):
-    """페이지의 모든 블록을 가져옵니다."""
     blocks = []
     start_cursor = None
     while True:
@@ -65,69 +59,61 @@ def get_all_blocks(notion, page_id):
 def main():
     # 환경 변수에서 설정값 가져오기
     notion_token = os.environ.get("NOTION_TOKEN")
-    gdrive_creds_json = os.environ.get("GDRIVE_CREDENTIALS")
+    client_id = os.environ.get("GDRIVE_CLIENT_ID")
+    client_secret = os.environ.get("GDRIVE_CLIENT_SECRET")
+    refresh_token = os.environ.get("GDRIVE_REFRESH_TOKEN")
     gdrive_folder_id = os.environ.get("GDRIVE_FOLDER_ID")
     notion_page_ids_str = os.environ.get("NOTION_PAGE_ID")
 
-    if not all([notion_token, gdrive_creds_json, gdrive_folder_id, notion_page_ids_str]):
-        print("Error: Missing one or more required environment variables (NOTION_TOKEN, GDRIVE_CREDENTIALS, GDRIVE_FOLDER_ID, NOTION_PAGE_ID).")
+    if not all([notion_token, client_id, client_secret, refresh_token, gdrive_folder_id, notion_page_ids_str]):
+        print("Error: Missing required environment variables (OAuth2 credentials or IDs).")
         return
 
     # Notion 클라이언트 초기화
     notion = Client(auth=notion_token)
 
-    # Google Drive 클라이언트 초기화
-    gdrive_creds_dict = json.loads(gdrive_creds_json)
-    creds = Credentials.from_service_account_info(gdrive_creds_dict, scopes=['https://www.googleapis.com/auth/drive'])
+    # Google Drive OAuth2 인증 (Refresh Token 사용)
+    creds = Credentials(
+        None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=['https://www.googleapis.com/auth/drive.file']
+    )
     drive_service = build('drive', 'v3', credentials=creds)
 
-    # Notion 페이지 ID 처리 (여러 개일 경우 대비)
     page_ids = [pid.strip() for pid in notion_page_ids_str.split(',')]
 
     for page_id in page_ids:
         if not page_id: continue
         print(f"\n--- Processing Notion Page ID: {page_id} ---")
         try:
-            # 1. Notion 페이지 제목 및 블록 가져오기
             page_title = get_page_title(notion, page_id)
             print(f"Title: {page_title}")
             blocks = get_all_blocks(notion, page_id)
-
-            # 2. HTML로 변환
             html_content = notion_blocks_to_html(blocks)
             
-            # 3. Google Drive 업로드 준비
             file_name = f"{page_title}.html"
             file_metadata = {
                 'name': file_name,
                 'parents': [gdrive_folder_id]
             }
             
-            # 파일이 이미 있는지 확인 (이름으로 검색)
             query = f"name='{file_name}' and '{gdrive_folder_id}' in parents and trashed=false"
             response = drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
             existing_files = response.get('files', [])
 
-            # 메모리 내 데이터를 미디어로 변환
             fh = io.BytesIO(html_content.encode('utf-8'))
             media = MediaIoBaseUpload(fh, mimetype='text/html', resumable=True)
 
             if existing_files:
-                # 기존 파일 업데이트
                 file_id = existing_files[0]['id']
                 print(f"Updating existing file: {file_name} (ID: {file_id})")
-                drive_service.files().update(
-                    fileId=file_id,
-                    media_body=media
-                ).execute()
+                drive_service.files().update(fileId=file_id, media_body=media).execute()
             else:
-                # 새 파일 생성
                 print(f"Creating new file: {file_name}")
-                drive_service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id'
-                ).execute()
+                drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
             print(f"SUCCESS: Backed up '{file_name}' to Google Drive.")
 
