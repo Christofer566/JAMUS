@@ -1,25 +1,25 @@
 {
   "version": "0차",
   "locked": true,
-  "description": "0차 황금 설정 - 71.4% 달성 (배치 테스트)",
+  "description": "0차 황금 설정 - 71.5% 달성 (배치 테스트)",
   "lockedAt": "2026-01-03",
   "bestResults": {
-    "timing": 77.38095238095238,
-    "pitch": 86.9047619047619,
-    "duration": 50
+    "timing": 77.10843373493977,
+    "pitch": 86.74698795180723,
+    "duration": 50.602409638554214
   },
   "params": {
     "LOW_FREQ_RECOVERY_MAX": 120,
     "LOW_SOLO_THRESHOLD": 150,
-    "LOW_FREQ_CONFIDENCE_MIN": 0.2,
-    "OCCUPANCY_MIN": 0.75,
-    "OCCUPANCY_HIGH": 0.7,
-    "OCCUPANCY_SUSTAIN": 0.45,
-    "ENERGY_PEAK_CONFIDENCE_MIN": 0.8,
-    "ENERGY_PEAK_OCCUPANCY_MIN": 0.95,
+    "LOW_FREQ_CONFIDENCE_MIN": 0.15,
+    "OCCUPANCY_MIN": 0.7,
+    "OCCUPANCY_HIGH": 0.65,
+    "OCCUPANCY_SUSTAIN": 0.4,
+    "ENERGY_PEAK_CONFIDENCE_MIN": 0.75,
+    "ENERGY_PEAK_OCCUPANCY_MIN": 0.9,
     "MIN_NOTE_DURATION_SLOTS": 2,
     "MAX_MERGE_SLOTS": 8,
-    "PITCH_CONFIDENCE_MIN": 0.35,
+    "PITCH_CONFIDENCE_MIN": 0.3,
     "GRID_SNAP_TOLERANCE": 0.15,
     "TIMING_OFFSET_SLOTS": 3,
     "MID_FREQ_MIN": 200,
@@ -38,7 +38,7 @@
     "RMS_THRESHOLD": 0.018
   },
   "notes": [
-    "71.1% → 71.4% 개선",
+    "71.4% → 71.5% 개선",
     "테스트 케이스: 6개",
     "PULLBACK 200ms로 변경 시 타이밍 붕괴",
     "TARGET_MIN_OCTAVE=2 시 음정 0% (절대 금지)"
