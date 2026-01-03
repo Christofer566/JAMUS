@@ -718,7 +718,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     };
   }),
 
-  // 선택된 음표들 길이 조정 (Shift + 화살표)
+  // 선택된 음표들 길이 조정 (Shift + 화살표) - 마디 경계 넘기 지원
   updateSelectedNotesDuration: (direction) => set((state) => {
     if (state.selectedNoteIndices.length === 0) return state;
 
@@ -726,6 +726,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     const before: Partial<NoteData>[] = [];
     const after: Partial<NoteData>[] = [];
     let newNotes = [...state.editedNotes];
+    const newlyCreatedNotes: NoteData[] = [];
 
     // 모든 충돌 처리 기록
     const allTrimmedIndices: number[] = [];
@@ -736,7 +737,69 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       const note = newNotes[index];
       if (note.isRest) continue;
 
-      const newSlotCount = Math.max(1, Math.min(16, note.slotCount + delta));
+      const maxInCurrentMeasure = SLOTS_PER_MEASURE - note.slotIndex;
+      let newSlotCount = Math.max(1, Math.min(16, note.slotCount + delta));
+
+      // 마디 경계를 넘으려고 할 때: 다음 마디에 연속 음표 생성
+      if (direction === 'increase' && note.slotCount >= maxInCurrentMeasure) {
+        // 현재 음표가 이미 마디 끝까지 차있으면 다음 마디에 연속 음표 생성
+        const nextMeasureIndex = note.measureIndex + 1;
+
+        // 다음 마디에 이미 같은 음의 연속 음표가 있는지 확인
+        const existingContinuation = newNotes.find(n =>
+          n.measureIndex === nextMeasureIndex &&
+          n.slotIndex === 0 &&
+          n.pitch === note.pitch &&
+          !n.isRest
+        );
+
+        if (existingContinuation) {
+          // 기존 연속 음표 확장
+          const contIndex = newNotes.indexOf(existingContinuation);
+          const newContSlotCount = Math.min(16, existingContinuation.slotCount + 1);
+
+          if (newContSlotCount !== existingContinuation.slotCount) {
+            before.push({ slotCount: existingContinuation.slotCount, duration: existingContinuation.duration });
+            after.push({ slotCount: newContSlotCount, duration: slotCountToDuration(newContSlotCount) });
+
+            newNotes[contIndex] = {
+              ...existingContinuation,
+              slotCount: newContSlotCount,
+              duration: slotCountToDuration(newContSlotCount)
+            };
+
+            // 충돌 처리
+            const collision = handleCollisions(newNotes, contIndex, 0, newContSlotCount, nextMeasureIndex);
+            newNotes = collision.notes;
+
+            collision.trimmedIndices.forEach((ti, i) => {
+              if (!allTrimmedIndices.includes(ti)) {
+                allTrimmedIndices.push(ti);
+                allTrimmedBefore.push(collision.trimmedBefore[i]);
+                allTrimmedAfter.push(collision.trimmedAfter[i]);
+              }
+            });
+          }
+        } else {
+          // 새 연속 음표 생성
+          const newContinuationNote: NoteData = {
+            pitch: note.pitch,
+            duration: 'sixteenth',
+            beat: (nextMeasureIndex * 4) + 0,
+            measureIndex: nextMeasureIndex,
+            slotIndex: 0,
+            slotCount: 1,
+            isRest: false,
+            confidence: note.confidence ?? 1.0
+          };
+
+          newlyCreatedNotes.push(newContinuationNote);
+        }
+
+        // 현재 음표는 변경하지 않음 (이미 최대)
+        continue;
+      }
+
       if (newSlotCount === note.slotCount) continue;
 
       before.push({ slotCount: note.slotCount, duration: note.duration });
@@ -748,7 +811,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
         duration: slotCountToDuration(newSlotCount)
       };
 
-      // 충돌 처리
+      // 현재 마디 충돌 처리
       const collision = handleCollisions(
         newNotes,
         index,
@@ -768,7 +831,37 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       });
     }
 
-    if (before.length === 0) return state;
+    // 새로 생성된 연속 음표들 추가
+    if (newlyCreatedNotes.length > 0) {
+      for (const newNote of newlyCreatedNotes) {
+        // 삽입 위치 찾기
+        let insertIndex = newNotes.findIndex(n =>
+          n.measureIndex > newNote.measureIndex ||
+          (n.measureIndex === newNote.measureIndex && n.slotIndex > newNote.slotIndex)
+        );
+
+        if (insertIndex === -1) {
+          newNotes.push(newNote);
+        } else {
+          newNotes.splice(insertIndex, 0, newNote);
+        }
+
+        // 충돌 처리
+        const newNoteIndex = insertIndex === -1 ? newNotes.length - 1 : insertIndex;
+        const collision = handleCollisions(newNotes, newNoteIndex, 0, 1, newNote.measureIndex);
+        newNotes = collision.notes;
+
+        collision.trimmedIndices.forEach((ti, i) => {
+          if (!allTrimmedIndices.includes(ti)) {
+            allTrimmedIndices.push(ti);
+            allTrimmedBefore.push(collision.trimmedBefore[i]);
+            allTrimmedAfter.push(collision.trimmedAfter[i]);
+          }
+        });
+      }
+    }
+
+    if (before.length === 0 && newlyCreatedNotes.length === 0) return state;
 
     const action: EditAction = {
       type: 'duration',

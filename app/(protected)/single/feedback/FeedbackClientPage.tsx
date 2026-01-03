@@ -350,9 +350,10 @@ export default function FeedbackClientPage() {
             return;
         }
 
-        // 폴백 모드(신디사이저)일 때는 녹음 오디오 재생하지 않음
+        // Phase 78: rawRecordingMode가 활성화되면 폴백 모드여도 녹음 오디오 재생
+        // 폴백 모드(신디사이저)일 때는 녹음 오디오 재생하지 않음 (rawRecordingMode 제외)
         const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
-        if (isFallbackMode) {
+        if (isFallbackMode && !rawRecordingMode) {
             if (!userAudio.paused) {
                 userAudio.pause();
                 console.log('🎤 [User Audio] 폴백 모드 - 녹음 오디오 정지');
@@ -386,7 +387,45 @@ export default function FeedbackClientPage() {
         }
 
         wasInRangeRef.current = isInRecordingRange;
-    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange, storedOutputInstrument, conversionState.isFallbackMode]);
+    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange, storedOutputInstrument, conversionState.isFallbackMode, rawRecordingMode]);
+
+    // Tone.js 자동 재시작: 폴백 모드에서 재생 중 녹음 범위 진입 시
+    const wasInRangeForToneRef = useRef(false);
+    useEffect(() => {
+        const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+
+        // 폴백 모드가 아니거나 재생 중이 아니면 스킵
+        if (!isFallbackMode || rawRecordingMode || !isPlaying || !storedRecordingRange || editedNotes.length === 0) {
+            wasInRangeForToneRef.current = isInRecordingRange;
+            return;
+        }
+
+        const justEnteredRange = isInRecordingRange && !wasInRangeForToneRef.current;
+
+        if (justEnteredRange) {
+            console.log('🎹 [Tone.js Auto] 녹음 범위 진입 - 자동 재시작');
+
+            // slotIndex 기반으로 beat 재계산
+            const notesOnlyNotes = editedNotes
+                .filter(n => !n.isRest)
+                .map(note => {
+                    const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                    const slotBasedBeat = (relativeMeasureIndex * 4) + (note.slotIndex / 4);
+                    return { ...note, beat: slotBasedBeat };
+                });
+
+            const relativeStartTime = currentTime - storedRecordingRange.startTime;
+
+            voiceToInstrument.stopFallbackPlayback();
+            voiceToInstrument.playNotesAsFallback(
+                notesOnlyNotes,
+                SONG_META.bpm,
+                relativeStartTime
+            );
+        }
+
+        wasInRangeForToneRef.current = isInRecordingRange;
+    }, [isInRecordingRange, isPlaying, currentTime, storedRecordingRange, storedOutputInstrument, conversionState.isFallbackMode, rawRecordingMode, editedNotes, voiceToInstrument]);
 
     // 실제 녹음 범위에서 구간 가져오기 (Zustand store 사용)
     const recordedRanges = useMemo(() => {
@@ -465,32 +504,49 @@ export default function FeedbackClientPage() {
                 console.log('🎤 [handlePlayPause] 녹음 듣기 모드 - 원본 재생');
             } else if (isFallbackMode && editedNotes.length > 0 && storedRecordingRange) {
                 // 폴백 모드: Tone.js로 음표 재생
-                // 모든 음표의 beat를 상대 beat로 통일 (절대/상대 beat 혼재 문제 해결)
-                const startMeasureBeat = storedRecordingRange.startMeasure * 4;
-                const notesOnlyNotes = editedNotes
-                    .filter(n => !n.isRest)
-                    .map(note => ({
-                        ...note,
-                        beat: note.beat >= startMeasureBeat
-                            ? note.beat - startMeasureBeat  // 절대 beat → 상대 beat
-                            : note.beat                      // 이미 상대 beat
-                    }));
+                // 녹음 범위 내에 있는지 확인
+                const isInRange = webAudio.currentTime >= storedRecordingRange.startTime &&
+                                  webAudio.currentTime < storedRecordingRange.endTime;
 
-                // note.beat은 녹음 시작점 기준이므로, startTime도 녹음 시작점 기준으로 전달
-                const relativeStartTime = Math.max(0, webAudio.currentTime - storedRecordingRange.startTime);
-                console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 시작', {
-                    notesCount: notesOnlyNotes.length,
-                    currentTime: webAudio.currentTime.toFixed(2),
-                    recordingStart: storedRecordingRange.startTime.toFixed(2),
-                    relativeStartTime: relativeStartTime.toFixed(2)
-                });
-                console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 pitch:', notesOnlyNotes.slice(0, 5).map(n => n.pitch));
-                console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 beat:', notesOnlyNotes.slice(0, 5).map(n => n.beat.toFixed(2)));
-                await voiceToInstrument.playNotesAsFallback(
-                    notesOnlyNotes,
-                    SONG_META.bpm,
-                    relativeStartTime  // 녹음 시작점 기준 시간
-                );
+                if (isInRange) {
+                    // slotIndex 기반으로 beat 재계산 (수직선 위치와 동기화)
+                    const notesOnlyNotes = editedNotes
+                        .filter(n => !n.isRest)
+                        .map(note => {
+                            // measureIndex(절대) → 상대 마디 인덱스
+                            const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                            // slotIndex 기반 beat 계산 (16슬롯 = 4박자)
+                            const slotBasedBeat = (relativeMeasureIndex * 4) + (note.slotIndex / 4);
+                            return {
+                                ...note,
+                                beat: slotBasedBeat
+                            };
+                        });
+
+                    // 수직선 위치와 동기화된 재생 시작 시간 계산
+                    const relativeStartTime = webAudio.currentTime - storedRecordingRange.startTime;
+                    console.log('🎹 [handlePlayPause] Tone.js 폴백 재생 시작 (수직선 동기화)', {
+                        notesCount: notesOnlyNotes.length,
+                        currentTime: webAudio.currentTime.toFixed(2),
+                        recordingStart: storedRecordingRange.startTime.toFixed(2),
+                        relativeStartTime: relativeStartTime.toFixed(2),
+                        isInRange: true
+                    });
+                    console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 pitch:', notesOnlyNotes.slice(0, 5).map(n => n.pitch));
+                    console.log('🎹 [handlePlayPause] 재생할 첫 5개 음표 beat:', notesOnlyNotes.slice(0, 5).map(n => n.beat.toFixed(2)));
+                    await voiceToInstrument.playNotesAsFallback(
+                        notesOnlyNotes,
+                        SONG_META.bpm,
+                        relativeStartTime  // 녹음 시작점 기준 시간
+                    );
+                } else {
+                    console.log('🎹 [handlePlayPause] 녹음 범위 밖 - Tone.js 재생 안함', {
+                        currentTime: webAudio.currentTime.toFixed(2),
+                        recordingStart: storedRecordingRange.startTime.toFixed(2),
+                        recordingEnd: storedRecordingRange.endTime.toFixed(2),
+                        isInRange: false
+                    });
+                }
             } else {
                 // 기본 원본 재생 모드
                 syncUserAudio(webAudio.currentTime, true);
@@ -506,41 +562,61 @@ export default function FeedbackClientPage() {
         setCurrentTime(clampedTime);
 
         const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
+        // Phase 78: rawRecordingMode가 활성화되면 Tone.js 재시작 안함
+        const shouldPlayRawRecording = rawRecordingMode || storedOutputInstrument === 'raw';
 
-        // 폴백 모드이고 재생 중이면 Tone.js 재생 재시작
-        if (isFallbackMode && isPlaying && editedNotes.length > 0 && storedRecordingRange) {
+        // 폴백 모드이고 재생 중이면 Tone.js 재생 재시작 (rawRecordingMode 제외)
+        if (isFallbackMode && !rawRecordingMode && isPlaying && editedNotes.length > 0 && storedRecordingRange) {
             // 기존 재생 중지
             voiceToInstrument.stopFallbackPlayback();
 
-            // 모든 음표의 beat를 상대 beat로 통일
-            const startMeasureBeat = storedRecordingRange.startMeasure * 4;
-            const notesOnlyNotes = editedNotes
-                .filter(n => !n.isRest)
-                .map(note => ({
-                    ...note,
-                    beat: note.beat >= startMeasureBeat
-                        ? note.beat - startMeasureBeat
-                        : note.beat
-                }));
+            // 녹음 범위 내에 있는지 확인
+            const isInRange = clampedTime >= storedRecordingRange.startTime &&
+                              clampedTime < storedRecordingRange.endTime;
 
-            const relativeStartTime = Math.max(0, clampedTime - storedRecordingRange.startTime);
+            if (isInRange) {
+                // slotIndex 기반으로 beat 재계산 (수직선 위치와 동기화)
+                const notesOnlyNotes = editedNotes
+                    .filter(n => !n.isRest)
+                    .map(note => {
+                        // measureIndex(절대) → 상대 마디 인덱스
+                        const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                        // slotIndex 기반 beat 계산 (16슬롯 = 4박자)
+                        const slotBasedBeat = (relativeMeasureIndex * 4) + (note.slotIndex / 4);
+                        return {
+                            ...note,
+                            beat: slotBasedBeat
+                        };
+                    });
 
-            console.log('🎹 [Seek] Tone.js 재생 재시작', {
-                seekTime: clampedTime.toFixed(2),
-                recordingStart: storedRecordingRange.startTime.toFixed(2),
-                relativeStartTime: relativeStartTime.toFixed(2)
-            });
+                // 수직선 위치와 동기화된 재생 시작 시간 계산 (오프셋 없음)
+                const relativeStartTime = clampedTime - storedRecordingRange.startTime;
 
-            await voiceToInstrument.playNotesAsFallback(
-                notesOnlyNotes,
-                SONG_META.bpm,
-                relativeStartTime
-            );
-        } else {
-            // 원본 모드: user audio 동기화
+                console.log('🎹 [Seek] Tone.js 재생 재시작 (수직선 동기화)', {
+                    seekTime: clampedTime.toFixed(2),
+                    recordingStart: storedRecordingRange.startTime.toFixed(2),
+                    relativeStartTime: relativeStartTime.toFixed(2),
+                    isInRange: true
+                });
+
+                await voiceToInstrument.playNotesAsFallback(
+                    notesOnlyNotes,
+                    SONG_META.bpm,
+                    relativeStartTime
+                );
+            } else {
+                console.log('🎹 [Seek] 녹음 범위 밖 - Tone.js 재생 중지', {
+                    seekTime: clampedTime.toFixed(2),
+                    recordingStart: storedRecordingRange.startTime.toFixed(2),
+                    recordingEnd: storedRecordingRange.endTime.toFixed(2),
+                    isInRange: false
+                });
+            }
+        } else if (shouldPlayRawRecording) {
+            // 녹음 듣기 모드 또는 원본 모드: user audio 동기화
             syncUserAudio(clampedTime, isPlaying);
         }
-    }, [duration, webAudio, isPlaying, storedOutputInstrument, conversionState.isFallbackMode, editedNotes, storedRecordingRange, voiceToInstrument, syncUserAudio]);
+    }, [duration, webAudio, isPlaying, storedOutputInstrument, conversionState.isFallbackMode, rawRecordingMode, editedNotes, storedRecordingRange, voiceToInstrument, syncUserAudio]);
 
     const handleSeekByMeasures = useCallback((offset: number) => {
         const newTime = currentTime + (offset * measureDuration);
@@ -553,10 +629,16 @@ export default function FeedbackClientPage() {
     }, [measureDuration, handleTimeChange]);
 
     // 편집 모드에서 선택된 음표 변경 시 수직선 동기화
+    // 재생 중일 때는 수직선 이동하지 않음 (Tone.js 재시작 방지)
     const prevSelectedNoteRef = useRef<{ index: number; beat: number } | null>(null);
     useEffect(() => {
         if (!isEditMode || !storedRecordingRange || selectedNoteIndices.length === 0) {
             prevSelectedNoteRef.current = null;
+            return;
+        }
+
+        // 재생 중에는 수직선 동기화 하지 않음 (Tone.js 재시작으로 인한 렉 방지)
+        if (isPlaying) {
             return;
         }
 
@@ -572,16 +654,20 @@ export default function FeedbackClientPage() {
         const shouldMove = !prev || prev.index !== selectedIndex || prev.beat !== selectedNote.beat;
 
         if (shouldMove) {
-            const startMeasureBeat = storedRecordingRange.startMeasure * 4;
-            const relativeBeat = selectedNote.beat >= startMeasureBeat
-                ? selectedNote.beat - startMeasureBeat
-                : selectedNote.beat;
-            const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+            // slotIndex 기반으로 정확한 위치 계산 (음표 박스와 동일한 기준)
+            const measureDurationSec = (4 * 60) / SONG_META.bpm; // 4박자 = 1마디
+            const slotDurationSec = measureDurationSec / 16; // 16슬롯/마디
+
+            // measureIndex는 절대 마디 번호 → startMeasure를 빼서 상대 인덱스로 변환
+            const relativeMeasureIndex = selectedNote.measureIndex - storedRecordingRange.startMeasure;
+            // +3.5슬롯 오프셋 보정
+            const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
+                                        ((selectedNote.slotIndex + 3.5) * slotDurationSec);
             const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
             handleTimeChange(absoluteTime);
         }
         prevSelectedNoteRef.current = { index: selectedIndex, beat: selectedNote.beat };
-    }, [isEditMode, storedRecordingRange, selectedNoteIndices, editedNotes, handleTimeChange]);
+    }, [isEditMode, storedRecordingRange, selectedNoteIndices, editedNotes, handleTimeChange, isPlaying]);
 
     // ============================================
     // Pitch Analysis & Note Grouping
@@ -886,8 +972,29 @@ export default function FeedbackClientPage() {
     // Phase 78: 녹음 듣기 모드 토글 (악기 변환 상태에서 원본 녹음 재생)
     const handleToggleRawRecording = useCallback((enabled: boolean) => {
         setRawRecordingMode(enabled);
+        if (enabled) {
+            // 녹음 듣기 활성화 시 Tone.js 중지
+            voiceToInstrument.stopFallbackPlayback();
+            console.log('🎤 [녹음 듣기] Tone.js 중지 - 원본 녹음만 재생');
+        } else if (isPlaying && storedRecordingRange && editedNotes.length > 0) {
+            // 녹음 듣기 해제 시 Tone.js 재시작 (재생 중이고 녹음 범위 내일 때)
+            const isInRange = currentTime >= storedRecordingRange.startTime &&
+                              currentTime < storedRecordingRange.endTime;
+            if (isInRange) {
+                const notesOnlyNotes = editedNotes
+                    .filter(n => !n.isRest)
+                    .map(note => {
+                        const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                        const slotBasedBeat = (relativeMeasureIndex * 4) + (note.slotIndex / 4);
+                        return { ...note, beat: slotBasedBeat };
+                    });
+                const relativeStartTime = currentTime - storedRecordingRange.startTime;
+                voiceToInstrument.playNotesAsFallback(notesOnlyNotes, SONG_META.bpm, relativeStartTime);
+                console.log('🎹 [녹음 듣기 해제] Tone.js 재시작');
+            }
+        }
         // JAM 반주는 계속 재생 (음소거 안함)
-    }, []);
+    }, [voiceToInstrument, isPlaying, storedRecordingRange, editedNotes, currentTime]);
 
     const handleToggleJamOnly = useCallback((enabled: boolean) => {
         setJamOnlyMode(enabled);
@@ -912,20 +1019,21 @@ export default function FeedbackClientPage() {
                                 const note = editedNotes[newIndex];
                                 const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
 
-                                // 미리듣기
-                                if (isFallbackMode && !note.isRest) {
+                                // 미리듣기 (재생 중이 아닐 때만)
+                                if (!isPlaying && isFallbackMode && !note.isRest) {
                                     voiceToInstrument.previewNote(note.pitch, 0.3);
                                 }
 
-                                // 진행바 이동
-                                if (storedRecordingRange) {
-                                    // beat가 startMeasure보다 큰 경우 절대 beat → 상대 beat로 변환
-                                    // beat가 작은 경우 이미 상대 beat → 그대로 사용
-                                    const startMeasureBeat = storedRecordingRange.startMeasure * 4;
-                                    const relativeBeat = note.beat >= startMeasureBeat
-                                        ? note.beat - startMeasureBeat
-                                        : note.beat;
-                                    const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+                                // 진행바 이동 (재생 중이 아닐 때만 - Tone.js 재시작 방지)
+                                if (!isPlaying && storedRecordingRange) {
+                                    // slotIndex 기반으로 정확한 위치 계산
+                                    const measureDurationSec = (4 * 60) / SONG_META.bpm;
+                                    const slotDurationSec = measureDurationSec / 16;
+                                    // measureIndex는 절대 마디 번호 → 상대 인덱스로 변환
+                                    const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                                    // +3.5슬롯 오프셋 보정
+                                    const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
+                                                                ((note.slotIndex + 3.5) * slotDurationSec);
                                     const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
                                     handleTimeChange(absoluteTime);
                                 }
@@ -940,20 +1048,21 @@ export default function FeedbackClientPage() {
                                 const note = editedNotes[newIndex];
                                 const isFallbackMode = storedOutputInstrument !== 'raw' && conversionState.isFallbackMode;
 
-                                // 미리듣기
-                                if (isFallbackMode && !note.isRest) {
+                                // 미리듣기 (재생 중이 아닐 때만)
+                                if (!isPlaying && isFallbackMode && !note.isRest) {
                                     voiceToInstrument.previewNote(note.pitch, 0.3);
                                 }
 
-                                // 진행바 이동
-                                if (storedRecordingRange) {
-                                    // beat가 startMeasure보다 큰 경우 절대 beat → 상대 beat로 변환
-                                    // beat가 작은 경우 이미 상대 beat → 그대로 사용
-                                    const startMeasureBeat = storedRecordingRange.startMeasure * 4;
-                                    const relativeBeat = note.beat >= startMeasureBeat
-                                        ? note.beat - startMeasureBeat
-                                        : note.beat;
-                                    const noteTimeInRecording = relativeBeat * (60 / SONG_META.bpm);
+                                // 진행바 이동 (재생 중이 아닐 때만 - Tone.js 재시작 방지)
+                                if (!isPlaying && storedRecordingRange) {
+                                    // slotIndex 기반으로 정확한 위치 계산
+                                    const measureDurationSec = (4 * 60) / SONG_META.bpm;
+                                    const slotDurationSec = measureDurationSec / 16;
+                                    // measureIndex는 절대 마디 번호 → 상대 인덱스로 변환
+                                    const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
+                                    // +3.5슬롯 오프셋 보정
+                                    const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
+                                                                ((note.slotIndex + 3.5) * slotDurationSec);
                                     const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
                                     handleTimeChange(absoluteTime);
                                 }
@@ -1080,7 +1189,7 @@ export default function FeedbackClientPage() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, storedOutputInstrument, toggleInstrumentOnlyMode, instrumentOnlyMode, isEditMode, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo, reset, addNote, showToast, selectPrevNote, selectNextNote, selectedNoteIndices, editedNotes, conversionState.isFallbackMode, voiceToInstrument, storedRecordingRange, handleTimeChange, handleToggleRawRecording, rawRecordingMode]);
+    }, [handlePlayPause, handleSeekByMeasures, handleToggleJamOnly, jamOnlyMode, handleToggleMyRecordingOnly, myRecordingOnlyMode, storedOutputInstrument, toggleInstrumentOnlyMode, instrumentOnlyMode, isEditMode, isPlaying, updateNotePitch, updateNotePosition, updateSelectedNotesDuration, deleteSelectedNotes, clearSelection, undo, redo, reset, addNote, showToast, selectPrevNote, selectNextNote, selectedNoteIndices, editedNotes, conversionState.isFallbackMode, voiceToInstrument, storedRecordingRange, handleTimeChange, handleToggleRawRecording, rawRecordingMode]);
     
     const [isUserAudioReady, setIsUserAudioReady] = useState(false);
     const audioCreatedRef = useRef(false);

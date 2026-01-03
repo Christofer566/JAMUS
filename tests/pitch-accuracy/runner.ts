@@ -129,7 +129,7 @@ interface ErrorDetail {
 }
 
 // ============================================
-// 튜닝 가능 파라미터 (pitchToNote.ts Phase 77과 동기화)
+// 튜닝 가능 파라미터 (pitchToNote.ts Phase 75와 동기화)
 // ============================================
 interface TunableParams {
   // 1. 저음 복원 파라미터
@@ -162,37 +162,42 @@ interface TunableParams {
 }
 
 // ============================================
-// Phase 77: 세분화된 파라미터 (pitchToNote.ts 동기화)
+// Phase 75: 황금 설정 (절대 변경 금지)
+// goldenSettings75.json에서 로드하며, 개선되지 않으면 자동 롤백
 // ============================================
-const GOLDEN_PARAMS_77: TunableParams = {
-  // 1. 저음 복원
-  LOW_FREQ_RECOVERY_MAX: 120,  // 150Hz 시도 실패 (61.7%→54.9%)
-  LOW_SOLO_THRESHOLD: 150,
-  LOW_FREQ_CONFIDENCE_MIN: 0.15,
+function loadGoldenParams75(): TunableParams {
+  const goldenPath = path.join(path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'), 'goldenSettings75.json');
 
-  // 2. 점유율
-  OCCUPANCY_MIN: 0.75,
-  OCCUPANCY_HIGH: 0.70,
-  OCCUPANCY_SUSTAIN: 0.55,
+  if (fs.existsSync(goldenPath)) {
+    const data = JSON.parse(fs.readFileSync(goldenPath, 'utf-8'));
+    console.log(`  [LOCKED] 75차 황금 설정 로드됨 (${data.lockedAt})`);
+    return data.params as TunableParams;
+  }
 
-  // 3. 에너지 피크
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
-  ENERGY_PEAK_OCCUPANCY_MIN: 0.95,
+  // 파일 없을 경우 하드코딩된 기본값
+  console.log('  [WARNING] goldenSettings75.json not found, using hardcoded defaults');
+  return {
+    LOW_FREQ_RECOVERY_MAX: 120,
+    LOW_SOLO_THRESHOLD: 150,
+    LOW_FREQ_CONFIDENCE_MIN: 0.15,
+    OCCUPANCY_MIN: 0.75,
+    OCCUPANCY_HIGH: 0.70,
+    OCCUPANCY_SUSTAIN: 0.55,
+    ENERGY_PEAK_CONFIDENCE_MIN: 0.80,
+    ENERGY_PEAK_OCCUPANCY_MIN: 0.95,
+    MIN_NOTE_DURATION_SLOTS: 1,
+    MAX_MERGE_SLOTS: 8,
+    PITCH_CONFIDENCE_MIN: 0.35,
+    GRID_SNAP_TOLERANCE: 0.15,
+    TIMING_OFFSET_SLOTS: 3,
+    MID_FREQ_MIN: 200,
+    HIGH_FREQ_MIN: 500,
+    LOW_FREQ_OCCUPANCY_BONUS: 0.10
+  };
+}
 
-  // 4. 음표 길이
-  MIN_NOTE_DURATION_SLOTS: 1,
-  MAX_MERGE_SLOTS: 8,
-
-  // 5. 그리드 분석
-  PITCH_CONFIDENCE_MIN: 0.35,
-  GRID_SNAP_TOLERANCE: 0.15,
-  TIMING_OFFSET_SLOTS: 3,
-
-  // 6. 음역대별 차별화
-  MID_FREQ_MIN: 200,
-  HIGH_FREQ_MIN: 500,
-  LOW_FREQ_OCCUPANCY_BONUS: 0.10
-};
+// 75차 황금 설정 (런타임에 로드)
+let GOLDEN_PARAMS_75: TunableParams;
 
 // ============================================
 // 절대 변경 금지 파라미터 (useRecorder.ts에서 관리)
@@ -213,10 +218,10 @@ const FAILED_ATTEMPTS = [
   { param: 'RMS', value: 0.012, result: '노이즈 폭증 - 숨소리까지 음표로 인식' },
 ];
 
-let activeParams: TunableParams = { ...GOLDEN_PARAMS_77 };
+let activeParams: TunableParams;
 
 // ============================================
-// 상수 (Phase 77: 일부는 activeParams로 이동)
+// 상수 (Phase 75: 일부는 activeParams로 이동)
 // ============================================
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const A4_FREQ = 440;
@@ -225,7 +230,7 @@ const SLOTS_PER_MEASURE = 16;
 const DEFAULT_PITCH = 'C4';
 const TARGET_MIN_OCTAVE = 3;
 let START_MEASURE = 9; // 녹음 시작 마디 (groundTruth에서 동적으로 설정됨)
-// Phase 77: OCCUPANCY_HIGH, PITCH_CONFIDENCE_MIN, GRID_SNAP_TOLERANCE, TIMING_OFFSET_SLOTS는 activeParams에서 사용
+// Phase 75: OCCUPANCY_HIGH, PITCH_CONFIDENCE_MIN, GRID_SNAP_TOLERANCE, TIMING_OFFSET_SLOTS는 activeParams에서 사용
 
 // ============================================
 // 헬퍼 함수들
@@ -1081,10 +1086,10 @@ function printResult(result: TestResult, groundTruth: GroundTruthNote[]): void {
     console.log('  1. 저음 확장: LOW_FREQ_RECOVERY_MAX 120→150');
     console.log('  2. 병합 제한: MAX_MERGE_SLOTS 16→8');
   } else if (result.overallAccuracy >= 50) {
-    console.log('  1. 77차 황금 설정으로 롤백 확인');
+    console.log('  1. 75차 황금 설정으로 롤백 확인');
     console.log('  2. testFrames.json 녹음 품질 확인');
   } else {
-    console.log('  !!! 심각한 문제 - 77차 설정 완전 롤백 필요 !!!');
+    console.log('  !!! 심각한 문제 - 75차 설정 완전 롤백 필요 !!!');
   }
 
   console.log('\n' + '='.repeat(60));
@@ -1278,6 +1283,58 @@ function saveBestRecord(testDir: string, best: BestRecord): void {
 }
 
 // ============================================
+// 황금 설정 갱신 (80% 달성 시 또는 기존보다 나으면)
+// ============================================
+function updateGoldenSettings(testDir: string, best: BestRecord): void {
+  const goldenPath = path.join(testDir, 'goldenSettings75.json');
+
+  // 기존 설정 읽기
+  let currentBestOverall = 0;
+  if (fs.existsSync(goldenPath)) {
+    const existing = JSON.parse(fs.readFileSync(goldenPath, 'utf-8'));
+    const { timing = 0, pitch = 0, duration = 0 } = existing.bestResults || {};
+    currentBestOverall = (timing + pitch + duration) / 3;
+  }
+
+  // 새 결과가 더 좋으면 갱신
+  if (best.result.overall > currentBestOverall) {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+
+    const newGoldenSettings = {
+      version: `${best.iteration}차`,
+      locked: true,
+      description: `${best.iteration}차 황금 설정 - ${best.result.overall.toFixed(1)}% 달성`,
+      lockedAt: dateStr,
+      bestResults: {
+        timing: best.result.timing,
+        pitch: best.result.pitch,
+        duration: best.result.duration
+      },
+      params: best.params,
+      coreParams: {
+        PULLBACK_BUFFER_MS: 250,
+        TARGET_MIN_OCTAVE: 3,
+        PHASE2_THRESHOLD: 1.62,
+        RMS_THRESHOLD: 0.018
+      },
+      notes: [
+        `${currentBestOverall.toFixed(1)}% → ${best.result.overall.toFixed(1)}% 개선`,
+        "PULLBACK 200ms로 변경 시 타이밍 붕괴",
+        "TARGET_MIN_OCTAVE=2 시 음정 0% (절대 금지)"
+      ]
+    };
+
+    fs.writeFileSync(goldenPath, JSON.stringify(newGoldenSettings, null, 2), 'utf-8');
+    console.log(`\n  ★★★ 황금 설정 갱신! (${currentBestOverall.toFixed(1)}% → ${best.result.overall.toFixed(1)}%) ★★★`);
+    console.log(`  goldenSettings75.json 업데이트됨`);
+
+    // 전역 변수도 갱신
+    GOLDEN_PARAMS_75 = best.params;
+  }
+}
+
+// ============================================
 // 단일 테스트 실행
 // ============================================
 function runSingleTest(
@@ -1316,9 +1373,11 @@ async function runAutoOptimization(
   let stagnationCount = 0;
   let exitReason = '';
 
-  // 초기 테스트 (77차 황금 설정)
-  activeParams = { ...GOLDEN_PARAMS_77 };
+  // 초기 테스트 (75차 황금 설정 - 절대 기준)
+  activeParams = { ...GOLDEN_PARAMS_75 };
   let prevResult = runSingleTest(frames, bpm, groundTruth);
+  let baselineAccuracy = prevResult.overallAccuracy; // 현재 최고 기준 정확도 (갱신 가능)
+  let baselineParams = { ...GOLDEN_PARAMS_75 }; // 현재 최고 기준 파라미터
 
   const initialRecord: IterationRecord = {
     iteration: 0,
@@ -1334,9 +1393,11 @@ async function runAutoOptimization(
     missed: prevResult.missed,
     extra: prevResult.extra,
     improvement: 0,
-    strategy: '77차 황금 설정 (초기값)'
+    strategy: '75차 황금 설정 (초기값 - 롤백 기준)'
   };
   history.push(initialRecord);
+
+  console.log(`\n  [BASELINE] 75차 기준 정확도: ${baselineAccuracy.toFixed(1)}%`);
 
   best = {
     iteration: 0,
@@ -1396,6 +1457,17 @@ async function runAutoOptimization(
     };
     history.push(record);
 
+    // 현재 최고 기준 대비 성능 저하 체크 - 즉시 롤백
+    if (result.overallAccuracy < baselineAccuracy - 5) {
+      console.log(`\n  [${i}차] ${strategy}`);
+      console.log(`    ⚠️ 현재 기준(${baselineAccuracy.toFixed(1)}%) 대비 ${(baselineAccuracy - result.overallAccuracy).toFixed(1)}% 저하!`);
+      console.log(`    → 최고 기록 설정으로 즉시 롤백`);
+      activeParams = { ...baselineParams };
+      stagnationCount++;
+      prevResult = result;
+      continue;
+    }
+
     // 최고 기록 갱신
     if (result.overallAccuracy > best.result.overall) {
       best = {
@@ -1404,13 +1476,25 @@ async function runAutoOptimization(
         result: record.result,
         matched: result.matched
       };
+
+      // 기준 정확도 갱신 (더 좋은 결과가 새 기준이 됨)
+      baselineAccuracy = result.overallAccuracy;
+      baselineParams = { ...activeParams };
+
       stagnationCount = 0;
       console.log(`\n  [${i}차] ${strategy}`);
       console.log(`    ★ 최고 기록 갱신! ${result.overallAccuracy.toFixed(1)}% (+${improvement.toFixed(1)}%)`);
+      console.log(`    → 새로운 기준으로 설정됨`);
     } else {
       stagnationCount++;
       console.log(`\n  [${i}차] ${strategy}`);
       console.log(`    ${result.overallAccuracy.toFixed(1)}% (${improvement >= 0 ? '+' : ''}${improvement.toFixed(1)}%) - 정체 ${stagnationCount}/${AUTO_CONFIG.STAGNATION_LIMIT}`);
+
+      // 개선 없으면 현재 최고 기록으로 롤백
+      if (stagnationCount >= 3) {
+        console.log(`    → 3회 연속 개선 없음, 최고 기록 설정으로 롤백`);
+        activeParams = { ...baselineParams };
+      }
     }
 
     // 목표 달성 체크
@@ -1454,6 +1538,9 @@ async function runAutoOptimization(
   updateHistoryMd(testDir, history, best, exitReason);
   saveBestRecord(testDir, best);
 
+  // 황금 설정 갱신 (기존보다 나으면 자동 업데이트)
+  updateGoldenSettings(testDir, best);
+
   // 최고 기록으로 상세 결과 출력
   activeParams = best.params;
   const finalResult = runSingleTest(frames, bpm, groundTruth);
@@ -1471,9 +1558,14 @@ async function main() {
   const isAutoMode = process.argv.includes('--auto');
 
   console.log('\n' + '='.repeat(60));
-  console.log('  SELF-REFINING PITCH ACCURACY TEST v2.0');
+  console.log('  SELF-REFINING PITCH ACCURACY TEST v2.1');
+  console.log('  (75차 황금 설정 고정 + 자동 롤백)');
   console.log('='.repeat(60));
   console.log(`  Mode: ${isAutoMode ? 'AUTO-OPTIMIZATION' : 'SINGLE TEST'}`);
+
+  // 75차 황금 설정 로드 (절대 기준)
+  GOLDEN_PARAMS_75 = loadGoldenParams75();
+  activeParams = { ...GOLDEN_PARAMS_75 };
 
   // 파일 확인
   if (!fs.existsSync(framesPath)) {

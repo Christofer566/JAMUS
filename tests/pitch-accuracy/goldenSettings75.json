@@ -1,0 +1,41 @@
+{
+  "version": "75",
+  "locked": true,
+  "description": "75차 황금 설정 - 절대 변경 금지. 최고 정확도 달성 설정.",
+  "lockedAt": "2026-01-02",
+  "bestResults": {
+    "timing": 92.9,
+    "pitch": 80.0,
+    "duration": 64.3
+  },
+  "params": {
+    "LOW_FREQ_RECOVERY_MAX": 120,
+    "LOW_SOLO_THRESHOLD": 150,
+    "LOW_FREQ_CONFIDENCE_MIN": 0.15,
+    "OCCUPANCY_MIN": 0.75,
+    "OCCUPANCY_HIGH": 0.7,
+    "OCCUPANCY_SUSTAIN": 0.55,
+    "ENERGY_PEAK_CONFIDENCE_MIN": 0.8,
+    "ENERGY_PEAK_OCCUPANCY_MIN": 0.95,
+    "MIN_NOTE_DURATION_SLOTS": 1,
+    "MAX_MERGE_SLOTS": 8,
+    "PITCH_CONFIDENCE_MIN": 0.35,
+    "GRID_SNAP_TOLERANCE": 0.15,
+    "TIMING_OFFSET_SLOTS": 3,
+    "MID_FREQ_MIN": 200,
+    "HIGH_FREQ_MIN": 500,
+    "LOW_FREQ_OCCUPANCY_BONUS": 0.1
+  },
+  "coreParams": {
+    "PULLBACK_BUFFER_MS": 250,
+    "TARGET_MIN_OCTAVE": 3,
+    "PHASE2_THRESHOLD": 1.62,
+    "RMS_THRESHOLD": 0.018
+  },
+  "notes": [
+    "PULLBACK 200ms로 변경 시 타이밍 붕괴 (76차 실패)",
+    "TARGET_MIN_OCTAVE=2 시 음정 0% (절대 금지)",
+    "PHASE2_THRESHOLD 1.5 이하 시 음정 파괴",
+    "gap <= 1 병합 시 괴물 음표 생성"
+  ]
+}

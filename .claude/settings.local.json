@@ -23,7 +23,8 @@
       "Bash(timeout 10 npx tsx:*)",
       "Bash(timeout 60 npx tsx tests/pitch-accuracy/runner.ts)",
       "Bash(timeout 120 npx tsx:*)",
-      "Bash(timeout 300 npx tsx:*)"
+      "Bash(timeout 300 npx tsx:*)",
+      "Bash(timeout 60 npx tsx:*)"
     ],
     "deny": [],
     "ask": []

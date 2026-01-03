@@ -118,6 +118,11 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
 
   /**
    * 음표를 Tone.js로 재생
+   *
+   * 수직선 동기화:
+   * - 수직선은 webAudio.currentTime 기준으로 표시됨
+   * - Tone.js는 Tone.now() 기준으로 예약됨
+   * - 두 클럭 간 지연이 있으므로 SYNC_DELAY_SEC를 추가하여 보정
    */
   const playNotesAsFallback = useCallback(async (
     notes: NoteData[],
@@ -135,6 +140,11 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
       const secondsPerBeat = 60 / bpm;
       const now = Tone.now();
 
+      // 수직선과 Tone.js 동기화를 위한 지연 (3.5슬롯 = 0.875박자)
+      // BPM 120 기준: 3.5 / 4 * 0.5 = 0.4375초
+      const SYNC_DELAY_SLOTS = 3.5;
+      const SYNC_DELAY_SEC = (SYNC_DELAY_SLOTS / 4) * secondsPerBeat;
+
       // startTime(초)을 beat으로 변환
       const startBeat = startTime / secondsPerBeat;
 
@@ -146,11 +156,12 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
         now: now.toFixed(3),
         startTime: startTime.toFixed(3),
         startBeat: startBeat.toFixed(3),
-        secondsPerBeat: secondsPerBeat.toFixed(3)
+        secondsPerBeat: secondsPerBeat.toFixed(3),
+        syncDelay: SYNC_DELAY_SEC.toFixed(3)
       });
 
       notes.slice(0, 5).forEach((note, i) => {
-        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat;
+        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat + SYNC_DELAY_SEC;
         const delay = triggerTime - now;
         console.log(`  [${i}] ${note.pitch} (beat=${note.beat.toFixed(2)}, measure=${note.measureIndex}):`, {
           triggerTime: triggerTime.toFixed(3),
@@ -160,8 +171,8 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
       });
 
       notes.forEach(note => {
-        // 음표의 트리거 시간 계산 (현재 재생 위치 기준)
-        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat;
+        // 음표의 트리거 시간 계산 (현재 재생 위치 기준 + 동기화 지연)
+        const triggerTime = now + (note.beat - startBeat) * secondsPerBeat + SYNC_DELAY_SEC;
 
         // 이미 지나간 음표는 스킵
         if (triggerTime < now) {
@@ -186,7 +197,8 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
         skipped: skippedCount,
         bpm,
         startTime: startTime.toFixed(2) + 's',
-        startBeat: startBeat.toFixed(1)
+        startBeat: startBeat.toFixed(1),
+        syncDelay: SYNC_DELAY_SEC.toFixed(3) + 's'
       });
 
     } catch (error) {

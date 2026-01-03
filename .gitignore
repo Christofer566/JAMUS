@@ -49,3 +49,4 @@ scripts/get-google-token.js
 
 # Backup files
 *.backup.ts
+.claude/settings.local.json
