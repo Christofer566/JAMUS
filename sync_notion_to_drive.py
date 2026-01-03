@@ -8,7 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
-    """구글 드라이브에서 폴더를 찾거나 생성합니다."""
+    """구글 드라이브 폴더 생성 및 ID 반환"""
     escaped_name = folder_name.replace("'", "'"'"')
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
@@ -105,7 +105,7 @@ def notion_to_html(title, metadata, blocks):
                     content_html += "<img src='%s' style='max-width:100%%'>" % img_url
             elif b_type == 'divider': 
                 content_html += "<hr>"
-        except Exception: 
+        except Exception:
             continue
 
     last_backup = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -159,7 +159,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
         html_content = notion_to_html(title, metadata, blocks)
         
         file_name = title + ".html"
-        escaped_file_name = file_name.replace("'", "\\'")
+        escaped_file_name = file_name.replace("'", "\'\'")
         query = "name='%s' and '%s' in parents and trashed=false" % (escaped_file_name, current_folder_id)
         exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
         existing = exist_resp.get('files', [])
