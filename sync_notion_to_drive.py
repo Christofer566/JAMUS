@@ -9,7 +9,6 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
-    # 구글 드라이브 쿼리에서 작은따옴표 이스케이프 처리
     escaped_name = folder_name.replace("'", "'\''")
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
@@ -75,7 +74,7 @@ def notion_to_html(title, metadata, blocks):
             if b_type == 'paragraph': content_html += f"<p>{{text}}</p>"
             elif b_type.startswith('heading_'):
                 level = b_type.split('_')[1]
-                content_html += f"<h{{level}}>{{text}}</h{{level}}>"
+                content_html += f"<h{{level}}>{{text}}</h{{level}}>
             elif b_type == 'bulleted_list_item': content_html += f"<li>{{text}}</li>"
             elif b_type == 'numbered_list_item': content_html += f"<li>{{text}}</li>"
             elif b_type == 'to_do':
