@@ -3,11 +3,11 @@
   "params": {
     "LOW_FREQ_RECOVERY_MAX": 120,
     "LOW_SOLO_THRESHOLD": 150,
-    "LOW_FREQ_CONFIDENCE_MIN": 0.15,
+    "LOW_FREQ_CONFIDENCE_MIN": 0.2,
     "OCCUPANCY_MIN": 0.75,
     "OCCUPANCY_HIGH": 0.7,
     "OCCUPANCY_SUSTAIN": 0.45,
-    "ENERGY_PEAK_CONFIDENCE_MIN": 0.7,
+    "ENERGY_PEAK_CONFIDENCE_MIN": 0.8,
     "ENERGY_PEAK_OCCUPANCY_MIN": 0.95,
     "MIN_NOTE_DURATION_SLOTS": 2,
     "MAX_MERGE_SLOTS": 8,
@@ -24,10 +24,10 @@
     "PITCH_STABILITY_ENABLED": false
   },
   "averages": {
-    "pitch": 84.52380952380952,
-    "timing": 77.38095238095238,
-    "duration": 42.857142857142854,
-    "overall": 68.25396825396825
+    "pitch": 84.33734939759036,
+    "timing": 77.10843373493977,
+    "duration": 51.80722891566265,
+    "overall": 71.08433734939759
   },
   "cases": 6,
   "totalNotes": 147

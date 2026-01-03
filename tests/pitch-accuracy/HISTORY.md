@@ -1228,3 +1228,137 @@ hooks/usePitchAnalyzer.ts # 피치 분석 (Phase 52, 55, 62, 63)
 | 8 | 탐색: MAX_MERGE_SLOTS 8→12 | 68.3% | +0.8% |
 | 9 | 탐색: LOW_FREQ_RECOVERY_MAX 120→130 | 66.7% | -1.6% |
 | 10 | 랜덤: LOW_SOLO_THRESHOLD→130 | 64.3% | -2.4% |
+
+
+---
+
+## 배치 자동 최적화 세션 (2026-01-03 15:36:46)
+
+### 종료 사유: 정체 종료 (10회 연속 개선 없음)
+
+### 테스트 케이스: 6개
+- case_02: 28개 음표
+- case_03: 28개 음표
+- case_04: 27개 음표
+- case_05: 16개 음표
+- case_06: 16개 음표
+- case_07: 32개 음표
+
+### 최고 기록 (11차)
+| 지표 | 값 |
+|------|-----|
+| 음정 | 84.3% |
+| 타이밍 | 77.1% |
+| 길이 | 51.8% |
+| **종합** | **71.1%** |
+
+### 최적 파라미터
+```json
+{
+  "LOW_FREQ_RECOVERY_MAX": 120,
+  "LOW_SOLO_THRESHOLD": 150,
+  "LOW_FREQ_CONFIDENCE_MIN": 0.2,
+  "OCCUPANCY_MIN": 0.75,
+  "OCCUPANCY_HIGH": 0.7,
+  "OCCUPANCY_SUSTAIN": 0.45,
+  "ENERGY_PEAK_CONFIDENCE_MIN": 0.8,
+  "ENERGY_PEAK_OCCUPANCY_MIN": 0.95,
+  "MIN_NOTE_DURATION_SLOTS": 2,
+  "MAX_MERGE_SLOTS": 8,
+  "PITCH_CONFIDENCE_MIN": 0.35,
+  "GRID_SNAP_TOLERANCE": 0.15,
+  "TIMING_OFFSET_SLOTS": 3,
+  "MID_FREQ_MIN": 200,
+  "HIGH_FREQ_MIN": 500,
+  "LOW_FREQ_OCCUPANCY_BONUS": 0.1,
+  "ONSET_ENERGY_RATIO": 2,
+  "ONSET_CONFIDENCE_JUMP": 0.3,
+  "ONSET_DETECTION_ENABLED": false,
+  "PITCH_STABILITY_THRESHOLD": 0.2,
+  "PITCH_STABILITY_ENABLED": false
+}
+```
+
+### 반복 기록 (총 22회)
+| 차수 | 전략 | 종합 | 개선 |
+|------|------|------|------|
+| 7 | 탐색: MIN_NOTE_DURATION_SLOTS 2→1 | 70.0% | -1.0% |
+| 8 | 탐색: MAX_MERGE_SLOTS 8→12 | 71.0% | +1.0% |
+| 9 | 탐색: LOW_FREQ_RECOVERY_MAX 120→130 | 69.1% | -2.0% |
+| 10 | 랜덤: LOW_FREQ_CONFIDENCE_MIN→0.1 | 64.7% | -4.4% |
+| 11 | 랜덤: ENERGY_PEAK_CONFIDENCE_MIN→0.8 | 71.1% | +6.4% |
+| 12 | 탐색: OCCUPANCY_MIN 0.75→0.65 | 71.1% | +0.0% |
+| 13 | 탐색: OCCUPANCY_SUSTAIN 0.45→0.5 | 71.1% | +0.0% |
+| 14 | 탐색: ENERGY_PEAK_CONFIDENCE_MIN 0.8→... | 71.0% | -0.1% |
+| 15 | 탐색: ENERGY_PEAK_OCCUPANCY_MIN 0.95→... | 71.1% | +0.1% |
+| 16 | 탐색: MIN_NOTE_DURATION_SLOTS 2→1 | 70.0% | -1.0% |
+| 17 | 탐색: MAX_MERGE_SLOTS 8→12 | 71.1% | +1.0% |
+| 18 | 탐색: LOW_FREQ_RECOVERY_MAX 120→130 | 69.1% | -2.0% |
+| 19 | 탐색: LOW_SOLO_THRESHOLD 150→120 | 64.7% | -4.4% |
+| 20 | 탐색: LOW_FREQ_CONFIDENCE_MIN 0.2→0.1 | 71.1% | +6.4% |
+| 21 | 랜덤: OCCUPANCY_SUSTAIN→0.5 | 71.1% | +0.0% |
+
+
+---
+
+## 배치 자동 최적화 세션 (2026-01-03 15:39:41)
+
+### 종료 사유: 정체 종료 (10회 연속 개선 없음)
+
+### 테스트 케이스: 6개
+- case_02: 28개 음표
+- case_03: 28개 음표
+- case_04: 27개 음표
+- case_05: 16개 음표
+- case_06: 16개 음표
+- case_07: 32개 음표
+
+### 최고 기록 (0차)
+| 지표 | 값 |
+|------|-----|
+| 음정 | 84.3% |
+| 타이밍 | 77.1% |
+| 길이 | 51.8% |
+| **종합** | **71.1%** |
+
+### 최적 파라미터
+```json
+{
+  "LOW_FREQ_RECOVERY_MAX": 120,
+  "LOW_SOLO_THRESHOLD": 150,
+  "LOW_FREQ_CONFIDENCE_MIN": 0.2,
+  "OCCUPANCY_MIN": 0.75,
+  "OCCUPANCY_HIGH": 0.7,
+  "OCCUPANCY_SUSTAIN": 0.45,
+  "ENERGY_PEAK_CONFIDENCE_MIN": 0.8,
+  "ENERGY_PEAK_OCCUPANCY_MIN": 0.95,
+  "MIN_NOTE_DURATION_SLOTS": 2,
+  "MAX_MERGE_SLOTS": 8,
+  "PITCH_CONFIDENCE_MIN": 0.35,
+  "GRID_SNAP_TOLERANCE": 0.15,
+  "TIMING_OFFSET_SLOTS": 3,
+  "MID_FREQ_MIN": 200,
+  "HIGH_FREQ_MIN": 500,
+  "LOW_FREQ_OCCUPANCY_BONUS": 0.1,
+  "ONSET_ENERGY_RATIO": 2,
+  "ONSET_CONFIDENCE_JUMP": 0.3,
+  "ONSET_DETECTION_ENABLED": false,
+  "PITCH_STABILITY_THRESHOLD": 0.2,
+  "PITCH_STABILITY_ENABLED": false
+}
+```
+
+### 반복 기록 (총 11회)
+| 차수 | 전략 | 종합 | 개선 |
+|------|------|------|------|
+| 0 | 75차 황금 설정 (초기값) | 71.1% | +0.0% |
+| 1 | 탐색: LOW_SOLO_THRESHOLD 150→170 | 71.1% | +0.0% |
+| 2 | 탐색: LOW_FREQ_CONFIDENCE_MIN 0.2→0.1 | 71.1% | +0.0% |
+| 3 | 탐색: OCCUPANCY_MIN 0.75→0.65 | 71.1% | +0.0% |
+| 4 | 탐색: OCCUPANCY_SUSTAIN 0.45→0.5 | 71.1% | +0.0% |
+| 5 | 탐색: ENERGY_PEAK_CONFIDENCE_MIN 0.8→... | 71.0% | -0.1% |
+| 6 | 탐색: ENERGY_PEAK_OCCUPANCY_MIN 0.95→... | 71.1% | +0.1% |
+| 7 | 탐색: MIN_NOTE_DURATION_SLOTS 2→1 | 70.0% | -1.0% |
+| 8 | 탐색: MAX_MERGE_SLOTS 8→12 | 71.1% | +1.0% |
+| 9 | 탐색: LOW_FREQ_RECOVERY_MAX 120→140 | 69.1% | -2.0% |
+| 10 | 랜덤: LOW_SOLO_THRESHOLD→200 | 71.1% | +2.0% |

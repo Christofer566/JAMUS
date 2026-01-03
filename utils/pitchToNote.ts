@@ -80,7 +80,7 @@ const DEFAULT_PARAMS: TunableParams = {
   // 1. 저음 복원
   LOW_FREQ_RECOVERY_MAX: 120,      // 저음 복구 상한
   LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // 75차 원본값
+  LOW_FREQ_CONFIDENCE_MIN: 0.20,   // Phase 86: 71.1% 달성
 
   // 2. 점유율
   OCCUPANCY_MIN: 0.75,             // 75차 원본값
@@ -1073,6 +1073,43 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     }
   }
   console.log(`[Phase 74-C] Duration Normalization 완료: ${durationNormCount}개 정규화`);
+
+  // ========================================
+  // Phase 86: Duration Quantization
+  // ========================================
+  // 감지된 slotCount를 가장 가까운 표준 음표 길이로 조정
+  // ±1 슬롯 오류를 줄여 duration 정확도 개선
+  const STANDARD_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 16];
+  let quantizeCount = 0;
+  for (let i = 0; i < rawNotes.length; i++) {
+    const note = rawNotes[i];
+    if (note.isRest) continue;
+
+    // 가장 가까운 표준 길이 찾기
+    let bestDuration = note.slotCount;
+    let minDiff = Infinity;
+
+    for (const std of STANDARD_DURATIONS) {
+      const diff = Math.abs(note.slotCount - std);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestDuration = std;
+      }
+    }
+
+    // ±1 슬롯 차이만 조정 (과도한 변경 방지)
+    if (minDiff === 1 && bestDuration !== note.slotCount) {
+      rawNotes[i] = {
+        ...note,
+        slotCount: bestDuration,
+        duration: slotCountToDuration(bestDuration)
+      };
+      quantizeCount++;
+    }
+  }
+  if (quantizeCount > 0) {
+    console.log(`[Phase 86] Duration Quantization: ${quantizeCount}개 음표 조정`);
+  }
 
   // ========================================
   // Phase 76: Two-Pass Gap Recovery - 비활성화

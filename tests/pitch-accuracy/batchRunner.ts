@@ -28,8 +28,8 @@ const PITCH_TOLERANCE = 2;
 const TIMING_TOLERANCE = 2;
 
 const PARAM_SEARCH_SPACE = {
-  LOW_FREQ_RECOVERY_MAX: [120, 130, 140, 150],
-  LOW_SOLO_THRESHOLD: [120, 130, 140, 150],
+  LOW_FREQ_RECOVERY_MAX: [120, 140, 150, 160, 170],
+  LOW_SOLO_THRESHOLD: [120, 150, 170, 200],
   LOW_FREQ_CONFIDENCE_MIN: [0.10, 0.15, 0.20],
   OCCUPANCY_MIN: [0.65, 0.70, 0.75],
   OCCUPANCY_SUSTAIN: [0.45, 0.50, 0.55],
@@ -729,6 +729,31 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // Phase 76: Two-Pass Gap Recovery - 비활성화
   // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
   // 향후 프레임 품질 개선 후 재활성화 검토
+
+  // Phase 86: Duration Quantization
+  // 감지된 slotCount를 가장 가까운 표준 음표 길이로 조정
+  const STANDARD_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 16];
+  for (const note of rawNotes) {
+    if (note.isRest) continue;
+
+    // 가장 가까운 표준 길이 찾기
+    let bestDuration = note.slotCount;
+    let minDiff = Infinity;
+
+    for (const std of STANDARD_DURATIONS) {
+      const diff = Math.abs(note.slotCount - std);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestDuration = std;
+      }
+    }
+
+    // ±1 슬롯 차이만 조정 (과도한 변경 방지)
+    if (minDiff <= 1 && bestDuration !== note.slotCount) {
+      note.slotCount = bestDuration;
+      note.duration = slotCountToDuration(bestDuration);
+    }
+  }
 
   return rawNotes;
 }
