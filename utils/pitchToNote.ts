@@ -1075,14 +1075,86 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   console.log(`[Phase 74-C] Duration Normalization 완료: ${durationNormCount}개 정규화`);
 
   // ========================================
+  // Phase 87: Intra-Note Split Detection
+  // ========================================
+  // 긴 음표 내부에서 에너지 dip을 감지하여 분리 (반복 음표 패턴 처리)
+  const ENERGY_DIP_THRESHOLD = 0.4;
+  const MIN_SPLIT_LENGTH = 4;
+
+  const splitNotes: NoteData[] = [];
+  for (const note of rawNotes) {
+    if (note.isRest || note.slotCount < MIN_SPLIT_LENGTH) {
+      splitNotes.push(note);
+      continue;
+    }
+
+    // 해당 음표가 차지하는 슬롯들의 occupancy 확인
+    const noteStartGlobal = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex - activeParams.TIMING_OFFSET_SLOTS;
+    const noteSlots = slots.filter(s =>
+      s.globalSlotIndex >= noteStartGlobal &&
+      s.globalSlotIndex < noteStartGlobal + note.slotCount
+    );
+
+    if (noteSlots.length < MIN_SPLIT_LENGTH) {
+      splitNotes.push(note);
+      continue;
+    }
+
+    // 에너지 dip 위치 찾기
+    let dipStart = -1;
+    let dipEnd = -1;
+    for (let i = 1; i < noteSlots.length - 1; i++) {
+      if (noteSlots[i].occupancy < ENERGY_DIP_THRESHOLD) {
+        if (dipStart === -1) dipStart = i;
+        dipEnd = i;
+      } else if (dipStart !== -1) {
+        break;
+      }
+    }
+
+    // 유효한 dip이 있으면 분할
+    if (dipStart > 0 && dipEnd < noteSlots.length - 1) {
+      const firstSlotCount = dipStart;
+      const secondSlotCount = note.slotCount - dipEnd - 1;
+
+      if (firstSlotCount >= 1 && secondSlotCount >= 1) {
+        splitNotes.push({
+          ...note,
+          slotCount: firstSlotCount,
+          duration: slotCountToDuration(firstSlotCount)
+        });
+
+        const secondSlotIndex = note.slotIndex + dipEnd + 1;
+        let adjustedMeasure = note.measureIndex;
+        let adjustedSlot = secondSlotIndex;
+        if (adjustedSlot >= SLOTS_PER_MEASURE) {
+          adjustedSlot -= SLOTS_PER_MEASURE;
+          adjustedMeasure++;
+        }
+
+        splitNotes.push({
+          ...note,
+          measureIndex: adjustedMeasure,
+          slotIndex: adjustedSlot,
+          slotCount: secondSlotCount,
+          duration: slotCountToDuration(secondSlotCount),
+          beat: (adjustedMeasure * SLOTS_PER_MEASURE + adjustedSlot) / 4
+        });
+        continue;
+      }
+    }
+    splitNotes.push(note);
+  }
+
+  // ========================================
   // Phase 86: Duration Quantization
   // ========================================
   // 감지된 slotCount를 가장 가까운 표준 음표 길이로 조정
   // ±1 슬롯 오류를 줄여 duration 정확도 개선
   const STANDARD_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 16];
   let quantizeCount = 0;
-  for (let i = 0; i < rawNotes.length; i++) {
-    const note = rawNotes[i];
+  for (let i = 0; i < splitNotes.length; i++) {
+    const note = splitNotes[i];
     if (note.isRest) continue;
 
     // 가장 가까운 표준 길이 찾기
@@ -1099,7 +1171,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
     // ±1 슬롯 차이만 조정 (과도한 변경 방지)
     if (minDiff === 1 && bestDuration !== note.slotCount) {
-      rawNotes[i] = {
+      splitNotes[i] = {
         ...note,
         slotCount: bestDuration,
         duration: slotCountToDuration(bestDuration)
@@ -1337,7 +1409,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   const finalNotes: NoteData[] = [];
   let lastEndSlot = 0; // 마지막 음표가 끝난 슬롯 (상대값)
 
-  for (const note of rawNotes) {
+  for (const note of splitNotes) {
     // 상대 슬롯 위치 (녹음 시작 기준)
     const noteStartSlot = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex;
 

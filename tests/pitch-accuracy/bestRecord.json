@@ -24,10 +24,10 @@
     "PITCH_STABILITY_ENABLED": false
   },
   "averages": {
-    "pitch": 84.33734939759036,
-    "timing": 77.10843373493977,
-    "duration": 51.80722891566265,
-    "overall": 71.08433734939759
+    "pitch": 86.9047619047619,
+    "timing": 77.38095238095238,
+    "duration": 50,
+    "overall": 71.42857142857143
   },
   "cases": 6,
   "totalNotes": 147

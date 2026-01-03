@@ -238,6 +238,40 @@ export default function FeedbackClientPage() {
     useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
     useEffect(() => { setCurrentTime(webAudio.currentTime); }, [webAudio.currentTime]);
 
+    // 편집 모드일 때 뒤로가기/새로고침 경고
+    useEffect(() => {
+        if (!isEditMode) return;
+
+        // 브라우저 새로고침/닫기 경고
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
+            return '';
+        };
+
+        // 뒤로가기 방지: history에 더미 state 추가
+        window.history.pushState(null, '', window.location.href);
+
+        const handlePopState = () => {
+            const confirmed = window.confirm('편집 중인 내용이 있습니다. 정말 나가시겠습니까?');
+            if (confirmed) {
+                // 진짜 뒤로가기
+                window.history.back();
+            } else {
+                // 취소: 다시 더미 state 추가하여 현재 페이지 유지
+                window.history.pushState(null, '', window.location.href);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        window.addEventListener('popstate', handlePopState);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [isEditMode]);
+
     // 케이스 개수 조회 (컴포넌트 마운트 시)
     useEffect(() => {
         const fetchCaseCount = async () => {
@@ -672,14 +706,16 @@ export default function FeedbackClientPage() {
     // ============================================
     // Pitch Analysis & Note Grouping
     // ============================================
-    // 녹음 데이터 분석 (ref로 중복 실행 방지)
-    const audioUrlCreatedRef = useRef(false);
+    // 녹음 데이터 분석 (blob 변경 시 재분석)
+    const lastAnalyzedBlobRef = useRef<Blob | null>(null);
 
     useEffect(() => {
         if (!storedAudioBlob || !storedRecordingRange) return;
-        if (audioUrlCreatedRef.current) return;
 
-        audioUrlCreatedRef.current = true;
+        // 같은 blob이면 중복 분석 방지
+        if (lastAnalyzedBlobRef.current === storedAudioBlob) return;
+
+        lastAnalyzedBlobRef.current = storedAudioBlob;
 
         // 녹음 재생용 URL 생성
         const url = URL.createObjectURL(storedAudioBlob);
@@ -695,12 +731,65 @@ export default function FeedbackClientPage() {
             if (typeof window !== 'undefined') {
                 (window as any).__testPitchFrames = pitchFrames;
                 (window as any).__testBpm = SONG_META.bpm;
+
+                // ============================================
+                // Phase 81: 메타데이터 포함 export (라이브-오프라인 동기화)
+                // ============================================
                 (window as any).exportTestFrames = () => {
+                    // PULLBACK 상수 (useRecorder.ts와 동일)
+                    const PULLBACK_BUFFER_MS = 250;
+                    const ESTIMATED_STATIC_LATENCY_MS = 250; // 일반적인 하드웨어 지연
+                    const TOTAL_PULLBACK_MS = PULLBACK_BUFFER_MS + ESTIMATED_STATIC_LATENCY_MS;
+
+                    // 슬롯 단위 계산 (동적 TIMING_OFFSET용)
+                    const slotDurationMs = (60 / SONG_META.bpm / 4) * 1000;
+                    const pullbackSlots = Math.round(TOTAL_PULLBACK_MS / slotDurationMs);
+
                     const data = {
+                        // 기존 데이터
                         bpm: SONG_META.bpm,
                         frameCount: pitchFrames.length,
-                        frames: pitchFrames
+                        frames: pitchFrames,
+
+                        // Phase 81: 메타데이터 추가
+                        metadata: {
+                            // 녹음 범위 정보
+                            recordingRange: storedRecordingRange ? {
+                                startMeasure: storedRecordingRange.startMeasure,
+                                endMeasure: storedRecordingRange.endMeasure,
+                                startTime: storedRecordingRange.startTime,
+                                endTime: storedRecordingRange.endTime
+                            } : null,
+
+                            // PULLBACK 정보 (오프라인 테스트 동기화용)
+                            pullback: {
+                                bufferMs: PULLBACK_BUFFER_MS,
+                                estimatedStaticLatencyMs: ESTIMATED_STATIC_LATENCY_MS,
+                                totalMs: TOTAL_PULLBACK_MS,
+                                slots: pullbackSlots,
+                                note: 'TIMING_OFFSET_SLOTS를 이 값으로 설정하면 라이브와 동기화됨'
+                            },
+
+                            // 분석 정보
+                            analysis: {
+                                prerollDuration: storedPrerollDuration,
+                                slotDurationMs: slotDurationMs,
+                                measureDurationMs: measureDuration * 1000
+                            },
+
+                            // 곡 정보
+                            song: {
+                                title: SONG_META.title || 'Unknown',
+                                bpm: SONG_META.bpm,
+                                timeSignature: SONG_META.time_signature
+                            },
+
+                            // export 시점 정보
+                            exportedAt: new Date().toISOString(),
+                            version: '81' // Phase 81 형식
+                        }
                     };
+
                     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -708,9 +797,15 @@ export default function FeedbackClientPage() {
                     a.download = 'testFrames.json';
                     a.click();
                     URL.revokeObjectURL(url);
-                    console.log('[Test Export] testFrames.json 다운로드 완료');
+
+                    console.log('[Test Export] testFrames.json 다운로드 완료 (Phase 81 메타데이터 포함)');
+                    console.log('[Test Export] 메타데이터:', {
+                        startMeasure: storedRecordingRange?.startMeasure,
+                        pullbackSlots: pullbackSlots,
+                        totalPullbackMs: TOTAL_PULLBACK_MS
+                    });
                 };
-                console.log('[Test Export] window.exportTestFrames() 호출하여 프레임 데이터 저장 가능');
+                console.log('[Test Export] window.exportTestFrames() 호출하여 프레임 데이터 저장 가능 (Phase 81: 메타데이터 포함)');
                 console.log('[Test Export] window.exportGroundTruth() 호출하여 정답지 저장 가능 (편집 후 사용)');
             }
 

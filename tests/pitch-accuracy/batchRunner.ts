@@ -730,10 +730,85 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
   // 향후 프레임 품질 개선 후 재활성화 검토
 
+  // Phase 87: Intra-Note Split Detection
+  // 긴 음표 내부에서 에너지 dip을 감지하여 분리 (반복 음표 패턴 처리)
+  const ENERGY_DIP_THRESHOLD = 0.4; // 점유율이 40% 이하면 dip으로 판단
+  const MIN_SPLIT_LENGTH = 4; // 4슬롯 이상인 음표만 분할 대상
+
+  const splitNotes: NoteData[] = [];
+  for (const note of rawNotes) {
+    if (note.isRest || note.slotCount < MIN_SPLIT_LENGTH) {
+      splitNotes.push(note);
+      continue;
+    }
+
+    // 해당 음표가 차지하는 슬롯들의 occupancy 확인
+    const noteStartGlobal = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex - activeParams.TIMING_OFFSET_SLOTS;
+    const noteSlots = slots.filter(s =>
+      s.globalSlotIndex >= noteStartGlobal &&
+      s.globalSlotIndex < noteStartGlobal + note.slotCount
+    );
+
+    if (noteSlots.length < MIN_SPLIT_LENGTH) {
+      splitNotes.push(note);
+      continue;
+    }
+
+    // 에너지 dip 위치 찾기
+    let dipStart = -1;
+    let dipEnd = -1;
+    for (let i = 1; i < noteSlots.length - 1; i++) {
+      if (noteSlots[i].occupancy < ENERGY_DIP_THRESHOLD) {
+        if (dipStart === -1) dipStart = i;
+        dipEnd = i;
+      } else if (dipStart !== -1) {
+        // dip 종료, 분할 수행
+        break;
+      }
+    }
+
+    // 유효한 dip이 있으면 분할
+    if (dipStart > 0 && dipEnd < noteSlots.length - 1) {
+      const firstSlotCount = dipStart;
+      const secondSlotCount = note.slotCount - dipEnd - 1;
+
+      if (firstSlotCount >= 1 && secondSlotCount >= 1) {
+        // 첫 번째 음표
+        splitNotes.push({
+          ...note,
+          slotCount: firstSlotCount,
+          duration: slotCountToDuration(firstSlotCount)
+        });
+
+        // 두 번째 음표 (위치 조정)
+        const secondSlotIndex = note.slotIndex + dipEnd + 1;
+        let adjustedMeasure = note.measureIndex;
+        let adjustedSlot = secondSlotIndex;
+        if (adjustedSlot >= SLOTS_PER_MEASURE) {
+          adjustedSlot -= SLOTS_PER_MEASURE;
+          adjustedMeasure++;
+        }
+
+        splitNotes.push({
+          ...note,
+          measureIndex: adjustedMeasure,
+          slotIndex: adjustedSlot,
+          slotCount: secondSlotCount,
+          duration: slotCountToDuration(secondSlotCount),
+          beat: (adjustedMeasure * SLOTS_PER_MEASURE + adjustedSlot) / 4
+        });
+
+        continue;
+      }
+    }
+
+    splitNotes.push(note);
+  }
+
   // Phase 86: Duration Quantization
   // 감지된 slotCount를 가장 가까운 표준 음표 길이로 조정
   const STANDARD_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 16];
-  for (const note of rawNotes) {
+  for (const note of splitNotes) {
     if (note.isRest) continue;
 
     // 가장 가까운 표준 길이 찾기
@@ -755,7 +830,7 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     }
   }
 
-  return rawNotes;
+  return splitNotes;
 }
 
 // ============================================

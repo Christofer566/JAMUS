@@ -24,7 +24,11 @@
       "Bash(timeout 60 npx tsx tests/pitch-accuracy/runner.ts)",
       "Bash(timeout 120 npx tsx:*)",
       "Bash(timeout 300 npx tsx:*)",
-      "Bash(timeout 60 npx tsx:*)"
+      "Bash(timeout 60 npx tsx:*)",
+      "Bash(timeout 90 npx tsx:*)",
+      "Bash(timeout 30 npx tsx:*)",
+      "Bash(dir /b \"C:\\\\JAMUS\\\\tests\\\\pitch-accuracy\\\\datasets\\\\case_05\")",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

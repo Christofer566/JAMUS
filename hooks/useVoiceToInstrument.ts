@@ -140,9 +140,9 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
       const secondsPerBeat = 60 / bpm;
       const now = Tone.now();
 
-      // 수직선과 Tone.js 동기화를 위한 지연 (3.5슬롯 = 0.875박자)
-      // BPM 120 기준: 3.5 / 4 * 0.5 = 0.4375초
-      const SYNC_DELAY_SLOTS = 3.5;
+      // 수직선과 Tone.js 동기화를 위한 지연 (2.5슬롯 = 0.625박자)
+      // BPM 120 기준: 2.5 / 4 * 0.5 = 0.3125초
+      const SYNC_DELAY_SLOTS = 2.5;
       const SYNC_DELAY_SEC = (SYNC_DELAY_SLOTS / 4) * secondsPerBeat;
 
       // startTime(초)을 beat으로 변환

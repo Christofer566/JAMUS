@@ -1,12 +1,12 @@
 {
-  "version": "11차",
+  "version": "0차",
   "locked": true,
-  "description": "11차 황금 설정 - 71.1% 달성 (배치 테스트)",
+  "description": "0차 황금 설정 - 71.4% 달성 (배치 테스트)",
   "lockedAt": "2026-01-03",
   "bestResults": {
-    "timing": 77.10843373493977,
-    "pitch": 84.33734939759036,
-    "duration": 51.80722891566265
+    "timing": 77.38095238095238,
+    "pitch": 86.9047619047619,
+    "duration": 50
   },
   "params": {
     "LOW_FREQ_RECOVERY_MAX": 120,
@@ -38,7 +38,7 @@
     "RMS_THRESHOLD": 0.018
   },
   "notes": [
-    "68.3% → 71.1% 개선",
+    "71.1% → 71.4% 개선",
     "테스트 케이스: 6개",
     "PULLBACK 200ms로 변경 시 타이밍 붕괴",
     "TARGET_MIN_OCTAVE=2 시 음정 0% (절대 금지)"
