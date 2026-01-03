@@ -331,11 +331,20 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
     };
   }
 
-  // 정확도 계산 (엄격한 기준 - 정확히 일치해야 함)
+  // [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
+  // 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
+  const TIMING_TOLERANCE_SCORE = 1;   // 타이밍: ±1슬롯 차이는 100% 일치
+  const DURATION_TOLERANCE_SCORE = 1; // 길이: ±1슬롯 차이는 100% 일치
+
+  // 정확도 계산 (1슬롯 관용 적용)
   const pitchCorrect = matched.filter(c => c.pitchDiff === 0).length;
-  const timingCorrect = matched.filter(c => c.timingDiff === 0).length;
-  const durationCorrect = matched.filter(c => c.durationDiff === 0).length;
-  const exactMatch = matched.filter(c => c.matchType === 'exact').length;
+  const timingCorrect = matched.filter(c => Math.abs(c.timingDiff) <= TIMING_TOLERANCE_SCORE).length;
+  const durationCorrect = matched.filter(c => Math.abs(c.durationDiff) <= DURATION_TOLERANCE_SCORE).length;
+  const exactMatch = matched.filter(c =>
+    c.pitchDiff === 0 &&
+    Math.abs(c.timingDiff) <= TIMING_TOLERANCE_SCORE &&
+    Math.abs(c.durationDiff) <= DURATION_TOLERANCE_SCORE
+  ).length;
 
   const pitchAccuracy = (pitchCorrect / matchedCount) * 100;
   const timingAccuracy = (timingCorrect / matchedCount) * 100;
