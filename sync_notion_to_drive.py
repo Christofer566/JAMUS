@@ -10,7 +10,8 @@ from googleapiclient.http import MediaIoBaseUpload
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
     # 폴더명에서 특수문자 제거 (드라이브 허용 범위 내)
-    safe_name = folder_name.replace("'", "'\'")
+    # 구글 드라이브 쿼리에서 따옴표 이스케이프: ' -> \'
+    safe_name = folder_name.replace("'", "'\''")
     query = f"name='{safe_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
     files = response.get('files', [])
@@ -54,13 +55,14 @@ def get_notion_item_info(notion, item_id, is_db=False):
                     metadata[name] = date_val.get('start', '') if date_val else ''
             return title, metadata
     except Exception:
-        return f"Untitled_{item_id[:8]}", {}
+        return f"Untitled_{{item_id[:8]}}", {}
 
 def notion_to_html(title, metadata, blocks):
     """Notion 데이터를 미려한 HTML로 변환합니다."""
-    meta_html = "".join([f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v])
-    if meta_html:
-        meta_html = f"<div class='metadata'><ul>{{meta_html}}</ul></div><hr>"
+    meta_items = [f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v]
+    meta_html = ""
+    if meta_items:
+        meta_html = f"<div class='metadata'><ul>{{''.join(meta_items)}}</ul></div><hr>"
 
     content_html = ""
     for block in blocks:
@@ -90,30 +92,30 @@ def notion_to_html(title, metadata, blocks):
             elif b_type == 'divider': content_html += "<hr>"
         except Exception: continue
 
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>{{title}}</title>
-        <style>
-            body {{ font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }}
-            h1 {{ border-bottom: 2px solid #eee; padding-bottom: 10px; }}
-            .metadata {{ background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }}
-            blockquote {{ border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }}
-            .callout {{ background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
-            pre {{ background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }}
-            code {{ font-family: monospace; }}
-        </style>
-    </head>
-    <body>
-        <h1>{{title}}</h1>
-        {{meta_html}}
-        {{content_html}}
-        <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
-    </body>
-    </html>
-    ""
+    last_backup = time.strftime('%Y-%m-%d %H:%M:%S')
+    
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{title}}</title>
+    <style>
+        body {{ font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }}
+        h1 {{ border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+        .metadata {{ background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }}
+        blockquote {{ border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }}
+        .callout {{ background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+        pre {{ background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+        code {{ font-family: monospace; }}
+    </style>
+</head>
+<body>
+    <h1>{{title}}</h1>
+    {{meta_html}}
+    {{content_html}}
+    <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {{last_backup}}</p>
+</body>
+</html>"""
 
 def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
     """재귀적으로 탐색하며 백업을 수행합니다."""
@@ -137,7 +139,8 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
         
         # 파일 업로드 (이름: "페이지제목.html")
         file_name = f"{title}.html"
-        query = f"name='{file_name.replace("'", "'\'")}' and '{current_folder_id}' in parents and trashed=false"
+        safe_file_name = file_name.replace("'", "'\' ")
+        query = f"name='{safe_file_name}' and '{current_folder_id}' in parents and trashed=false"
         exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
         existing = exist_resp.get('files', [])
         
