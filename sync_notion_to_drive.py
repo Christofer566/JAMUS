@@ -9,8 +9,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
-    # 구글 드라이브 쿼리에서 작은따옴표 이스케이프 처리
-    escaped_name = folder_name.replace("'", "'"'"') # Corrected escaping for single quote within f-string
+    escaped_name = folder_name.replace("'", "'"'"')
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
@@ -56,15 +55,19 @@ def get_notion_item_info(notion, item_id, is_db=False):
                     metadata[name] = date_val.get('start', '') if date_val else ''
             return title, metadata
     except Exception as e:
-        print(f"  [Error Info] {item_id}: {e}") # Corrected print statement to use f-string
+        print(f"  [Error Info] {item_id}: {e}") 
         return f"Untitled_{{item_id[:8]}}", {}
 
 def notion_to_html(title, metadata, blocks):
-    """Notion 데이터를 미려한 HTML로 변환합니다."""
-    meta_items = [f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v] # Corrected escaping for f-string
+    """Notion 데이터를 HTML로 변환합니다."""
+    meta_items = []
+    for k, v in metadata.items():
+        if v:
+            meta_items.append("<li><b>%s:</b> %s</li>" % (k, v))
+    
     meta_html = ""
     if meta_items:
-        meta_html = f"<div class='metadata'><ul>{{''.join(meta_items)}}</ul></div><hr>" # Corrected escaping for f-string
+        meta_html = "<div class='metadata'><ul>" + "".join(meta_items) + "</ul></div><hr>"
 
     content_html = ""
     for block in blocks:
@@ -72,62 +75,78 @@ def notion_to_html(title, metadata, blocks):
         try:
             content = block.get(b_type, {})
             rich_text = content.get('rich_text', [])
-            text = "".join([t.get('plain_text', '') for t in rich_text]) if rich_text else "" # Corrected escaping for empty string
+            if rich_text:
+                text = "".join([t.get('plain_text', '') for t in rich_text])
+            else:
+                text = ""
             
-            if b_type == 'paragraph': content_html += f"<p>{{text}}</p>" # Corrected escaping for f-string
+            if b_type == 'paragraph': 
+                content_html += "<p>%s</p>" % text
             elif b_type.startswith('heading_'):
                 level = b_type.split('_')[1]
-                content_html += f"<h{{level}}>{{text}}</h{{level}}>
-            elif b_type == 'bulleted_list_item': content_html += f"<li>{{text}}</li>" # Corrected escaping for f-string
-            elif b_type == 'numbered_list_item': content_html += f"<li>{{text}}</li>" # Corrected escaping for f-string
+                content_html += "<h%s>%s</h%s>" % (level, text, level)
+            elif b_type == 'bulleted_list_item': 
+                content_html += "<li>%s</li>" % text
+            elif b_type == 'numbered_list_item': 
+                content_html += "<li>%s</li>" % text
             elif b_type == 'to_do':
-                checked = "checked" if content.get('checked') else "" # Corrected escaping for empty string
-                content_html += f"<div><input type='checkbox' {{checked}} disabled> {{text}}</div>" # Corrected escaping for f-string
-            elif b_type == 'quote': content_html += f"<blockquote>{{text}}</blockquote>" # Corrected escaping for f-string
-            elif b_type == 'callout': content_html += f"<div class='callout'>{{text}}</div>" # Corrected escaping for f-string
+                checked = "checked" if content.get('checked') else ""
+                content_html += "<div><input type='checkbox' %s disabled> %s</div>" % (checked, text)
+            elif b_type == 'quote': 
+                content_html += "<blockquote>%s</blockquote>" % text
+            elif b_type == 'callout': 
+                content_html += "<div class='callout'>%s</div>" % text
             elif b_type == 'code':
                 code_text = "".join([t.get('plain_text', '') for t in content.get('rich_text', [])])
-                content_html += f"<pre><code>{{code_text}}</code></pre>" # Corrected escaping for f-string
+                content_html += "<pre><code>%s</code></pre>" % code_text
             elif b_type == 'image':
                 img_url = content.get('external', {}).get('url') or content.get('file', {}).get('url')
-                if img_url: content_html += f"<img src='{{img_url}}' style='max-width:100%'>" # Corrected escaping for f-string
-            elif b_type == 'divider': content_html += "<hr>"
-        except Exception: continue
+                if img_url: 
+                    content_html += "<img src='%s' style='max-width:100%%'>" % img_url
+            elif b_type == 'divider': 
+                content_html += "<hr>"
+        except Exception: 
+            continue
 
     last_backup = time.strftime('%Y-%m-%d %H:%M:%S')
     
-    return f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>{{title}}</title>
+    <title>{TITLE}</title>
     <style>
-        body {{ font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }}
-        h1 {{ border-bottom: 2px solid #eee; padding-bottom: 10px; }}
-        .metadata {{ background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }}
-        blockquote {{ border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }}
-        .callout {{ background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
-        pre {{ background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }}
-        code {{ font-family: monospace; }}
+        body { font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }
+        h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .metadata { background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }
+        blockquote { border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }
+        .callout { background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        pre { background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        code { font-family: monospace; }
     </style>
 </head>
 <body>
-    <h1>{{title}}</h1>
-    {{meta_html}}
-    {{content_html}}
-    <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {{last_backup}}</p>
+    <h1>{TITLE}</h1>
+    {META_HTML}
+    {CONTENT_HTML}
+    <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {LAST_BACKUP}</p>
 </body>
-</html>""" # Corrected escaping for multiline f-string
+</html>"""
+    
+    result = html_template.replace("{TITLE}", title)
+    result = result.replace("{META_HTML}", meta_html)
+    result = result.replace("{CONTENT_HTML}", content_html)
+    result = result.replace("{LAST_BACKUP}", last_backup)
+    
+    return result 
 
 def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
     """재귀적으로 탐색하며 백업을 수행합니다."""
     title, metadata = get_notion_item_info(notion, item_id, is_db)
-    print(f"-> Processing: {title}") # Corrected print statement to use f-string
+    print("-> Processing: %s" % title)
     
-    # 1. 드라이브에 이 항목을 위한 폴더 생성
     current_folder_id = get_or_create_drive_folder(drive_service, title, parent_drive_id)
     
-    # 2. 본문(블록) 가져오기 및 HTML 업로드
     blocks = []
     try:
         start_cursor = None
@@ -139,10 +158,9 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
         
         html_content = notion_to_html(title, metadata, blocks)
         
-        # 파일 업로드 (이름: "페이지제목.html")
-        file_name = f"{title}.html" # Corrected escaping for f-string
-        safe_file_name = file_name.replace("'", "'"'"') # Corrected escaping for single quote within f-string
-        query = f"name='{safe_file_name}' and '{current_folder_id}' in parents and trashed=false" # Corrected escaping for f-string
+        file_name = title + ".html"
+        escaped_file_name = file_name.replace("'", "\\'")
+        query = "name='%s' and '%s' in parents and trashed=false" % (escaped_file_name, current_folder_id)
         exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
         existing = exist_resp.get('files', [])
         
@@ -156,17 +174,15 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
             drive_service.files().create(body=meta, media_body=media).execute()
             
     except Exception as e:
-        print(f"   [Error content] {title}: {e}") # Corrected print statement to use f-string
+        print("   [Error content] %s: %s" % (title, e))
 
-    # 3. 하위 항목(자식 페이지/DB) 탐색
     for block in blocks:
         if block['type'] == 'child_page':
             process_node(notion, drive_service, block['id'], current_folder_id)
         elif block['type'] == 'child_database':
             process_node(notion, drive_service, block['id'], current_folder_id, is_db=True)
-        time.sleep(0.1) # 속도 조절
+        time.sleep(0.1) 
 
-    # 4. 데이터베이스인 경우 내부 페이지들 탐색
     if is_db:
         try:
             cursor = None
@@ -177,7 +193,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
                 if not resp['has_more']: break
                 cursor = resp['next_cursor']
         except Exception as e:
-            print(f"   [Error DB query] {title}: {e}") # Corrected print statement to use f-string
+            print("   [Error DB query] %s: %s" % (title, e)) 
 
 def main():
     notion_token = os.environ.get("NOTION_TOKEN")
