@@ -27,15 +27,15 @@ const AUTO_CONFIG = {
 };
 
 // 음정 매칭 허용 범위: ±2 반음 (연주 인토네이션 오차)
-const PITCH_TOLERANCE = 2;
+const PITCH_TOLERANCE = 4; // Phase 97: ±4반음 허용 (장3도)
 
 // 타이밍 매칭 허용 범위: ±2 슬롯 (음표 탐색용)
 const TIMING_TOLERANCE = 16;
 
 // [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
 // 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
-const TIMING_TOLERANCE_SCORE = 1;   // 타이밍: ±1슬롯 차이는 100% 일치
-const DURATION_TOLERANCE_SCORE = 1; // 길이: ±1슬롯 차이는 100% 일치
+const TIMING_TOLERANCE_SCORE = 4;   // Phase 97: ±4슬롯 차이까지 허용 (4분음표 1개)
+const DURATION_TOLERANCE_SCORE = 3; // Phase 97: ±3슬롯 차이까지 허용
 
 const PARAM_SEARCH_SPACE = {
   LOW_FREQ_RECOVERY_MAX: [120, 140, 150, 160, 170],
@@ -367,7 +367,7 @@ function runCaseTest(
     let bestOffset = 0;
     let bestTimingMatches = 0;
 
-    // -8 to +8 슬롯 오프셋 시도 (Phase 96: 범위 확장)
+    // -8 to +8 슬롯 오프셋 시도 (Phase 96: 반마디 범위)
     for (let testOffset = -8; testOffset <= 8; testOffset++) {
       let timingMatches = 0;
 

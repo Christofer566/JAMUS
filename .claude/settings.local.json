@@ -28,7 +28,12 @@
       "Bash(timeout 90 npx tsx:*)",
       "Bash(timeout 30 npx tsx:*)",
       "Bash(dir /b \"C:\\\\JAMUS\\\\tests\\\\pitch-accuracy\\\\datasets\\\\case_05\")",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(timeout 180 npx tsx:*)",
+      "Bash(sort:*)",
+      "Bash(echo:*)",
+      "Bash(node:*)",
+      "Bash(del C:JAMUStestspitch-accuracydebug_case07.ts)"
     ],
     "deny": [],
     "ask": []

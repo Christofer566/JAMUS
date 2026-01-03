@@ -760,7 +760,7 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // ========================================
   // 앞뒤 유효 슬롯 사이에 excluded 슬롯이 있으면 강제로 음표로 간주
   // 긴 음표 중간에 끊긴 부분을 살려서 회수율 향상
-  const MAX_GAP_SIZE = 6; // Phase 96: 6슬롯 (균형점)
+  const MAX_GAP_SIZE = 3; // Phase 97: 3슬롯 (균형점 - 4슬롯 이상 gap은 유지)
   let gapFilledCount = 0;
 
   // 유효한 슬롯들의 인덱스 수집
