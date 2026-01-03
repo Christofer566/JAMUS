@@ -9,10 +9,10 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
-    # 폴더명에서 특수문자 제거 (드라이브 허용 범위 내)
-    # 구글 드라이브 쿼리에서 따옴표 이스케이프: ' -> \'
-    safe_name = folder_name.replace("'", "'\''")
-    query = f"name='{safe_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    # 구글 드라이브 쿼리에서 작은따옴표 이스케이프 처리
+    escaped_name = folder_name.replace("'", "'\''")
+    query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
     files = response.get('files', [])
     
