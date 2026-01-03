@@ -9,7 +9,9 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브에서 폴더를 찾거나 생성합니다."""
-    query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    # 폴더명에서 특수문자 제거 (드라이브 허용 범위 내)
+    safe_name = folder_name.replace("'", "'\'")
+    query = f"name='{safe_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
     files = response.get('files', [])
     
@@ -22,134 +24,174 @@ def get_or_create_drive_folder(drive_service, folder_name, parent_id):
             'parents': [parent_id]
         }
         folder = drive_service.files().create(body=file_metadata, fields='id').execute()
-        print(f"Created Folder: {folder_name}")
+        print(f"  [Folder Created] {folder_name}")
         return folder.get('id')
 
-def get_page_title(notion, page_id):
+def get_notion_item_info(notion, item_id, is_db=False):
+    """항목의 제목과 속성들을 가져옵니다."""
     try:
-        page_props = notion.pages.retrieve(page_id)
-        properties = page_props.get('properties', {})
-        for prop in properties.values():
-            if prop['type'] == 'title':
-                title_list = prop.get('title', [])
-                if title_list:
-                    return title_list[0].get('plain_text', 'Untitled')
+        if is_db:
+            data = notion.databases.retrieve(item_id)
+            title_list = data.get('title', [])
+            title = title_list[0].get('plain_text', 'Untitled DB') if title_list else 'Untitled DB'
+            return title, {}
+        else:
+            data = notion.pages.retrieve(item_id)
+            props = data.get('properties', {})
+            title = "Untitled"
+            metadata = {}
+            
+            for name, val in props.items():
+                p_type = val.get('type')
+                if p_type == 'title':
+                    title = val['title'][0].get('plain_text', 'Untitled') if val['title'] else 'Untitled'
+                elif p_type in ['select', 'status']:
+                    metadata[name] = val.get(p_type, {}).get('name', '')
+                elif p_type == 'multi_select':
+                    metadata[name] = ", ".join([x.get('name', '') for x in val.get('multi_select', [])])
+                elif p_type == 'date':
+                    date_val = val.get('date')
+                    metadata[name] = date_val.get('start', '') if date_val else ''
+            return title, metadata
     except Exception:
-        pass
-    return f"Untitled_{page_id[:8]}"
+        return f"Untitled_{item_id[:8]}", {}
 
-def get_db_title(notion, database_id):
-    try:
-        db_props = notion.databases.retrieve(database_id)
-        title_list = db_props.get('title', [])
-        if title_list:
-            return title_list[0].get('plain_text', 'Untitled_DB')
-    except Exception:
-        pass
-    return "Untitled_DB"
+def notion_to_html(title, metadata, blocks):
+    """Notion 데이터를 미려한 HTML로 변환합니다."""
+    meta_html = "".join([f"<li><b>{{k}}:</b> {{v}}</li>" for k, v in metadata.items() if v])
+    if meta_html:
+        meta_html = f"<div class='metadata'><ul>{{meta_html}}</ul></div><hr>"
 
-def notion_blocks_to_html(blocks):
-    html = ""
+    content_html = ""
     for block in blocks:
-        block_type = block['type']
+        b_type = block['type']
         try:
-            content = block.get(block_type, {})
+            content = block.get(b_type, {})
             rich_text = content.get('rich_text', [])
             text = "".join([t.get('plain_text', '') for t in rich_text]) if rich_text else ""
-            if block_type == 'paragraph': html += f"<p>{text}</p>\n"
-            elif block_type.startswith('heading_'):
-                level = block_type.split('_')[1]
-                html += f"<h{level}>{text}</h{level}>\n"
-            elif block_type == 'bulleted_list_item': html += f"<li>{text}</li>\n"
-            elif block_type == 'to_do':
+            
+            if b_type == 'paragraph': content_html += f"<p>{{text}}</p>"
+            elif b_type.startswith('heading_'):
+                level = b_type.split('_')[1]
+                content_html += f"<h{{level}}>{{text}}</h{{level}}>"
+            elif b_type == 'bulleted_list_item': content_html += f"<li>{{text}}</li>"
+            elif b_type == 'numbered_list_item': content_html += f"<li>{{text}}</li>"
+            elif b_type == 'to_do':
                 checked = "checked" if content.get('checked') else ""
-                html += f'<li><input type="checkbox" {checked} disabled> {text}</li>\n'
-            elif block_type == 'divider': html += "<hr>\n"
-            elif block_type == 'code':
+                content_html += f"<div><input type='checkbox' {{checked}} disabled> {{text}}</div>"
+            elif b_type == 'quote': content_html += f"<blockquote>{{text}}</blockquote>"
+            elif b_type == 'callout': content_html += f"<div class='callout'>{{text}}</div>"
+            elif b_type == 'code':
                 code_text = "".join([t.get('plain_text', '') for t in content.get('rich_text', [])])
-                html += f"<pre><code>{code_text}</code></pre>\n"
+                content_html += f"<pre><code>{{code_text}}</code></pre>"
+            elif b_type == 'image':
+                img_url = content.get('external', {}).get('url') or content.get('file', {}).get('url')
+                if img_url: content_html += f"<img src='{{img_url}}' style='max-width:100%'>"
+            elif b_type == 'divider': content_html += "<hr>"
         except Exception: continue
-    return f"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>body{{font-family:sans-serif;line-height:1.6;padding:20px;max-width:800px;margin:auto;}}pre{{background:#f4f4f4;padding:10px;overflow:auto;}}</style></head><body>{html}</body></html>"
 
-def upload_html_to_drive(drive_service, file_name, html_content, parent_folder_id):
-    """HTML 내용을 드라이브에 업로드하거나 업데이트합니다."""
-    query = f"name='{file_name}' and '{parent_folder_id}' in parents and trashed=false"
-    response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
-    existing_files = response.get('files', [])
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{{title}}</title>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }}
+            h1 {{ border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+            .metadata {{ background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }}
+            blockquote {{ border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }}
+            .callout {{ background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+            pre {{ background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+            code {{ font-family: monospace; }}
+        </style>
+    </head>
+    <body>
+        <h1>{{title}}</h1>
+        {{meta_html}}
+        {{content_html}}
+        <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
+    </body>
+    </html>
+    ""
 
-    fh = io.BytesIO(html_content.encode('utf-8'))
-    media = MediaIoBaseUpload(fh, mimetype='text/html', resumable=True)
-
-    if existing_files:
-        drive_service.files().update(fileId=existing_files[0]['id'], media_body=media).execute()
-    else:
-        file_metadata = {{'name': file_name, 'parents': [parent_folder_id]}}
-        drive_service.files().create(body=file_metadata, media_body=media).execute()
-
-def process_node(notion, drive_service, page_id, parent_drive_folder_id):
-    """재귀적으로 페이지를 탐색하고 폴더 구조를 유지하며 백업합니다."""
-    # 1. 현재 페이지 제목 가져오기 및 본문 백업
-    title = get_page_title(notion, page_id)
-    print(f"Processing: {title}")
+def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
+    """재귀적으로 탐색하며 백업을 수행합니다."""
+    title, metadata = get_notion_item_info(notion, item_id, is_db)
+    print(f"-> Processing: {{title}}")
     
-    # 해당 페이지를 위한 전용 폴더 생성
-    current_folder_id = get_or_create_drive_folder(drive_service, title, parent_drive_folder_id)
+    # 1. 드라이브에 이 항목을 위한 폴더 생성
+    current_folder_id = get_or_create_drive_folder(drive_service, title, parent_drive_id)
     
-    # 페이지 본문을 HTML로 변환하여 해당 폴더 안에 저장
+    # 2. 본문(블록) 가져오기 및 HTML 업로드
     blocks = []
-    start_cursor = None
-    while True:
-        resp = notion.blocks.children.list(block_id=page_id, start_cursor=start_cursor, page_size=100)
-        blocks.extend(resp['results'])
-        if not resp['has_more']: break
-        start_cursor = resp['next_cursor']
-    
-    html_content = notion_blocks_to_html(blocks)
-    upload_html_to_drive(drive_service, f"{title}.html", html_content, current_folder_id)
+    try:
+        start_cursor = None
+        while True:
+            resp = notion.blocks.children.list(block_id=item_id, start_cursor=start_cursor, page_size=100)
+            blocks.extend(resp['results'])
+            if not resp['has_more']: break
+            start_cursor = resp['next_cursor']
+        
+        html_content = notion_to_html(title, metadata, blocks)
+        
+        # 파일 업로드 (이름: "페이지제목.html")
+        file_name = f"{title}.html"
+        query = f"name='{file_name.replace("'", "'\'")}' and '{current_folder_id}' in parents and trashed=false"
+        exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
+        existing = exist_resp.get('files', [])
+        
+        fh = io.BytesIO(html_content.encode('utf-8'))
+        media = MediaIoBaseUpload(fh, mimetype='text/html', resumable=True)
+        
+        if existing:
+            drive_service.files().update(fileId=existing[0]['id'], media_body=media).execute()
+        else:
+            meta = {'name': file_name, 'parents': [current_folder_id]}
+            drive_service.files().create(body=meta, media_body=media).execute()
+            
+    except Exception as e:
+        print(f"   [Error content] {{title}}: {{e}}")
 
-    # 2. 하위 블록들 탐색하여 하위 페이지/DB 처리
+    # 3. 하위 항목(자식 페이지/DB) 탐색
     for block in blocks:
         if block['type'] == 'child_page':
             process_node(notion, drive_service, block['id'], current_folder_id)
         elif block['type'] == 'child_database':
-            db_id = block['id']
-            db_title = get_db_title(notion, db_id)
-            print(f"Querying DB: {db_title}")
-            db_folder_id = get_or_create_drive_folder(drive_service, db_title, current_folder_id)
-            
-            # DB 내의 모든 페이지 가져오기
-            db_cursor = None
+            process_node(notion, drive_service, block['id'], current_folder_id, is_db=True)
+        time.sleep(0.1) # 속도 조절
+
+    # 4. 데이터베이스인 경우 내부 페이지들 탐색
+    if is_db:
+        try:
+            cursor = None
             while True:
-                db_resp = notion.databases.query(database_id=db_id, start_cursor=db_cursor, page_size=100)
-                for db_page in db_resp['results']:
-                    process_node(notion, drive_service, db_page['id'], db_folder_id)
-                if not db_resp['has_more']: break
-                db_cursor = db_resp['next_cursor']
-        
-        # API Rate Limit 방지
-        time.sleep(0.1)
+                resp = notion.databases.query(database_id=item_id, start_cursor=cursor, page_size=100)
+                for page in resp['results']:
+                    process_node(notion, drive_service, page['id'], current_folder_id)
+                if not resp['has_more']: break
+                cursor = resp['next_cursor']
+        except Exception as e:
+            print(f"   [Error DB query] {{title}}: {{e}}")
 
 def main():
     notion_token = os.environ.get("NOTION_TOKEN")
-    client_id = os.environ.get("GDRIVE_CLIENT_ID")
-    client_secret = os.environ.get("GDRIVE_CLIENT_SECRET")
-    refresh_token = os.environ.get("GDRIVE_REFRESH_TOKEN")
+    creds_info = {
+        "client_id": os.environ.get("GDRIVE_CLIENT_ID"),
+        "client_secret": os.environ.get("GDRIVE_CLIENT_SECRET"),
+        "refresh_token": os.environ.get("GDRIVE_REFRESH_TOKEN"),
+        "token_uri": "https://oauth2.googleapis.com/token"
+    }
     gdrive_root_id = os.environ.get("GDRIVE_FOLDER_ID")
-    notion_page_ids_str = os.environ.get("NOTION_PAGE_ID")
+    page_ids_str = os.environ.get("NOTION_PAGE_ID")
 
-    if not all([notion_token, client_id, client_secret, refresh_token, gdrive_root_id, notion_page_ids_str]):
-        print("Error: Missing environment variables.")
-        return
+    if not all([notion_token, creds_info["client_id"], gdrive_root_id, page_ids_str]):
+        print("Missing environment variables."); return
 
     notion = Client(auth=notion_token)
-    creds = Credentials(None, refresh_token=refresh_token, token_uri="https://oauth2.googleapis.com/token",
-                        client_id=client_id, client_secret=client_secret, scopes=['https://www.googleapis.com/auth/drive.file'])
-    drive_service = build('drive', 'v3', credentials=creds)
+    drive_service = build('drive', 'v3', credentials=Credentials(None, **creds_info, scopes=['https://www.googleapis.com/auth/drive.file']))
 
-    root_ids = [pid.strip() for pid in notion_page_ids_str.split(',')]
-
-    for root_id in root_ids:
-        if not root_id: continue
+    for root_id in [x.strip() for x in page_ids_str.split(',') if x.strip()]:
         process_node(notion, drive_service, root_id, gdrive_root_id)
 
 if __name__ == "__main__":
