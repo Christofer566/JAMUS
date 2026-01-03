@@ -75,32 +75,32 @@ export interface TunableParams {
   PITCH_STABILITY_ENABLED: boolean;   // true/false - 음정 안정성 필터 활성화
 }
 
-// 기본값 (Phase 75: 원본 황금 설정 - 타이밍 92.9%, 음정 71.4%, 길이 64.3%)
+// 기본값 (goldenSettings75.json과 동기화 - 71.5% 달성)
 const DEFAULT_PARAMS: TunableParams = {
   // 1. 저음 복원
   LOW_FREQ_RECOVERY_MAX: 120,      // 저음 복구 상한
   LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.20,   // Phase 86: 71.1% 달성
+  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // goldenSettings75 동기화
 
   // 2. 점유율
-  OCCUPANCY_MIN: 0.75,             // 75차 원본값
-  OCCUPANCY_HIGH: 0.70,            // 70% 이상 = high confidence
-  OCCUPANCY_SUSTAIN: 0.45,         // Sustain 확장 (길이 정확도 개선)
+  OCCUPANCY_MIN: 0.70,             // goldenSettings75 동기화
+  OCCUPANCY_HIGH: 0.65,            // goldenSettings75 동기화
+  OCCUPANCY_SUSTAIN: 0.40,         // goldenSettings75 동기화
 
   // 3. 에너지 피크
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.70, // Phase 85: 피크 감지 완화 (64.7%)
-  ENERGY_PEAK_OCCUPANCY_MIN: 0.95, // 엄격한 피크 점유율
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.75, // goldenSettings75 동기화
+  ENERGY_PEAK_OCCUPANCY_MIN: 0.90,  // goldenSettings75 동기화
 
   // 4. 음표 길이
-  MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
+  MIN_NOTE_DURATION_SLOTS: 2,      // goldenSettings75 동기화
   MAX_MERGE_SLOTS: 8,              // 과잉 병합 방지
 
-  // 5. 그리드 분석 (새로 추가)
-  PITCH_CONFIDENCE_MIN: 0.35,      // 프레임 레벨 신뢰도
+  // 5. 그리드 분석
+  PITCH_CONFIDENCE_MIN: 0.30,      // goldenSettings75 동기화
   GRID_SNAP_TOLERANCE: 0.15,       // 박자 스냅 허용
   TIMING_OFFSET_SLOTS: 3,          // 타이밍 보정 오프셋
 
-  // 6. 음역대별 차별화 (새로 추가)
+  // 6. 음역대별 차별화
   MID_FREQ_MIN: 200,               // 중음역대 시작 (G3)
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
   LOW_FREQ_OCCUPANCY_BONUS: 0.10,  // 저음 점유율 보너스
