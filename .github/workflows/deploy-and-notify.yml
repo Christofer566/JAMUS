@@ -517,5 +517,5 @@ jobs:
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
           GDRIVE_FOLDER_ID: "1kYWkO4shselSCG-nmR8t4Wx6c-7l22So"
-          NOTION_PAGE_ID: ${{ secrets.CONTEXT_HUB_PAGE_ID }}
+          NOTION_PAGE_ID: "${{ secrets.NOTION_PAGE_ID_1 }},${{ secrets.NOTION_PAGE_ID_2 }}"
         run: python sync_notion_to_drive.py
