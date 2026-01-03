@@ -75,35 +75,35 @@ export interface TunableParams {
   PITCH_STABILITY_ENABLED: boolean;   // true/false - 음정 안정성 필터 활성화
 }
 
-// 기본값 (goldenSettings75.json과 동기화 - 71.5% 달성)
+// 기본값 (goldenSettings75.json 1차와 동기화 - 84.8% 달성)
 const DEFAULT_PARAMS: TunableParams = {
   // 1. 저음 복원
-  LOW_FREQ_RECOVERY_MAX: 120,      // 저음 복구 상한
-  LOW_SOLO_THRESHOLD: 150,         // D3=147Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // goldenSettings75 동기화
+  LOW_FREQ_RECOVERY_MAX: 180,      // 저음 복구 상한 (F#3까지)
+  LOW_SOLO_THRESHOLD: 200,         // G3=196Hz까지 보호
+  LOW_FREQ_CONFIDENCE_MIN: 0.15,   // 저음 confidence 임계값
 
   // 2. 점유율
-  OCCUPANCY_MIN: 0.70,             // goldenSettings75 동기화
-  OCCUPANCY_HIGH: 0.65,            // goldenSettings75 동기화
-  OCCUPANCY_SUSTAIN: 0.40,         // goldenSettings75 동기화
+  OCCUPANCY_MIN: 0.45,             // Phase 92 연속성 복구 지원
+  OCCUPANCY_HIGH: 0.58,            // high 판정 기준
+  OCCUPANCY_SUSTAIN: 0.40,         // sustain 판정 기준
 
   // 3. 에너지 피크
-  ENERGY_PEAK_CONFIDENCE_MIN: 0.75, // goldenSettings75 동기화
-  ENERGY_PEAK_OCCUPANCY_MIN: 0.90,  // goldenSettings75 동기화
+  ENERGY_PEAK_CONFIDENCE_MIN: 0.75, // 에너지 피크 confidence
+  ENERGY_PEAK_OCCUPANCY_MIN: 0.90,  // 에너지 피크 occupancy
 
   // 4. 음표 길이
-  MIN_NOTE_DURATION_SLOTS: 2,      // goldenSettings75 동기화
+  MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
   MAX_MERGE_SLOTS: 8,              // 과잉 병합 방지
 
   // 5. 그리드 분석
-  PITCH_CONFIDENCE_MIN: 0.30,      // goldenSettings75 동기화
+  PITCH_CONFIDENCE_MIN: 0.30,      // 프레임 confidence 임계값
   GRID_SNAP_TOLERANCE: 0.15,       // 박자 스냅 허용
   TIMING_OFFSET_SLOTS: 3,          // 타이밍 보정 오프셋
 
   // 6. 음역대별 차별화
-  MID_FREQ_MIN: 200,               // 중음역대 시작 (G3)
+  MID_FREQ_MIN: 250,               // 중음역대 시작 (B3까지 저음 보너스)
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
-  LOW_FREQ_OCCUPANCY_BONUS: 0.10,  // 저음 점유율 보너스
+  LOW_FREQ_OCCUPANCY_BONUS: 0.15,  // 저음 점유율 보너스
 
   // 7. Onset Detection (Phase 77) - 비활성화: 효과 미미 (trade-off)
   ONSET_ENERGY_RATIO: 2.0,         // 에너지 급증 비율 임계값
@@ -346,11 +346,21 @@ function modeFrequency(arr: number[]): number {
  * Phase 2: 옥타브 자동 보정
  * Phase 55: 1.62x threshold 황금 설정
  * Phase 67: 로그 제거
+ * Phase 93: 저음역대 배음 필터 강화
  */
 function correctOctaveError(frequency: number, contextFreqs: number[]): number {
   if (frequency <= 0 || contextFreqs.length === 0) return frequency;
 
   const avgContextFreq = contextFreqs.reduce((sum, f) => sum + f, 0) / contextFreqs.length;
+
+  // Phase 93: 저음역대 배음 필터 강화
+  // context 평균이 저음역대(200Hz 미만)인데 감지 주파수가 높으면 배음일 가능성
+  if (avgContextFreq < 200 && frequency > 250) {
+    // 감지 주파수가 context의 1.5배 이상이면 옥타브 내림
+    if (frequency > avgContextFreq * 1.5) {
+      return frequency / 2;
+    }
+  }
 
   // Phase 55: 배음 필터 (1.62x threshold - 황금 설정)
   if (frequency > avgContextFreq * 1.62) {
@@ -646,6 +656,85 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   if (recoveredCount > 0) {
     console.log(`[Phase 72] 저음 복원: ${recoveredCount}개 슬롯 복구 (70-120Hz 대역)`);
     console.log('[Grid] 슬롯 분포 (복원 후):', { high: highCount, medium: mediumCount, empty: emptyCount });
+  }
+
+  // ========================================
+  // Phase 92: 인접 슬롯 연속성 복구 (Hysteresis Occupancy)
+  // ========================================
+  // 앞 또는 뒤 슬롯이 유효한데 현재가 excluded이면, 낮은 임계값으로 재검증
+  // 음표 누락을 방지하고 연속된 멜로디를 살림
+  // 여러 번 반복하여 점진적으로 복구 (파급 효과)
+  const HYSTERESIS_OCCUPANCY_MIN = 0.08; // 인접 슬롯이 있을 때 완화된 임계값
+  let hysteresisRecoveredTotal = 0;
+  const MAX_HYSTERESIS_PASSES = 5; // 최대 5회 반복
+
+  for (let pass = 0; pass < MAX_HYSTERESIS_PASSES; pass++) {
+    let passRecovered = 0;
+
+    for (let i = 0; i < slots.length; i++) {
+      const currSlot = slots[i];
+
+      // 이미 유효한 슬롯은 스킵
+      if (currSlot.confidence !== 'excluded') continue;
+
+      // 앞 또는 뒤 슬롯이 유효한지 확인
+      const prevSlot = i > 0 ? slots[i - 1] : null;
+      const nextSlot = i < slots.length - 1 ? slots[i + 1] : null;
+      const hasPrev = prevSlot && prevSlot.confidence !== 'excluded';
+      const hasNext = nextSlot && nextSlot.confidence !== 'excluded';
+
+      // 앞 또는 뒤에 유효한 슬롯이 있어야 함
+      if (!hasPrev && !hasNext) continue;
+
+      // 완화된 임계값으로 재검증 (occupancy가 낮아도 프레임이 있으면 검토)
+      const validFrames = currSlot.frames.filter(
+        f => f.confidence >= 0.10 && // 매우 낮은 임계값
+             f.frequency >= 65 && f.frequency <= 1047
+      );
+
+      if (validFrames.length >= 1) {
+        const freqs = validFrames.map(f => f.frequency);
+        const confs = validFrames.map(f => f.confidence);
+        const medianFreq = confidenceWeightedMedian(freqs, confs);
+
+        // 인접 슬롯 음정과 비슷한지 확인 (±4반음 이내)
+        let isReasonable = false;
+        const currMidi = 12 * Math.log2(medianFreq / A4_FREQ) + A4_MIDI;
+
+        if (hasPrev && prevSlot.pitch) {
+          const prevMidi = pitchToMidi(prevSlot.pitch);
+          if (Math.abs(Math.round(currMidi) - prevMidi) <= 4) isReasonable = true;
+        }
+        if (hasNext && nextSlot.pitch) {
+          const nextMidi = pitchToMidi(nextSlot.pitch);
+          if (Math.abs(Math.round(currMidi) - nextMidi) <= 4) isReasonable = true;
+        }
+
+        // 또는 occupancy가 최소 임계값 이상이면 무조건 복구
+        if (currSlot.occupancy >= HYSTERESIS_OCCUPANCY_MIN) {
+          isReasonable = true;
+        }
+
+        if (isReasonable && validFrames.length >= 1) {
+          currSlot.confidence = 'medium';
+          currSlot.medianFrequency = medianFreq;
+          const snappedFreq = pitchSnap(medianFreq);
+          currSlot.pitch = frequencyToNote(snappedFreq, octaveShift);
+
+          passRecovered++;
+          emptyCount--;
+          mediumCount++;
+        }
+      }
+    }
+
+    hysteresisRecoveredTotal += passRecovered;
+    if (passRecovered === 0) break; // 더 이상 복구할 게 없으면 종료
+  }
+
+  if (hysteresisRecoveredTotal > 0) {
+    console.log(`[Phase 92] 인접 연속성 복구: ${hysteresisRecoveredTotal}개 슬롯 복구`);
+    console.log('[Grid] 슬롯 분포 (연속성 복구 후):', { high: highCount, medium: mediumCount, empty: emptyCount });
   }
 
   // ========================================
