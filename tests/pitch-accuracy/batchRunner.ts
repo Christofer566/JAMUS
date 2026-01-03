@@ -24,8 +24,13 @@ const AUTO_CONFIG = {
 // 음정 매칭 허용 범위: ±2 반음 (연주 인토네이션 오차)
 const PITCH_TOLERANCE = 2;
 
-// 타이밍 매칭 허용 범위: ±2 슬롯
+// 타이밍 매칭 허용 범위: ±2 슬롯 (음표 탐색용)
 const TIMING_TOLERANCE = 2;
+
+// [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
+// 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
+const TIMING_TOLERANCE_SCORE = 1;   // 타이밍: ±1슬롯 차이는 100% 일치
+const DURATION_TOLERANCE_SCORE = 1; // 길이: ±1슬롯 차이는 100% 일치
 
 const PARAM_SEARCH_SPACE = {
   LOW_FREQ_RECOVERY_MAX: [120, 140, 150, 160, 170],
@@ -238,6 +243,22 @@ function pitchToMidi(pitch: string): number {
     return -1;
   }
   return (parseInt(octave) + 1) * 12 + noteIndex;
+}
+
+// [지시 사항 2] MIDI to Frequency 변환
+function midiToFrequency(midi: number): number {
+  if (midi <= 0) return 0;
+  return A4_FREQ * Math.pow(2, (midi - A4_MIDI) / 12);
+}
+
+// [지시 사항 2] Pitch를 한 옥타브 내리기
+function pitchDownOctave(pitch: string): string {
+  const midi = pitchToMidi(pitch);
+  if (midi <= 0) return pitch;
+  const newMidi = midi - 12;
+  const newOctave = Math.floor(newMidi / 12) - 1;
+  const newNoteIndex = ((newMidi % 12) + 12) % 12;
+  return `${NOTE_NAMES[newNoteIndex]}${newOctave}`;
 }
 
 function isSimilarPitch(pitch1: string, pitch2: string): boolean {
@@ -805,6 +826,12 @@ function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
     splitNotes.push(note);
   }
 
+  // [지시 사항 2] 남성 저음역 배음 억제 알고리즘 (Male-Specific Filter)
+  // 테스트 결과: 현재 데이터에서 역효과 발생 (83.9% → 82.7%)
+  // 원인: 이미 correctOctaveError 등에서 옥타브 보정이 처리됨
+  // 상태: 비활성화 (향후 저음역 특화 데이터 추가 시 재검토)
+  // 구현 코드는 midiToFrequency, pitchDownOctave 함수로 준비됨
+
   // Phase 86: Duration Quantization
   // 감지된 slotCount를 가장 가까운 표준 음표 길이로 조정
   const STANDARD_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 16];
@@ -935,9 +962,12 @@ function runCaseTest(
 
       const dnSlot = dn.measureIndex * 16 + dn.slotIndex;
       const gtSlotPos = (gt.measure - startMeasure) * 16 + gt.slot;
-      if (dnSlot === gtSlotPos) timingMatch++;
 
-      if (dn.slotCount === gt.slots) durationMatch++;
+      // [지시 사항 1] 타이밍: ±1슬롯 차이는 100% 일치로 간주
+      if (Math.abs(dnSlot - gtSlotPos) <= TIMING_TOLERANCE_SCORE) timingMatch++;
+
+      // [지시 사항 1] 길이: ±1슬롯 차이는 100% 일치로 간주
+      if (Math.abs(dn.slotCount - gt.slots) <= DURATION_TOLERANCE_SCORE) durationMatch++;
     }
   }
 
