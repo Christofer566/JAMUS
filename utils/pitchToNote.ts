@@ -75,17 +75,17 @@ export interface TunableParams {
   PITCH_STABILITY_ENABLED: boolean;   // true/false - 음정 안정성 필터 활성화
 }
 
-// 기본값 (goldenSettings75.json 1차와 동기화 - 84.8% 달성)
+// 기본값 (goldenSettings75.json 3차와 동기화 - 82.7% 달성, Phase 97)
 const DEFAULT_PARAMS: TunableParams = {
   // 1. 저음 복원 (2옥타브 지원 강화)
   LOW_FREQ_RECOVERY_MAX: 180,      // 저음 복구 상한 (F#3까지)
   LOW_SOLO_THRESHOLD: 200,         // G3=196Hz까지 보호
-  LOW_FREQ_CONFIDENCE_MIN: 0.10,   // 저음 confidence 임계값 (0.15→0.10 낮춤)
+  LOW_FREQ_CONFIDENCE_MIN: 0.12,   // 저음 confidence 임계값
 
-  // 2. 점유율 (goldenSettings75와 동기화)
-  OCCUPANCY_MIN: 0.10,             // 최소 점유율 (0.45→0.10)
-  OCCUPANCY_HIGH: 0.25,            // high 판정 기준 (0.58→0.25)
-  OCCUPANCY_SUSTAIN: 0.25,         // sustain 기준 - 길이 정확도 개선 (0.40→0.25)
+  // 2. 점유율 (goldenSettings75 3차와 동기화)
+  OCCUPANCY_MIN: 0.18,             // 최소 점유율
+  OCCUPANCY_HIGH: 0.38,            // high 판정 기준
+  OCCUPANCY_SUSTAIN: 0.25,         // sustain 기준
 
   // 3. 에너지 피크
   ENERGY_PEAK_CONFIDENCE_MIN: 0.75, // 에너지 피크 confidence
@@ -93,22 +93,22 @@ const DEFAULT_PARAMS: TunableParams = {
 
   // 4. 음표 길이
   MIN_NOTE_DURATION_SLOTS: 1,      // 1슬롯 음표 허용
-  MAX_MERGE_SLOTS: 16,             // 병합 허용 범위 (8→16)
+  MAX_MERGE_SLOTS: 6,              // 병합 허용 범위 (Phase 97)
 
   // 5. 그리드 분석
-  PITCH_CONFIDENCE_MIN: 0.10,      // 프레임 confidence 임계값 (0.30→0.10 저음 지원)
+  PITCH_CONFIDENCE_MIN: 0.15,      // 프레임 confidence 임계값
   GRID_SNAP_TOLERANCE: 0.15,       // 박자 스냅 허용
   TIMING_OFFSET_SLOTS: 3,          // 타이밍 보정 오프셋
 
   // 6. 음역대별 차별화
   MID_FREQ_MIN: 250,               // 중음역대 시작 (B3까지 저음 보너스)
   HIGH_FREQ_MIN: 500,              // 고음역대 시작 (B4)
-  LOW_FREQ_OCCUPANCY_BONUS: 0.20,  // 저음 점유율 보너스 (0.15→0.20 증가)
+  LOW_FREQ_OCCUPANCY_BONUS: 0.15,  // 저음 점유율 보너스
 
-  // 7. Onset Detection (Phase 77) - 비활성화 (실제 녹음에서 과분리 발생)
-  ONSET_ENERGY_RATIO: 2.0,         // 에너지 급증 비율 임계값
-  ONSET_CONFIDENCE_JUMP: 0.3,      // confidence 급증 임계값
-  ONSET_DETECTION_ENABLED: false,  // 비활성화 (테스트 vs 실제 녹음 차이)
+  // 7. Onset Detection (Phase 97) - 활성화 (1.05/0.03 임계값)
+  ONSET_ENERGY_RATIO: 1.05,        // 에너지 급증 비율 임계값
+  ONSET_CONFIDENCE_JUMP: 0.03,     // confidence 급증 임계값
+  ONSET_DETECTION_ENABLED: true,   // 활성화
 
   // 8. Pitch Stability Filter (Phase 80) - 비활성화: 효과 없음
   PITCH_STABILITY_THRESHOLD: 0.20, // 주파수 표준편차 / 평균 (변동계수) 허용 임계값
