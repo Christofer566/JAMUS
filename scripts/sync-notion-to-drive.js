@@ -29,8 +29,14 @@ const drive = google.drive({ version: 'v3', auth });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function sanitizeName(name) {
+  if (!name) return 'Untitled';
+  // Replace newlines and carriage returns with a space
+  return name.replace(/[\n\r]+/g, ' ').trim();
+}
+
 async function getOrCreateDriveFolder(folderName, parentId) {
-  const escapedName = folderName.replace(/'/g, "\'");
+  const escapedName = folderName.replace(/'/g, "'");
   const query = `name='${escapedName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
   try {
@@ -183,10 +189,11 @@ function notionToHtml(title, metadata, blocks) {
 
 async function processNode(itemId, parentDriveId, isDb = false) {
   const { title, metadata } = await getNotionItemInfo(itemId, isDb);
-  console.log(`-> Processing: ${title}`);
+  const sanitizedTitle = sanitizeName(title);
+  console.log(`-> Processing: ${sanitizedTitle}`);
 
   try {
-    const currentFolderId = await getOrCreateDriveFolder(title, parentDriveId);
+    const currentFolderId = await getOrCreateDriveFolder(sanitizedTitle, parentDriveId);
 
     const blocks = [];
     let cursor = undefined;
@@ -203,8 +210,8 @@ async function processNode(itemId, parentDriveId, isDb = false) {
 
     const htmlContent = notionToHtml(title, metadata, blocks);
 
-    const fileName = title + '.html';
-    const escapedFileName = fileName.replace(/'/g, "\'");
+    const fileName = sanitizedTitle + '.html';
+    const escapedFileName = fileName.replace(/'/g, "'");
     const query = `name='${escapedFileName}' and '${currentFolderId}' in parents and trashed=false`;
     
     const existResp = await drive.files.list({
@@ -258,12 +265,12 @@ async function processNode(itemId, parentDriveId, isDb = false) {
           dbCursor = resp.next_cursor;
         }
       } catch (e) {
-        console.error(`   [Error DB query] ${title}:`, e);
+        console.error(`   [Error DB query] ${sanitizedTitle}:`, e);
       }
     }
 
   } catch (e) {
-    console.error(`   [Error content] ${title}:`, e);
+    console.error(`   [Error content] ${sanitizedTitle}:`, e);
   }
 }
 
