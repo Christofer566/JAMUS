@@ -18,6 +18,65 @@ const A4_FREQ = 440;
 const A4_MIDI = 69;
 
 // ============================================
+// Phase 113: Scale Mapping Utilities
+// ============================================
+// Major scale intervals: W W H W W W H (0,2,4,5,7,9,11)
+// Minor scale intervals: W H W W H W W (0,2,3,5,7,8,10)
+const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+
+// Key name to root note (pitch class 0-11)
+const KEY_TO_ROOT: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
+  'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+};
+
+/**
+ * Key 문자열을 스케일 pitch class 집합으로 변환
+ * @param key - "C", "Gm", "F#", "Bbm" 등
+ * @returns Set<number> - 0-11 범위의 pitch class 집합
+ */
+function keyToScaleSet(key: string): Set<number> {
+  if (!key) return new Set([0,1,2,3,4,5,6,7,8,9,10,11]); // 전체 허용
+
+  const isMinor = key.endsWith('m');
+  const rootName = isMinor ? key.slice(0, -1) : key;
+  const root = KEY_TO_ROOT[rootName] ?? 0;
+  const intervals = isMinor ? MINOR_INTERVALS : MAJOR_INTERVALS;
+
+  return new Set(intervals.map(i => (root + i) % 12));
+}
+
+/**
+ * MIDI 노트가 스케일에 포함되는지 확인
+ */
+function isInScale(midi: number, scaleSet: Set<number>): boolean {
+  return scaleSet.has(midi % 12);
+}
+
+/**
+ * 가장 가까운 스케일 노트로 스냅
+ * @returns [snappedMidi, distance] - 스냅된 MIDI와 이동 거리
+ */
+function snapToScale(midi: number, scaleSet: Set<number>): [number, number] {
+  const pitchClass = midi % 12;
+  if (scaleSet.has(pitchClass)) return [midi, 0];
+
+  // ±1 반음 내에서 스케일 노트 찾기
+  for (let offset = 1; offset <= 2; offset++) {
+    if (scaleSet.has((pitchClass + offset) % 12)) {
+      return [midi + offset, offset];
+    }
+    if (scaleSet.has((pitchClass - offset + 12) % 12)) {
+      return [midi - offset, -offset];
+    }
+  }
+
+  return [midi, 0]; // 스냅 실패, 원본 유지
+}
+
+// ============================================
 // Self-Refining: 런타임 조정 가능 파라미터 시스템
 // ============================================
 export interface TunableParams {
@@ -419,10 +478,11 @@ interface SlotData {
  * 오디오 프레임을 음표로 변환
  * @param frames - 피치 프레임 배열
  * @param bpm - BPM
+ * @param key - (Phase 113) 곡의 Key (예: "Gm", "C"). 스케일 매핑에 사용
  * @returns NoteData[] - measureIndex는 녹음 시작 기준 상대값 (0부터)
  *          실제 마디 번호는 distributeNotesToMeasures에서 startMeasure를 더해서 계산
  */
-export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
+export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string): NoteData[] {
   console.log('[Grid] ========== 16슬롯 그리드 분석 시작 ==========');
   console.log('[Grid] 입력:', { 프레임수: frames.length, bpm });
 
@@ -1667,6 +1727,135 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   // 데이터 증발 경고 (중요!)
   if (frames.length > 0 && noteCount === 0) {
     console.error('[Grid 경고] ⚠️ 데이터 증발! 입력:', frames.length, '프레임 → 출력: 0개 음표');
+  }
+
+  // ========================================
+  // Phase 113: Scale Mapping (2-Pass) - Conservative Mode
+  // ========================================
+  // Key가 제공되면 스케일 외 음의 confidence만 조정 (Jazz 블루노트 보호)
+  // 스냅은 하지 않음 - 잘못된 스냅으로 인한 정확도 하락 방지
+  if (key) {
+    const scaleSet = keyToScaleSet(key);
+    let outOfScaleCount = 0;
+    let confidenceAdjusted = 0;
+
+    for (const note of finalNotes) {
+      if (note.isRest) continue;
+
+      const midi = pitchToMidi(note.pitch);
+      if (midi < 0) continue;
+
+      if (!isInScale(midi, scaleSet)) {
+        outOfScaleCount++;
+
+        // 스케일 밖 음이면서 짧은 음표(1-2슬롯)이고 high confidence면 의심
+        // Jazz에서 블루노트는 보통 길게 연주되므로 짧은 음표만 필터링
+        if (note.slotCount <= 2 && note.confidence === 'high') {
+          note.confidence = 'medium';
+          confidenceAdjusted++;
+        }
+      }
+    }
+
+    if (outOfScaleCount > 0) {
+      console.log(`[Phase 113] Scale Mapping (${key}):`, {
+        outOfScale: outOfScaleCount,
+        confidenceAdjusted
+      });
+    }
+  }
+
+  // ========================================
+  // Phase 114: Wide Context + Octave Correction (2-Pass Enhanced)
+  // ========================================
+  // ±2마디 범위에서 outlier 음표를 감지하고 옥타브 보정 시도
+  const CONTEXT_RANGE_MEASURES = 2;
+  const CONTEXT_RANGE_SLOTS = CONTEXT_RANGE_MEASURES * 16;
+  let wideContextCorrected = 0;
+  let wideContextRemoved = 0;
+
+  const scaleSet = key ? keyToScaleSet(key) : null;
+  const nonRestNotes = finalNotes.filter(n => !n.isRest);
+
+  for (const note of nonRestNotes) {
+    // 긴 음표는 신뢰도 높으므로 스킵
+    if (note.slotCount > 2) continue;
+
+    const noteSlot = note.measureIndex * 16 + note.slotIndex;
+    const noteMidi = pitchToMidi(note.pitch);
+    if (noteMidi < 0) continue;
+
+    // ±2마디 범위의 다른 음표들 수집
+    const contextNotes = nonRestNotes.filter(n => {
+      if (n === note) return false;
+      const nSlot = n.measureIndex * 16 + n.slotIndex;
+      return Math.abs(nSlot - noteSlot) <= CONTEXT_RANGE_SLOTS;
+    });
+
+    if (contextNotes.length < 2) continue;  // 최소 2개 context 필요
+
+    // Context 음표들의 MIDI 분포 확인
+    const contextMidis = contextNotes.map(n => pitchToMidi(n.pitch)).filter(m => m >= 0);
+    if (contextMidis.length === 0) continue;
+
+    const avgContextMidi = contextMidis.reduce((a, b) => a + b, 0) / contextMidis.length;
+    const midiDiff = noteMidi - avgContextMidi;
+
+    // 8반음 이상 차이나면 옥타브 오류 의심
+    if (Math.abs(midiDiff) >= 8) {
+      // 옥타브 보정 시도
+      let correctedMidi = noteMidi;
+      let corrected = false;
+
+      if (midiDiff >= 8) {
+        // 너무 높음 → 옥타브 내림 시도
+        const lowerMidi = noteMidi - 12;
+        const lowerDiff = Math.abs(lowerMidi - avgContextMidi);
+
+        // 옥타브 내린 후 context와 더 가까워지면 보정
+        if (lowerDiff < Math.abs(midiDiff) - 4) {
+          // 스케일 체크: 보정 후가 스케일 내이거나, 원본도 스케일 밖이면 보정
+          const lowerInScale = !scaleSet || isInScale(lowerMidi, scaleSet);
+          const origInScale = !scaleSet || isInScale(noteMidi, scaleSet);
+
+          if (lowerInScale || !origInScale) {
+            correctedMidi = lowerMidi;
+            corrected = true;
+          }
+        }
+      } else if (midiDiff <= -8) {
+        // 너무 낮음 → 옥타브 올림 시도
+        const higherMidi = noteMidi + 12;
+        const higherDiff = Math.abs(higherMidi - avgContextMidi);
+
+        if (higherDiff < Math.abs(midiDiff) - 4) {
+          const higherInScale = !scaleSet || isInScale(higherMidi, scaleSet);
+          const origInScale = !scaleSet || isInScale(noteMidi, scaleSet);
+
+          if (higherInScale || !origInScale) {
+            correctedMidi = higherMidi;
+            corrected = true;
+          }
+        }
+      }
+
+      if (corrected) {
+        // 보정된 pitch 적용
+        const octave = Math.floor(correctedMidi / 12) - 1;
+        const pitchClass = correctedMidi % 12;
+        note.pitch = NOTE_NAMES[pitchClass] + octave;
+        wideContextCorrected++;
+      } else {
+        // 보정 실패 시 confidence 낮춤 (제거 대신)
+        if (note.confidence === 'high') {
+          note.confidence = 'medium';
+        }
+      }
+    }
+  }
+
+  if (wideContextCorrected > 0 || wideContextRemoved > 0) {
+    console.log(`[Phase 114] Wide Context: corrected=${wideContextCorrected}, removed=${wideContextRemoved}`);
   }
 
   return finalNotes;

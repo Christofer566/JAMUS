@@ -20,6 +20,7 @@ export interface SongMeta {
     artist: string;
     bpm: number;
     time_signature: TimeSignature;
+    key: string;  // Phase 113: Scale Mapping용 키 정보 (예: "Gm", "C", "Am")
 }
 
 // 전체 곡 데이터
@@ -74,6 +75,7 @@ export const AUTUMN_LEAVES: SongData = {
         artist: 'Jazz Standard',
         bpm: 142,
         time_signature: '4/4',
+        key: 'Gm',  // G minor
     },
     audioUrls: {
         intro: 'https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/intro.mp3',

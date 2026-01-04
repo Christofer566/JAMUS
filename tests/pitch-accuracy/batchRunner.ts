@@ -354,7 +354,8 @@ function runCaseTest(
   }
 
   // pitchToNote.ts의 convertToNotes 사용 (앱과 동일한 로직)
-  const detected = pitchToNoteConvert(frames, bpm);
+  // Phase 113: Autumn Leaves = Gm key
+  const detected = pitchToNoteConvert(frames, bpm, 'Gm');
   const detectedNotes = detected.filter(n => !n.isRest);
 
   // ============================================
