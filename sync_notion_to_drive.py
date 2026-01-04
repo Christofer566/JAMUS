@@ -11,7 +11,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브 폴더 생성 및 ID 반환"""
-    # 작은따옴표 이스케이프: ' -> \'
+    # 작은따옴표 이스케이프: ' -> \' (Google Drive API query spec)
     escaped_name = folder_name.replace("'", "'"'"'"')
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
@@ -146,7 +146,7 @@ def notion_to_html(title, metadata, blocks):
 def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
     """재귀적으로 탐색하며 백업을 수행합니다."""
     title, metadata = get_notion_item_info(notion, item_id, is_db)
-    print("-> Processing: %s" % title)
+    print(f"-> Processing: {title}")
     
     current_folder_id = get_or_create_drive_folder(drive_service, title, parent_drive_id)
     
@@ -177,7 +177,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
             drive_service.files().create(body=meta, media_body=media).execute()
             
     except Exception as e:
-        print("   [Error content] %s: %s" % (title, e))
+        print(f"   [Error content] {title}: {e}")
 
     for block in blocks:
         if block['type'] == 'child_page':
@@ -196,7 +196,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
                 if not resp['has_more']: break
                 cursor = resp['next_cursor']
         except Exception as e:
-            print("   [Error DB query] %s: %s" % (title, e) )
+            print(f"   [Error DB query] {title}: {e}" )
 
 def main():
     notion_token = os.environ.get("NOTION_TOKEN")

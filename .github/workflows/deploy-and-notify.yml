@@ -525,7 +525,7 @@ jobs:
           GDRIVE_FOLDER_ID: "1kYWkO4shselSCG-nmR8t4Wx6c-7l22So"
           NOTION_PAGE_ID: "${{ secrets.NOTION_PAGE_ID_1 }},${{ secrets.NOTION_PAGE_ID_2 }}"
         run: |
-          if [ "${{ github.event.inputs.full_backup }}" = "true" ]; then
+          if [ "${{ github.event.inputs.full_backup }}" == "true" ]; then
             python sync_notion_to_drive.py --full
           else
             python sync_notion_to_drive.py
