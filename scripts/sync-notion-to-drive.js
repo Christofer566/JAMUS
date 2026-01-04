@@ -29,6 +29,17 @@ const drive = google.drive({ version: 'v3', auth });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ============================================
+// 결과 리포트용 카운터
+// ============================================
+const stats = {
+  created: 0,
+  updated: 0,
+  skipped: 0,
+  errors: 0,
+  startTime: Date.now()
+};
+
 function sanitizeName(name) {
   if (!name) return 'Untitled';
   // Replace newlines and carriage returns with a space
@@ -36,7 +47,7 @@ function sanitizeName(name) {
 }
 
 async function getOrCreateDriveFolder(folderName, parentId) {
-  const escapedName = folderName.replace(/'/g, "'");
+  const escapedName = folderName.replace(/'/g, "\\'");
   const query = `name='${escapedName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
   try {
@@ -63,7 +74,7 @@ async function getOrCreateDriveFolder(folderName, parentId) {
       return folder.data.id;
     }
   } catch (error) {
-    console.error(`  [Error create folder] ${folderName}:`, error);
+    console.error(`  [Error create folder] ${folderName}:`, error.message);
     throw error;
   }
 }
@@ -74,7 +85,11 @@ async function getNotionItemInfo(itemId, isDb = false) {
       const data = await notion.databases.retrieve({ database_id: itemId });
       const titleList = data.title || [];
       const title = titleList.length > 0 ? titleList[0].plain_text : 'Untitled DB';
-      return { title, metadata: {} };
+      return {
+        title,
+        metadata: {},
+        lastEditedTime: data.last_edited_time
+      };
     } else {
       const data = await notion.pages.retrieve({ page_id: itemId });
       const props = data.properties || {};
@@ -94,11 +109,19 @@ async function getNotionItemInfo(itemId, isDb = false) {
           metadata[name] = val.date?.start || '';
         }
       }
-      return { title, metadata };
+      return {
+        title,
+        metadata,
+        lastEditedTime: data.last_edited_time
+      };
     }
   } catch (e) {
-    console.error(`  [Error Info] ${itemId}:`, e);
-    return { title: `Untitled_${itemId.slice(0, 8)}`, metadata: {} };
+    console.error(`  [Error Info] ${itemId}:`, e.message);
+    return {
+      title: `Untitled_${itemId.slice(0, 8)}`,
+      metadata: {},
+      lastEditedTime: null
+    };
   }
 }
 
@@ -188,9 +211,8 @@ function notionToHtml(title, metadata, blocks) {
 }
 
 async function processNode(itemId, parentDriveId, isDb = false) {
-  const { title, metadata } = await getNotionItemInfo(itemId, isDb);
+  const { title, metadata, lastEditedTime } = await getNotionItemInfo(itemId, isDb);
   const sanitizedTitle = sanitizeName(title);
-  console.log(`-> Processing: ${sanitizedTitle}`);
 
   try {
     const currentFolderId = await getOrCreateDriveFolder(sanitizedTitle, parentDriveId);
@@ -208,47 +230,73 @@ async function processNode(itemId, parentDriveId, isDb = false) {
       cursor = resp.next_cursor;
     }
 
-    const htmlContent = notionToHtml(title, metadata, blocks);
-
     const fileName = sanitizedTitle + '.html';
-    const escapedFileName = fileName.replace(/'/g, "'");
+    const escapedFileName = fileName.replace(/'/g, "\\'");
     const query = `name='${escapedFileName}' and '${currentFolderId}' in parents and trashed=false`;
-    
+
+    // Drive에서 기존 파일 찾기 (modifiedTime 포함)
     const existResp = await drive.files.list({
       q: query,
-      fields: 'files(id)',
+      fields: 'files(id, modifiedTime)',
     });
     const existing = existResp.data.files || [];
 
-    const media = {
-      mimeType: 'text/html',
-      body: Readable.from([htmlContent]),
-    };
+    // 스마트 증분 백업: 시간 비교
+    let shouldUpdate = true;
+    let action = 'create';
 
     if (existing.length > 0) {
-      await drive.files.update({
-        fileId: existing[0].id,
-        media: media,
-      });
-    } else {
-      await drive.files.create({
-        requestBody: {
-          name: fileName,
-          parents: [currentFolderId],
-        },
-        media: media,
-      });
+      const driveModifiedTime = new Date(existing[0].modifiedTime);
+      const notionEditedTime = lastEditedTime ? new Date(lastEditedTime) : new Date();
+
+      if (notionEditedTime <= driveModifiedTime) {
+        // Notion이 더 오래됨 = 변경 없음 = 스킵
+        console.log(`  [Skip] ${sanitizedTitle} (no changes)`);
+        stats.skipped++;
+        shouldUpdate = false;
+      } else {
+        action = 'update';
+      }
     }
 
+    if (shouldUpdate) {
+      const htmlContent = notionToHtml(title, metadata, blocks);
+      const media = {
+        mimeType: 'text/html',
+        body: Readable.from([htmlContent]),
+      };
+
+      if (action === 'update') {
+        await drive.files.update({
+          fileId: existing[0].id,
+          media: media,
+        });
+        console.log(`  [Updated] ${sanitizedTitle}`);
+        stats.updated++;
+      } else {
+        await drive.files.create({
+          requestBody: {
+            name: fileName,
+            parents: [currentFolderId],
+          },
+          media: media,
+        });
+        console.log(`  [Created] ${sanitizedTitle}`);
+        stats.created++;
+      }
+    }
+
+    // 하위 페이지/데이터베이스 재귀 처리
     for (const block of blocks) {
       if (block.type === 'child_page') {
         await processNode(block.id, currentFolderId);
       } else if (block.type === 'child_database') {
         await processNode(block.id, currentFolderId, true);
       }
-      await sleep(100); 
+      await sleep(100);
     }
 
+    // 데이터베이스인 경우 하위 페이지들도 처리
     if (isDb) {
       try {
         let dbCursor = undefined;
@@ -265,22 +313,53 @@ async function processNode(itemId, parentDriveId, isDb = false) {
           dbCursor = resp.next_cursor;
         }
       } catch (e) {
-        console.error(`   [Error DB query] ${sanitizedTitle}:`, e);
+        console.error(`   [Error DB query] ${sanitizedTitle}:`, e.message);
+        stats.errors++;
       }
     }
 
   } catch (e) {
-    console.error(`   [Error content] ${sanitizedTitle}:`, e);
+    console.error(`   [Error content] ${sanitizedTitle}:`, e.message);
+    stats.errors++;
   }
+}
+
+function printReport() {
+  const elapsed = ((Date.now() - stats.startTime) / 1000).toFixed(1);
+  console.log('\n========================================');
+  console.log('  📊 Notion → Drive 백업 결과');
+  console.log('========================================');
+  console.log(`  ✅ 생성: ${stats.created}개`);
+  console.log(`  🔄 업데이트: ${stats.updated}개`);
+  console.log(`  ⏭️  스킵: ${stats.skipped}개`);
+  if (stats.errors > 0) {
+    console.log(`  ❌ 오류: ${stats.errors}개`);
+  }
+  console.log('----------------------------------------');
+  console.log(`  ⏱️  소요 시간: ${elapsed}초`);
+  console.log('========================================\n');
 }
 
 async function main() {
+  console.log('========================================');
+  console.log('  🚀 Notion → Drive 스마트 증분 백업');
+  console.log('========================================\n');
+
   const pageIdsStr = NOTION_PAGE_ID || '';
   const rootIds = pageIdsStr.split(',').map((x) => x.trim()).filter((x) => x);
 
+  console.log(`📁 루트 페이지: ${rootIds.length}개\n`);
+
   for (const rootId of rootIds) {
+    console.log(`\n📂 Processing root: ${rootId}`);
     await processNode(rootId, GDRIVE_FOLDER_ID);
   }
+
+  printReport();
 }
 
-main().catch(console.error);
+main().catch((e) => {
+  console.error('Fatal error:', e);
+  printReport();
+  process.exit(1);
+});
