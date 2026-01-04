@@ -21,7 +21,8 @@ interface DetectedNote {
   pitch: string;
   measureIndex: number;
   slotIndex: number;
-  duration: number;
+  duration: string;  // "w", "h", "q", "8", "16" 등
+  slotCount: number;
   isRest: boolean;
 }
 
@@ -67,11 +68,11 @@ function compareNotes(gtNotes: GTNote[], detNotes: DetectedNote[]): CaseResult &
       if (timingMatch) timingCorrect++;
 
       // 길이 체크 (±1 슬롯)
-      const durationMatch = Math.abs(match.duration - gt.duration) <= 1;
+      const durationMatch = Math.abs(match.slotCount - gt.duration) <= 1;
       if (durationMatch) durationCorrect++;
 
       const status = pitchMatch && timingMatch && durationMatch ? '✅' : '⚠️';
-      details.push(`${status} GT: ${gt.pitch} M${gt.measure}S${gt.slot} (${gt.duration}) → Det: ${match.pitch} M${match.measureIndex + 1}S${match.slotIndex} (${match.duration})`);
+      details.push(`${status} GT: ${gt.pitch} M${gt.measure}S${gt.slot} (${gt.duration}) → Det: ${match.pitch} M${match.measureIndex + 1}S${match.slotIndex} (${match.slotCount})`);
     } else {
       details.push(`❌ GT: ${gt.pitch} M${gt.measure}S${gt.slot} (${gt.duration}) → 미검출`);
     }

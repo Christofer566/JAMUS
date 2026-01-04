@@ -21,7 +21,7 @@ interface DetNote {
   pitch: string;
   measureIndex: number;
   slotIndex: number;
-  duration: number;
+  duration: string;  // "w", "h", "q", "8", "16" 등
   slotCount: number;
   isRest: boolean;
 }
