@@ -12,7 +12,7 @@ from googleapiclient.http import MediaIoBaseUpload
 def get_or_create_drive_folder(drive_service, folder_name, parent_id):
     """구글 드라이브 폴더 생성 및 ID 반환"""
     # 작은따옴표 이스케이프: ' -> \' (Google Drive API query spec)
-    escaped_name = folder_name.replace("'", "'"'"'"')
+    escaped_name = folder_name.replace("'", "\\'")
     query = f"name='{escaped_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
     
     response = drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
@@ -162,7 +162,7 @@ def process_node(notion, drive_service, item_id, parent_drive_id, is_db=False):
         html_content = notion_to_html(title, metadata, blocks)
         
         file_name = title + ".html"
-        escaped_file_name = file_name.replace("'", "'"'"'"')
+        escaped_file_name = file_name.replace("'", "\\'")
         query = "name='%s' and '%s' in parents and trashed=false" % (escaped_file_name, current_folder_id)
         exist_resp = drive_service.files().list(q=query, fields='files(id)').execute()
         existing = exist_resp.get('files', [])
