@@ -453,6 +453,30 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
   );
   const allValidFreqs = allValidFrames.map(f => f.frequency);
 
+  // ========================================
+  // Phase 112: Anchor Point Detection (앵커 포인트 감지)
+  // ========================================
+  // 100Hz 미만의 확실한 저음 프레임을 앵커 포인트로 사용
+  // 이 앵커의 2배 주파수가 감지되면 옥타브 오류로 판단
+  const anchorFreqs = allValidFreqs.filter(f => f >= 65 && f < 100);
+  const hasLowAnchors = anchorFreqs.length >= 3; // 최소 3개의 앵커 필요
+
+  let anchorSet = new Set<number>();
+  if (hasLowAnchors) {
+    // 앵커 주파수들을 MIDI 노트로 변환하여 저장
+    anchorFreqs.forEach(freq => {
+      const midi = Math.round(12 * Math.log2(freq / 440) + 69);
+      anchorSet.add(midi);
+    });
+    console.log('[Phase 112] 앵커 포인트:', {
+      count: anchorFreqs.length,
+      notes: [...anchorSet].map(m => {
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        return noteNames[m % 12] + Math.floor(m / 12 - 1);
+      })
+    });
+  }
+
   // MPM 보정 비율 계산
   const mpmCorrectedCount = allValidFrames.filter(f => f.isMpmCorrected === true).length;
   const mpmCorrectionRatio = allValidFrames.length > 0
@@ -584,7 +608,19 @@ export function convertToNotes(frames: PitchFrame[], bpm: number): NoteData[] {
 
       // Phase 2: 옥타브 자동 보정 (주변 문맥 기반)
       const contextFreqs = allValidFreqs; // Phase 96: 전체 context 사용 (2옥타브 배음 보정)
-      const correctedFreq = correctOctaveError(slot.medianFrequency, contextFreqs);
+      let correctedFreq = correctOctaveError(slot.medianFrequency, contextFreqs);
+
+      // Phase 112: 앵커 기반 옥타브 보정
+      // 130-220Hz 영역의 음이 앵커 포인트의 2배라면 옥타브 내림
+      if (hasLowAnchors && correctedFreq >= 130 && correctedFreq <= 220) {
+        const halfFreq = correctedFreq / 2;
+        const halfMidi = Math.round(12 * Math.log2(halfFreq / 440) + 69);
+
+        // 앵커 셋에 ±1 반음 내에 매치되는 노트가 있으면 옥타브 내림
+        if (anchorSet.has(halfMidi) || anchorSet.has(halfMidi - 1) || anchorSet.has(halfMidi + 1)) {
+          correctedFreq = halfFreq;
+        }
+      }
 
       // Phase 44: Pitch Snap 적용 (±50 cents 범위 내 반음 스냅)
       const snappedFreq = pitchSnap(correctedFreq);
