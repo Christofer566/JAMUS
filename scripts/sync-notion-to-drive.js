@@ -52,6 +52,30 @@ function sanitizeFileName(name) {
 }
 
 // ============================================
+// 문서 유형별 파일명 규칙
+// ============================================
+// 1) WTL (2.0 Weekly Task List): [Week차수]파일명_Date
+// 2) DS (3.1 Development Spec): [Week 차수][Task 번호]파일명_Date
+// 3) DHDB (3.2 Debugging History DB): 파일명 (그대로)
+// 4) TEL (4.0 Task Execute Log): [Week 차수][Task 번호]파일명_Date
+// 5) UPDATE_LOG (5.0 JAMUS UPDATE LOG): [Week 차수]파일명_Date
+// ============================================
+function detectDocType(parentFolderName) {
+  if (!parentFolderName) return null;
+
+  const name = parentFolderName.toLowerCase();
+
+  // 정확한 매칭을 위해 키워드 확인
+  if (name.includes('2.0') || name.includes('weekly task list')) return 'WTL';
+  if (name.includes('3.1') || name.includes('development spec')) return 'DS';
+  if (name.includes('3.2') || name.includes('debugging history')) return 'DHDB';
+  if (name.includes('4.0') || name.includes('task execute log')) return 'TEL';
+  if (name.includes('5.0') || name.includes('update log')) return 'UPDATE_LOG';
+
+  return null;
+}
+
+// ============================================
 // HTML 특수문자 이스케이프 (XSS 방지 및 깨짐 방지)
 // ============================================
 function escapeHtml(text) {
@@ -177,7 +201,6 @@ async function getNotionItemInfo(itemId, isDb = false) {
       return {
         title,
         properties: {},
-        fileNamePrefix: '',
         lastEditedTime: data.last_edited_time
       };
     } else {
@@ -185,10 +208,6 @@ async function getNotionItemInfo(itemId, isDb = false) {
       const props = data.properties || {};
       let title = 'Untitled';
       const properties = {};
-      let fileNamePrefix = '';
-
-      // 파일명 접두사로 사용할 속성 우선순위
-      const prefixPriority = ['주차', 'Week', '상태', 'Status', '타입', 'Type', '카테고리', 'Category'];
 
       for (const [name, val] of Object.entries(props)) {
         const value = extractPropertyValue(val);
@@ -197,23 +216,12 @@ async function getNotionItemInfo(itemId, isDb = false) {
           title = value || 'Untitled';
         } else if (value) {
           properties[name] = value;
-
-          // 파일명 접두사 결정 (우선순위 기반)
-          if (!fileNamePrefix) {
-            for (const prefix of prefixPriority) {
-              if (name.toLowerCase().includes(prefix.toLowerCase()) && value) {
-                fileNamePrefix = value;
-                break;
-              }
-            }
-          }
         }
       }
 
       return {
         title,
         properties,
-        fileNamePrefix,
         lastEditedTime: data.last_edited_time
       };
     }
@@ -222,7 +230,6 @@ async function getNotionItemInfo(itemId, isDb = false) {
     return {
       title: `Untitled_${itemId.slice(0, 8)}`,
       properties: {},
-      fileNamePrefix: '',
       lastEditedTime: null
     };
   }
@@ -645,25 +652,74 @@ async function notionToHtml(title, properties, blocks) {
 }
 
 // ============================================
-// 파일명 생성 (접두사 포함)
+// 파일명 생성 (문서 유형별 규칙 적용)
 // ============================================
-function generateFileName(title, prefix) {
+function generateFileName(title, properties, docType) {
   const safeTitle = sanitizeFileName(title);
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-  if (prefix) {
-    const safePrefix = sanitizeFileName(prefix);
-    return `[${safePrefix}] ${safeTitle}.html`;
+  // 속성에서 Week와 Task 추출
+  const weekVal = properties['주차'] || properties['Week'] || properties['week'] || '';
+  const taskVal = properties['Task'] || properties['태스크'] || properties['Task 번호'] || properties['task'] || '';
+
+  // Week 접두사 포맷 (W06 형식이면 그대로, 아니면 W 붙여줌)
+  let weekPrefix = '';
+  if (weekVal) {
+    const normalized = weekVal.toUpperCase().replace(/\s+/g, '');
+    if (normalized.startsWith('W')) {
+      weekPrefix = `[${normalized}]`;
+    } else {
+      weekPrefix = `[W${normalized.replace(/^0+/, '').padStart(2, '0')}]`;
+    }
   }
 
-  return `${safeTitle}.html`;
+  // Task 접두사 포맷
+  let taskPrefix = '';
+  if (taskVal) {
+    // "Task 3.7" 형식이면 그대로, 아니면 Task 붙여줌
+    if (taskVal.toLowerCase().includes('task')) {
+      taskPrefix = `[${taskVal}]`;
+    } else {
+      taskPrefix = `[Task ${taskVal}]`;
+    }
+  }
+
+  switch (docType) {
+    case 'WTL':
+      // [W06]2025.12.08-12.14 Weekly Task List_20251207
+      return weekPrefix ? `${weekPrefix}${safeTitle}_${date}.html` : `${safeTitle}_${date}.html`;
+
+    case 'DS':
+      // [W06][Task 3.7]Development Spec: Task 3.7 - 편집음표 ~_20251225
+      return `${weekPrefix}${taskPrefix}${safeTitle}_${date}.html`;
+
+    case 'DHDB':
+      // 파일명 그대로
+      return `${safeTitle}.html`;
+
+    case 'TEL':
+      // [W06][Task 5.9]라이브앱 1슬롯 관용 정책 적용_20260103
+      return `${weekPrefix}${taskPrefix}${safeTitle}_${date}.html`;
+
+    case 'UPDATE_LOG':
+      // [Week 차수]파일명_Date
+      return weekPrefix ? `${weekPrefix}${safeTitle}_${date}.html` : `${safeTitle}_${date}.html`;
+
+    default:
+      // 기본: 제목만
+      return `${safeTitle}.html`;
+  }
 }
 
 // ============================================
 // 노드 처리 (메인 로직)
 // ============================================
-async function processNode(itemId, parentDriveId, isDb = false) {
-  const { title, properties, fileNamePrefix, lastEditedTime } = await getNotionItemInfo(itemId, isDb);
+async function processNode(itemId, parentDriveId, isDb = false, parentFolderName = '') {
+  const { title, properties, lastEditedTime } = await getNotionItemInfo(itemId, isDb);
   const sanitizedTitle = sanitizeFileName(title);
+
+  // 문서 유형 감지 (부모 폴더명 기반)
+  const docType = detectDocType(parentFolderName);
 
   try {
     const currentFolderId = await getOrCreateDriveFolder(sanitizedTitle, parentDriveId);
@@ -682,8 +738,8 @@ async function processNode(itemId, parentDriveId, isDb = false) {
       cursor = resp.next_cursor;
     }
 
-    // 파일명 생성 (접두사 포함)
-    const fileName = generateFileName(title, fileNamePrefix);
+    // 파일명 생성 (문서 유형별 규칙 적용)
+    const fileName = generateFileName(title, properties, docType);
     const escapedFileName = fileName.replace(/'/g, "\\'");
     const query = `name='${escapedFileName}' and '${currentFolderId}' in parents and trashed=false`;
 
@@ -738,17 +794,17 @@ async function processNode(itemId, parentDriveId, isDb = false) {
       }
     }
 
-    // 하위 페이지/데이터베이스 재귀 처리
+    // 하위 페이지/데이터베이스 재귀 처리 (현재 폴더명 전달)
     for (const block of blocks) {
       if (block.type === 'child_page') {
-        await processNode(block.id, currentFolderId);
+        await processNode(block.id, currentFolderId, false, sanitizedTitle);
       } else if (block.type === 'child_database') {
-        await processNode(block.id, currentFolderId, true);
+        await processNode(block.id, currentFolderId, true, sanitizedTitle);
       }
       await sleep(100);
     }
 
-    // 데이터베이스인 경우 하위 페이지들도 처리
+    // 데이터베이스인 경우 하위 페이지들도 처리 (DB명을 부모로 전달)
     if (isDb) {
       try {
         let dbCursor = undefined;
@@ -759,7 +815,7 @@ async function processNode(itemId, parentDriveId, isDb = false) {
             page_size: 100,
           });
           for (const page of resp.results) {
-            await processNode(page.id, currentFolderId);
+            await processNode(page.id, currentFolderId, false, sanitizedTitle);
           }
           if (!resp.has_more) break;
           dbCursor = resp.next_cursor;
@@ -809,8 +865,8 @@ function printReport() {
 // ============================================
 async function main() {
   console.log('========================================');
-  console.log('  🚀 Notion → Drive 스마트 증분 백업 v2');
-  console.log('  (속성 테이블 + 표 지원 + UTF-8)');
+  console.log('  🚀 Notion → Drive 스마트 증분 백업 v3');
+  console.log('  (문서 유형별 파일명 규칙 + 속성 테이블)');
   console.log('========================================\n');
 
   const pageIdsStr = NOTION_PAGE_ID || '';
