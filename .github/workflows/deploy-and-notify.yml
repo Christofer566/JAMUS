@@ -3,12 +3,6 @@ name: Deploy and Notify
 on:
   deployment_status:
   workflow_dispatch:
-    inputs:
-      full_backup:
-        description: 'Force Full Backup (Ignore 24h limit)'
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -520,6 +514,7 @@ jobs:
         run: |
           npm install
       - name: Run Notion to Google Drive Sync
+        id: backup
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
@@ -528,4 +523,85 @@ jobs:
           GDRIVE_FOLDER_ID: "1kYWkO4shselSCG-nmR8t4Wx6c-7l22So"
           NOTION_PAGE_ID: "${{ secrets.NOTION_PAGE_ID_1 }},${{ secrets.NOTION_PAGE_ID_2 }}"
         run: |
-          node scripts/sync-notion-to-drive.js
+          OUTPUT=$(node scripts/sync-notion-to-drive.js 2>&1)
+          echo "$OUTPUT"
+
+          # BACKUP_RESULT 라인에서 JSON 추출
+          RESULT_LINE=$(echo "$OUTPUT" | grep "BACKUP_RESULT::" | tail -1)
+          if [ -n "$RESULT_LINE" ]; then
+            RESULT_JSON=$(echo "$RESULT_LINE" | sed 's/BACKUP_RESULT:://')
+            echo "result=$RESULT_JSON" >> $GITHUB_OUTPUT
+          else
+            echo 'result={"created":0,"updated":0,"skipped":0,"errors":1,"elapsed":"0"}' >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Backup Result to Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          BACKUP_RESULT: ${{ steps.backup.outputs.result }}
+        run: |
+          # JSON 파싱
+          CREATED=$(echo "$BACKUP_RESULT" | jq -r '.created // 0')
+          UPDATED=$(echo "$BACKUP_RESULT" | jq -r '.updated // 0')
+          SKIPPED=$(echo "$BACKUP_RESULT" | jq -r '.skipped // 0')
+          ERRORS=$(echo "$BACKUP_RESULT" | jq -r '.errors // 0')
+          ELAPSED=$(echo "$BACKUP_RESULT" | jq -r '.elapsed // "0"')
+
+          # 상태 이모지 결정
+          if [ "$ERRORS" -gt 0 ]; then
+            STATUS_EMOJI="⚠️"
+            STATUS_TEXT="일부 오류 발생"
+          elif [ "$CREATED" -eq 0 ] && [ "$UPDATED" -eq 0 ]; then
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="변경 없음"
+          else
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="백업 완료"
+          fi
+
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "'"${STATUS_EMOJI}"' Notion → Drive 백업 완료",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "'"${STATUS_EMOJI}"' Notion → Drive 백업",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "✅ *생성*\n'"${CREATED}"'개"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "🔄 *업데이트*\n'"${UPDATED}"'개"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "⏭️ *스킵*\n'"${SKIPPED}"'개"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "⏱️ *소요시간*\n'"${ELAPSED}"'초"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "'"${STATUS_TEXT}"' | 오류: '"${ERRORS}"'개"
+                    }
+                  ]
+                }
+              ]
+            }'

@@ -338,6 +338,15 @@ function printReport() {
   console.log('----------------------------------------');
   console.log(`  ⏱️  소요 시간: ${elapsed}초`);
   console.log('========================================\n');
+
+  // GitHub Actions 환경변수로 결과 출력 (Slack 알림용)
+  console.log(`BACKUP_RESULT::${JSON.stringify({
+    created: stats.created,
+    updated: stats.updated,
+    skipped: stats.skipped,
+    errors: stats.errors,
+    elapsed: elapsed
+  })}`);
 }
 
 async function main() {
