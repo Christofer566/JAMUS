@@ -3,6 +3,12 @@ name: Deploy and Notify
 on:
   deployment_status:
   workflow_dispatch:
+    inputs:
+      full_backup:
+        description: 'Force Full Backup (Ignore 24h limit)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   notify-deployment:
@@ -518,4 +524,9 @@ jobs:
           GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
           GDRIVE_FOLDER_ID: "1kYWkO4shselSCG-nmR8t4Wx6c-7l22So"
           NOTION_PAGE_ID: "${{ secrets.NOTION_PAGE_ID_1 }},${{ secrets.NOTION_PAGE_ID_2 }}"
-        run: python sync_notion_to_drive.py
+        run: |
+          if [ "${{ github.event.inputs.full_backup }}" = "true" ]; then
+            python sync_notion_to_drive.py --full
+          else
+            python sync_notion_to_drive.py
+          fi
