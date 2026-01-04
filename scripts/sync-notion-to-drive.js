@@ -40,14 +40,36 @@ const stats = {
   startTime: Date.now()
 };
 
-function sanitizeName(name) {
+// ============================================
+// 파일명에서 사용할 수 없는 문자 제거
+// ============================================
+function sanitizeFileName(name) {
   if (!name) return 'Untitled';
-  // Replace newlines and carriage returns with a space
-  return name.replace(/[\n\r]+/g, ' ').trim();
+  return name
+    .replace(/[\n\r]+/g, ' ')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim();
 }
 
+// ============================================
+// HTML 특수문자 이스케이프 (XSS 방지 및 깨짐 방지)
+// ============================================
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// ============================================
+// Drive 폴더 생성/조회
+// ============================================
 async function getOrCreateDriveFolder(folderName, parentId) {
-  const escapedName = folderName.replace(/'/g, "\\'");
+  const safeName = sanitizeFileName(folderName);
+  const escapedName = safeName.replace(/'/g, "\\'");
   const query = `name='${escapedName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
   try {
@@ -62,7 +84,7 @@ async function getOrCreateDriveFolder(folderName, parentId) {
       return files[0].id;
     } else {
       const folderMetadata = {
-        name: folderName,
+        name: safeName,
         mimeType: 'application/vnd.google-apps.folder',
         parents: [parentId],
       };
@@ -70,15 +92,82 @@ async function getOrCreateDriveFolder(folderName, parentId) {
         requestBody: folderMetadata,
         fields: 'id',
       });
-      console.log(`  [Folder Created] ${folderName}`);
+      console.log(`  [Folder Created] ${safeName}`);
       return folder.data.id;
     }
   } catch (error) {
-    console.error(`  [Error create folder] ${folderName}:`, error.message);
+    console.error(`  [Error create folder] ${safeName}:`, error.message);
     throw error;
   }
 }
 
+// ============================================
+// Notion 속성값 추출 (모든 타입 지원)
+// ============================================
+function extractPropertyValue(prop) {
+  if (!prop) return '';
+
+  const type = prop.type;
+
+  switch (type) {
+    case 'title':
+      return (prop.title || []).map(t => t.plain_text).join('');
+    case 'rich_text':
+      return (prop.rich_text || []).map(t => t.plain_text).join('');
+    case 'number':
+      return prop.number !== null ? String(prop.number) : '';
+    case 'select':
+      return prop.select?.name || '';
+    case 'status':
+      return prop.status?.name || '';
+    case 'multi_select':
+      return (prop.multi_select || []).map(s => s.name).join(', ');
+    case 'date':
+      if (!prop.date) return '';
+      const start = prop.date.start || '';
+      const end = prop.date.end ? ` → ${prop.date.end}` : '';
+      return start + end;
+    case 'checkbox':
+      return prop.checkbox ? '✅' : '❌';
+    case 'url':
+      return prop.url || '';
+    case 'email':
+      return prop.email || '';
+    case 'phone_number':
+      return prop.phone_number || '';
+    case 'formula':
+      if (prop.formula.type === 'string') return prop.formula.string || '';
+      if (prop.formula.type === 'number') return String(prop.formula.number || '');
+      if (prop.formula.type === 'boolean') return prop.formula.boolean ? '✅' : '❌';
+      if (prop.formula.type === 'date') return prop.formula.date?.start || '';
+      return '';
+    case 'relation':
+      return (prop.relation || []).map(r => r.id.slice(0, 8)).join(', ');
+    case 'rollup':
+      if (prop.rollup.type === 'array') {
+        return (prop.rollup.array || []).map(item => extractPropertyValue(item)).join(', ');
+      }
+      return String(prop.rollup[prop.rollup.type] || '');
+    case 'people':
+      return (prop.people || []).map(p => p.name || p.id.slice(0, 8)).join(', ');
+    case 'files':
+      return (prop.files || []).map(f => f.name || 'file').join(', ');
+    case 'created_time':
+      return prop.created_time || '';
+    case 'created_by':
+      return prop.created_by?.name || '';
+    case 'last_edited_time':
+      return prop.last_edited_time || '';
+    case 'last_edited_by':
+      return prop.last_edited_by?.name || '';
+    default:
+      return '';
+  }
+}
+
+// ============================================
+// Notion 페이지 정보 추출 (고도화)
+// ============================================
 async function getNotionItemInfo(itemId, isDb = false) {
   try {
     if (isDb) {
@@ -87,31 +176,44 @@ async function getNotionItemInfo(itemId, isDb = false) {
       const title = titleList.length > 0 ? titleList[0].plain_text : 'Untitled DB';
       return {
         title,
-        metadata: {},
+        properties: {},
+        fileNamePrefix: '',
         lastEditedTime: data.last_edited_time
       };
     } else {
       const data = await notion.pages.retrieve({ page_id: itemId });
       const props = data.properties || {};
       let title = 'Untitled';
-      const metadata = {};
+      const properties = {};
+      let fileNamePrefix = '';
+
+      // 파일명 접두사로 사용할 속성 우선순위
+      const prefixPriority = ['주차', 'Week', '상태', 'Status', '타입', 'Type', '카테고리', 'Category'];
 
       for (const [name, val] of Object.entries(props)) {
-        const type = val.type;
-        if (type === 'title') {
-          const titleContent = val.title || [];
-          title = titleContent.length > 0 ? titleContent[0].plain_text : 'Untitled';
-        } else if (['select', 'status'].includes(type)) {
-          metadata[name] = val[type]?.name || '';
-        } else if (type === 'multi_select') {
-          metadata[name] = (val.multi_select || []).map((x) => x.name).join(', ');
-        } else if (type === 'date') {
-          metadata[name] = val.date?.start || '';
+        const value = extractPropertyValue(val);
+
+        if (val.type === 'title') {
+          title = value || 'Untitled';
+        } else if (value) {
+          properties[name] = value;
+
+          // 파일명 접두사 결정 (우선순위 기반)
+          if (!fileNamePrefix) {
+            for (const prefix of prefixPriority) {
+              if (name.toLowerCase().includes(prefix.toLowerCase()) && value) {
+                fileNamePrefix = value;
+                break;
+              }
+            }
+          }
         }
       }
+
       return {
         title,
-        metadata,
+        properties,
+        fileNamePrefix,
         lastEditedTime: data.last_edited_time
       };
     }
@@ -119,104 +221,454 @@ async function getNotionItemInfo(itemId, isDb = false) {
     console.error(`  [Error Info] ${itemId}:`, e.message);
     return {
       title: `Untitled_${itemId.slice(0, 8)}`,
-      metadata: {},
+      properties: {},
+      fileNamePrefix: '',
       lastEditedTime: null
     };
   }
 }
 
-function notionToHtml(title, metadata, blocks) {
-  const metaItems = [];
-  for (const [k, v] of Object.entries(metadata)) {
-    if (v) {
-      metaItems.push(`<li><b>${k}:</b> ${v}</li>`);
+// ============================================
+// Rich Text를 HTML로 변환 (스타일 지원)
+// ============================================
+function richTextToHtml(richText) {
+  if (!richText || !Array.isArray(richText)) return '';
+
+  return richText.map(t => {
+    let text = escapeHtml(t.plain_text);
+    const annotations = t.annotations || {};
+
+    if (annotations.bold) text = `<strong>${text}</strong>`;
+    if (annotations.italic) text = `<em>${text}</em>`;
+    if (annotations.strikethrough) text = `<del>${text}</del>`;
+    if (annotations.underline) text = `<u>${text}</u>`;
+    if (annotations.code) text = `<code>${text}</code>`;
+
+    if (t.href) {
+      text = `<a href="${escapeHtml(t.href)}" target="_blank">${text}</a>`;
     }
+
+    return text;
+  }).join('');
+}
+
+// ============================================
+// Table 블록 처리
+// ============================================
+async function processTableBlock(tableBlock) {
+  const tableId = tableBlock.id;
+  const hasColumnHeader = tableBlock.table?.has_column_header || false;
+  const hasRowHeader = tableBlock.table?.has_row_header || false;
+
+  // 테이블 행들 가져오기
+  let rows = [];
+  let cursor = undefined;
+
+  try {
+    while (true) {
+      const resp = await notion.blocks.children.list({
+        block_id: tableId,
+        start_cursor: cursor,
+        page_size: 100,
+      });
+      rows.push(...resp.results);
+      if (!resp.has_more) break;
+      cursor = resp.next_cursor;
+    }
+  } catch (e) {
+    console.error(`  [Error Table] ${tableId}:`, e.message);
+    return '<p>[테이블 로드 실패]</p>';
   }
 
-  let metaHtml = '';
-  if (metaItems.length > 0) {
-    metaHtml = `<div class='metadata'><ul>${metaItems.join('')}</ul></div><hr>`;
-  }
+  if (rows.length === 0) return '';
 
-  let contentHtml = '';
+  let html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; margin: 15px 0;">';
+
+  rows.forEach((row, rowIndex) => {
+    if (row.type !== 'table_row') return;
+
+    const cells = row.table_row?.cells || [];
+    const isHeaderRow = hasColumnHeader && rowIndex === 0;
+
+    html += '<tr>';
+    cells.forEach((cell, cellIndex) => {
+      const isHeaderCell = isHeaderRow || (hasRowHeader && cellIndex === 0);
+      const tag = isHeaderCell ? 'th' : 'td';
+      const style = isHeaderCell ? 'background: #f5f5f5; font-weight: bold;' : '';
+      const cellContent = richTextToHtml(cell);
+      html += `<${tag} style="${style}">${cellContent}</${tag}>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</table>';
+  return html;
+}
+
+// ============================================
+// Notion 블록을 HTML로 변환 (Table 지원 추가)
+// ============================================
+async function blocksToHtml(blocks) {
+  let html = '';
+  let inList = null; // 'ul' or 'ol'
+
   for (const block of blocks) {
     const type = block.type;
+
     try {
       const content = block[type] || {};
       const richText = content.rich_text || [];
-      const text = richText.map((t) => t.plain_text).join('');
+      const text = richTextToHtml(richText);
 
-      if (type === 'paragraph') {
-        contentHtml += `<p>${text}</p>`;
-      } else if (type.startsWith('heading_')) {
-        const level = type.split('_')[1];
-        contentHtml += `<h${level}>${text}</h${level}>`;
-      } else if (type === 'bulleted_list_item') {
-        contentHtml += `<li>${text}</li>`;
-      } else if (type === 'numbered_list_item') {
-        contentHtml += `<li>${text}</li>`;
-      } else if (type === 'to_do') {
-        const checked = content.checked ? 'checked' : '';
-        contentHtml += `<div><input type='checkbox' ${checked} disabled> ${text}</div>`;
-      } else if (type === 'quote') {
-        contentHtml += `<blockquote>${text}</blockquote>`;
-      } else if (type === 'callout') {
-        contentHtml += `<div class='callout'>${text}</div>`;
-      } else if (type === 'code') {
-        const codeText = richText.map((t) => t.plain_text).join('');
-        contentHtml += `<pre><code>${codeText}</code></pre>`;
-      } else if (type === 'image') {
-        const imgUrl = content.external?.url || content.file?.url;
-        if (imgUrl) {
-          contentHtml += `<img src='${imgUrl}' style='max-width:100%'>`;
-        }
-      } else if (type === 'divider') {
-        contentHtml += `<hr>`;
+      // 리스트 종료 체크
+      if (inList && type !== 'bulleted_list_item' && type !== 'numbered_list_item') {
+        html += `</${inList}>`;
+        inList = null;
+      }
+
+      switch (type) {
+        case 'paragraph':
+          html += `<p>${text}</p>`;
+          break;
+
+        case 'heading_1':
+          html += `<h1>${text}</h1>`;
+          break;
+
+        case 'heading_2':
+          html += `<h2>${text}</h2>`;
+          break;
+
+        case 'heading_3':
+          html += `<h3>${text}</h3>`;
+          break;
+
+        case 'bulleted_list_item':
+          if (inList !== 'ul') {
+            if (inList) html += `</${inList}>`;
+            html += '<ul>';
+            inList = 'ul';
+          }
+          html += `<li>${text}</li>`;
+          break;
+
+        case 'numbered_list_item':
+          if (inList !== 'ol') {
+            if (inList) html += `</${inList}>`;
+            html += '<ol>';
+            inList = 'ol';
+          }
+          html += `<li>${text}</li>`;
+          break;
+
+        case 'to_do':
+          const checked = content.checked ? 'checked' : '';
+          const checkStyle = content.checked ? 'text-decoration: line-through; color: #999;' : '';
+          html += `<div style="margin: 5px 0;"><input type="checkbox" ${checked} disabled> <span style="${checkStyle}">${text}</span></div>`;
+          break;
+
+        case 'quote':
+          html += `<blockquote>${text}</blockquote>`;
+          break;
+
+        case 'callout':
+          const icon = content.icon?.emoji || '💡';
+          html += `<div class="callout"><span style="margin-right: 8px;">${icon}</span>${text}</div>`;
+          break;
+
+        case 'code':
+          const language = content.language || 'text';
+          const codeText = (richText || []).map(t => escapeHtml(t.plain_text)).join('');
+          html += `<pre><code class="language-${language}">${codeText}</code></pre>`;
+          break;
+
+        case 'image':
+          const imgUrl = content.external?.url || content.file?.url;
+          const caption = content.caption ? richTextToHtml(content.caption) : '';
+          if (imgUrl) {
+            html += `<figure style="margin: 20px 0;"><img src="${escapeHtml(imgUrl)}" style="max-width: 100%; border-radius: 5px;">`;
+            if (caption) html += `<figcaption style="text-align: center; color: #666; font-size: 0.9em;">${caption}</figcaption>`;
+            html += '</figure>';
+          }
+          break;
+
+        case 'video':
+          const videoUrl = content.external?.url || content.file?.url;
+          if (videoUrl) {
+            html += `<div style="margin: 20px 0;"><a href="${escapeHtml(videoUrl)}" target="_blank">🎬 동영상 보기</a></div>`;
+          }
+          break;
+
+        case 'file':
+          const fileUrl = content.external?.url || content.file?.url;
+          const fileName = content.name || '파일';
+          if (fileUrl) {
+            html += `<div style="margin: 10px 0;"><a href="${escapeHtml(fileUrl)}" target="_blank">📎 ${escapeHtml(fileName)}</a></div>`;
+          }
+          break;
+
+        case 'bookmark':
+          const bookmarkUrl = content.url;
+          if (bookmarkUrl) {
+            html += `<div style="margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 5px;"><a href="${escapeHtml(bookmarkUrl)}" target="_blank">🔗 ${escapeHtml(bookmarkUrl)}</a></div>`;
+          }
+          break;
+
+        case 'divider':
+          html += '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
+          break;
+
+        case 'table':
+          html += await processTableBlock(block);
+          break;
+
+        case 'toggle':
+          html += `<details style="margin: 10px 0;"><summary style="cursor: pointer; font-weight: bold;">${text}</summary>`;
+          // 하위 블록이 있으면 재귀 처리 필요 (has_children)
+          if (block.has_children) {
+            try {
+              const childBlocks = [];
+              let childCursor = undefined;
+              while (true) {
+                const resp = await notion.blocks.children.list({
+                  block_id: block.id,
+                  start_cursor: childCursor,
+                  page_size: 100,
+                });
+                childBlocks.push(...resp.results);
+                if (!resp.has_more) break;
+                childCursor = resp.next_cursor;
+              }
+              html += await blocksToHtml(childBlocks);
+            } catch (e) {
+              console.error(`  [Error Toggle children]:`, e.message);
+            }
+          }
+          html += '</details>';
+          break;
+
+        case 'column_list':
+        case 'column':
+          // 컬럼은 스킵 (하위 블록은 별도 처리)
+          break;
+
+        default:
+          // 지원하지 않는 블록 타입
+          if (text) {
+            html += `<p>${text}</p>`;
+          }
       }
     } catch (e) {
+      console.error(`  [Error Block ${type}]:`, e.message);
       continue;
     }
   }
 
+  // 리스트 종료
+  if (inList) {
+    html += `</${inList}>`;
+  }
+
+  return html;
+}
+
+// ============================================
+// 속성 테이블 HTML 생성
+// ============================================
+function propertiesToHtml(properties) {
+  const entries = Object.entries(properties).filter(([k, v]) => v);
+
+  if (entries.length === 0) return '';
+
+  let html = `
+<div class="properties-table">
+  <table>
+    <tbody>`;
+
+  for (const [key, value] of entries) {
+    html += `
+      <tr>
+        <th>${escapeHtml(key)}</th>
+        <td>${escapeHtml(value)}</td>
+      </tr>`;
+  }
+
+  html += `
+    </tbody>
+  </table>
+</div>`;
+
+  return html;
+}
+
+// ============================================
+// Notion 페이지를 HTML로 변환 (고도화)
+// ============================================
+async function notionToHtml(title, properties, blocks) {
+  const safeTitle = escapeHtml(title);
+  const propertiesHtml = propertiesToHtml(properties);
+  const contentHtml = await blocksToHtml(blocks);
   const lastBackup = new Date().toISOString().replace('T', ' ').split('.')[0];
 
-  const htmlTemplate = `<!DOCTYPE html>
-<html>
+  return `<!DOCTYPE html>
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>{TITLE}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${safeTitle}</title>
     <style>
-        body { font-family: -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }
-        h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        .metadata { background: #f9f9f9; padding: 10px; border-radius: 5px; font-size: 0.9em; }
-        blockquote { border-left: 4px solid #ddd; padding-left: 15px; color: #666; font-style: italic; }
-        .callout { background: #f1f1f1; padding: 15px; border-radius: 5px; margin: 10px 0; }
-        pre { background: #2d2d2d; color: #ccc; padding: 15px; border-radius: 5px; overflow-x: auto; }
-        code { font-family: monospace; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.7;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #fff;
+        }
+        h1 {
+            font-size: 2em;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        h2 { font-size: 1.5em; margin-top: 30px; }
+        h3 { font-size: 1.2em; margin-top: 25px; }
+
+        /* 속성 테이블 스타일 */
+        .properties-table {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 30px;
+            border: 1px solid #e9ecef;
+        }
+        .properties-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .properties-table th {
+            text-align: left;
+            padding: 8px 12px;
+            background: #e9ecef;
+            border-radius: 4px;
+            font-weight: 600;
+            width: 30%;
+            font-size: 0.9em;
+            color: #495057;
+        }
+        .properties-table td {
+            padding: 8px 12px;
+            font-size: 0.95em;
+        }
+        .properties-table tr {
+            border-bottom: 1px solid #e9ecef;
+        }
+        .properties-table tr:last-child {
+            border-bottom: none;
+        }
+
+        /* 콘텐츠 블록 스타일 */
+        blockquote {
+            border-left: 4px solid #007bff;
+            padding: 10px 20px;
+            margin: 20px 0;
+            background: #f8f9fa;
+            color: #555;
+        }
+        .callout {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: flex;
+            align-items: flex-start;
+        }
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+        }
+        p code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        table {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            border: 1px solid #dee2e6;
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th {
+            background: #f8f9fa;
+        }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        img { border-radius: 8px; }
+        hr { margin: 30px 0; border: none; border-top: 1px solid #eee; }
+
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 0.8em;
+            color: #999;
+        }
     </style>
 </head>
 <body>
-    <h1>{TITLE}</h1>
-    {META_HTML}
-    {CONTENT_HTML}
-    <p style="font-size: 0.8em; color: #999; margin-top: 50px;">Last Backup: {LAST_BACKUP}</p>
+    <h1>${safeTitle}</h1>
+    ${propertiesHtml}
+    ${contentHtml}
+    <div class="footer">
+        <p>Last Backup: ${lastBackup}</p>
+        <p>Exported from Notion</p>
+    </div>
 </body>
 </html>`;
-
-  return htmlTemplate
-    .replace('{TITLE}', title)
-    .replace('{META_HTML}', metaHtml)
-    .replace('{CONTENT_HTML}', contentHtml)
-    .replace('{LAST_BACKUP}', lastBackup);
 }
 
+// ============================================
+// 파일명 생성 (접두사 포함)
+// ============================================
+function generateFileName(title, prefix) {
+  const safeTitle = sanitizeFileName(title);
+
+  if (prefix) {
+    const safePrefix = sanitizeFileName(prefix);
+    return `[${safePrefix}] ${safeTitle}.html`;
+  }
+
+  return `${safeTitle}.html`;
+}
+
+// ============================================
+// 노드 처리 (메인 로직)
+// ============================================
 async function processNode(itemId, parentDriveId, isDb = false) {
-  const { title, metadata, lastEditedTime } = await getNotionItemInfo(itemId, isDb);
-  const sanitizedTitle = sanitizeName(title);
+  const { title, properties, fileNamePrefix, lastEditedTime } = await getNotionItemInfo(itemId, isDb);
+  const sanitizedTitle = sanitizeFileName(title);
 
   try {
     const currentFolderId = await getOrCreateDriveFolder(sanitizedTitle, parentDriveId);
 
+    // 블록 가져오기
     const blocks = [];
     let cursor = undefined;
     while (true) {
@@ -230,11 +682,12 @@ async function processNode(itemId, parentDriveId, isDb = false) {
       cursor = resp.next_cursor;
     }
 
-    const fileName = sanitizedTitle + '.html';
+    // 파일명 생성 (접두사 포함)
+    const fileName = generateFileName(title, fileNamePrefix);
     const escapedFileName = fileName.replace(/'/g, "\\'");
     const query = `name='${escapedFileName}' and '${currentFolderId}' in parents and trashed=false`;
 
-    // Drive에서 기존 파일 찾기 (modifiedTime 포함)
+    // Drive에서 기존 파일 찾기
     const existResp = await drive.files.list({
       q: query,
       fields: 'files(id, modifiedTime)',
@@ -250,8 +703,7 @@ async function processNode(itemId, parentDriveId, isDb = false) {
       const notionEditedTime = lastEditedTime ? new Date(lastEditedTime) : new Date();
 
       if (notionEditedTime <= driveModifiedTime) {
-        // Notion이 더 오래됨 = 변경 없음 = 스킵
-        console.log(`  [Skip] ${sanitizedTitle} (no changes)`);
+        console.log(`  [Skip] ${fileName} (no changes)`);
         stats.skipped++;
         shouldUpdate = false;
       } else {
@@ -260,10 +712,10 @@ async function processNode(itemId, parentDriveId, isDb = false) {
     }
 
     if (shouldUpdate) {
-      const htmlContent = notionToHtml(title, metadata, blocks);
+      const htmlContent = await notionToHtml(title, properties, blocks);
       const media = {
-        mimeType: 'text/html',
-        body: Readable.from([htmlContent]),
+        mimeType: 'text/html; charset=utf-8',
+        body: Readable.from([Buffer.from(htmlContent, 'utf-8')]),
       };
 
       if (action === 'update') {
@@ -271,7 +723,7 @@ async function processNode(itemId, parentDriveId, isDb = false) {
           fileId: existing[0].id,
           media: media,
         });
-        console.log(`  [Updated] ${sanitizedTitle}`);
+        console.log(`  [Updated] ${fileName}`);
         stats.updated++;
       } else {
         await drive.files.create({
@@ -281,7 +733,7 @@ async function processNode(itemId, parentDriveId, isDb = false) {
           },
           media: media,
         });
-        console.log(`  [Created] ${sanitizedTitle}`);
+        console.log(`  [Created] ${fileName}`);
         stats.created++;
       }
     }
@@ -324,6 +776,9 @@ async function processNode(itemId, parentDriveId, isDb = false) {
   }
 }
 
+// ============================================
+// 결과 리포트 출력
+// ============================================
 function printReport() {
   const elapsed = ((Date.now() - stats.startTime) / 1000).toFixed(1);
   console.log('\n========================================');
@@ -349,9 +804,13 @@ function printReport() {
   })}`);
 }
 
+// ============================================
+// 메인 실행
+// ============================================
 async function main() {
   console.log('========================================');
-  console.log('  🚀 Notion → Drive 스마트 증분 백업');
+  console.log('  🚀 Notion → Drive 스마트 증분 백업 v2');
+  console.log('  (속성 테이블 + 표 지원 + UTF-8)');
   console.log('========================================\n');
 
   const pageIdsStr = NOTION_PAGE_ID || '';
