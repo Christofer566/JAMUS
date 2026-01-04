@@ -33,7 +33,20 @@
       "Bash(sort:*)",
       "Bash(echo:*)",
       "Bash(node:*)",
-      "Bash(del C:JAMUStestspitch-accuracydebug_case07.ts)"
+      "Bash(del C:JAMUStestspitch-accuracydebug_case07.ts)",
+      "Bash(git -C C:/JAMUS diff .github/workflows/deploy-and-notify.yml)",
+      "Bash(git -C C:/JAMUS add:*)",
+      "Bash(git -C C:/JAMUS log:*)",
+      "Bash(git -C C:/JAMUS commit -m \"$\\(cat <<''EOF''\n[W06] Task 5.39: feat - 문서 유형별 파일명 규칙 및 수동 백업 전환\n\n- 5가지 문서 유형별 파일명 규칙 구현:\n  - WTL: [Week]Title_Date.html\n  - DS: [Week][Task]Title_Date.html\n  - DHDB: Title.html \\(그대로\\)\n  - TEL: [Week][Task]Title_Date.html\n  - UPDATE_LOG: [Week]Title_Date.html\n- detectDocType\\(\\): 부모 폴더명 기반 문서 유형 감지\n- generateFileName\\(\\): 속성에서 Week/Task 추출하여 파일명 생성\n- 자동 백업 비활성화 → 수동 백업만 \\(workflow_dispatch\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C C:/JAMUS push origin main)",
+      "Bash(git -C C:/JAMUS status:*)",
+      "Bash(git -C C:/JAMUS commit -m \"$\\(cat <<''EOF''\n[W06] Task 5.40: fix - workflow_dispatch 조건문 명시적 구문으로 수정\n\n- if 조건을 ${ } 명시적 표현식으로 변경\n- backup-to-drive job이 수동 실행 시 스킵되는 문제 해결\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C C:/JAMUS commit -m \"$\\(cat <<''EOF''\n[W06] Task 5.41: fix - Notion API 문자열 검증 오류 수정\n\n- ensureString\\(\\) 함수 추가: 객체가 전달되면 JSON 문자열로 변환\n- 모든 블록 생성 함수\\(h2, h3, li, p, code\\)에 적용\n- Claude API가 객체를 반환해도 Notion 업데이트가 실패하지 않도록 방어\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C C:/JAMUS diff 333ba0c HEAD -- utils/pitchToNote.ts)",
+      "Bash(git -C C:/JAMUS diff utils/noteComparison.ts)",
+      "Bash(dir \"C:\\\\JAMUS\\\\src\" /s /b)",
+      "Bash(ls:*)",
+      "Bash(powershell -Command:*)"
     ],
     "deny": [],
     "ask": []

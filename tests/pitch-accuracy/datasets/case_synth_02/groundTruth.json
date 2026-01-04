@@ -1,0 +1,47 @@
+{
+  "bpm": 120,
+  "notes": [
+    {
+      "pitch": "C3",
+      "measure": 1,
+      "slot": 0,
+      "duration": 4
+    },
+    {
+      "pitch": "E3",
+      "measure": 1,
+      "slot": 4,
+      "duration": 2
+    },
+    {
+      "pitch": "G3",
+      "measure": 1,
+      "slot": 6,
+      "duration": 2
+    },
+    {
+      "pitch": "E3",
+      "measure": 1,
+      "slot": 8,
+      "duration": 8
+    },
+    {
+      "pitch": "G3",
+      "measure": 2,
+      "slot": 0,
+      "duration": 4
+    },
+    {
+      "pitch": "E3",
+      "measure": 2,
+      "slot": 4,
+      "duration": 4
+    },
+    {
+      "pitch": "C3",
+      "measure": 2,
+      "slot": 8,
+      "duration": 8
+    }
+  ]
+}

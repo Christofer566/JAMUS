@@ -42,7 +42,7 @@ export interface UseRecorderReturn {
     requestPermission: () => Promise<boolean>;
     // Phase 52: Warm-up - 페이지 진입 시 마이크 통로 사전 활성화
     warmUp: () => Promise<boolean>;
-    startRecording: (startTime: number, startMeasure: number) => Promise<boolean>;
+    startRecording: (startTime: number, startMeasure: number, audioContextTime?: number) => Promise<boolean>;
     markActualStart: (timeDelta?: number) => void; // 카운트다운 완료 시 실제 녹음 시작 마커 찍기 (timeDelta: 하드웨어 지연 보정값)
     stopRecording: (endTime: number, endMeasure: number) => Promise<void>;
     pauseJamming: () => void;
@@ -207,7 +207,9 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     const chunksRef = useRef<Blob[]>([]);
     const pendingRangeRef = useRef<{ startTime: number; startMeasure: number } | null>(null);
     // 마커 기반 녹음
-    const recordingBlobStartRef = useRef<number>(0); // blob 0초 시점 (performance.now, MediaRecorder.start() 호출 시점)
+    const recordingBlobStartRef = useRef<number>(0);
+    // Phase 106: Playhead 기반 시작점 - MediaRecorder 시작 시의 audioContext.currentTime
+    const blobStartAudioTimeRef = useRef<number>(0); // blob 0초 시점 (performance.now, MediaRecorder.start() 호출 시점)
     const actualStartMarkerRef = useRef<number>(0); // 실제 녹음 시작 마커 (blob 기준 상대 시간, 초)
     const recordingStopTimeRef = useRef<number>(0); // 녹음 종료 시점 (performance.now)
     // Phase 52: Calibration - 고정 지연 측정
@@ -409,7 +411,8 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
     // ========================================
     const startRecording = useCallback(async (
         startTime: number,      // 음악 타임라인 기준 녹음 시작 시간 (카운트다운 끝나는 시점)
-        startMeasure: number    // 녹음 시작 마디
+        startMeasure: number,   // 녹음 시작 마디
+        audioContextTime: number = 0  // Phase 106: MediaRecorder 시작 시 webAudio.currentTime
     ): Promise<boolean> => {
         if (permissionState !== 'granted') {
             const granted = await requestPermission();
@@ -437,6 +440,8 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
             // blob 시작 시점 기록 (MediaRecorder.start() 시점)
             const blobStartTime = performance.now();
             recordingBlobStartRef.current = blobStartTime;
+            // Phase 106: Playhead 기반 시작점 - 오디오 컨텍스트 시간 저장
+            blobStartAudioTimeRef.current = audioContextTime;
             actualStartMarkerRef.current = 0; // 아직 실제 시작 안 함, markActualStart()에서 설정
             pendingRangeRef.current = { startTime, startMeasure };
 
@@ -526,20 +531,20 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     const rawStartMarker = actualStartMarkerRef.current; // 카운트다운 끝난 시점 (blob 기준)
 
                     // ========================================
-                    // Phase 55: Pull-back (황금 설정 - 타이밍 83.3%, 피치 61.1%)
-                    // 고정 지연 + 추가 버퍼로 단순하고 안정적인 싱크
-                    // Phase 75: 타이밍 92.9% 달성 (황금 설정)
+                    // Phase 106: Playhead 기반 정확한 시작점 계산
+                    // Pull-back 추측 제거 - webAudio 시간 기반 직접 계산
                     // ========================================
-                    const PULLBACK_BUFFER_MS = 250; // 추가 버퍼 (250)
-                    const pullbackSeconds = (staticLatencyRef.current + PULLBACK_BUFFER_MS) / 1000;
-                    const startMarker = Math.max(0, rawStartMarker - pullbackSeconds);
+                    // startTime = 녹음 영역 시작 시간 (음악 타임라인)
+                    // blobStartAudioTimeRef = MediaRecorder 시작 시 webAudio.currentTime
+                    // 차이 = blob에서 녹음 영역이 시작하는 정확한 위치
+                    const startMarker = Math.max(0, startTime - blobStartAudioTimeRef.current);
 
-                    console.log('🎤 [Phase 55 Pull-back] 적용:', {
-                        원본마커: rawStartMarker.toFixed(3) + 's',
-                        측정된고정지연: staticLatencyRef.current.toFixed(1) + 'ms',
-                        추가버퍼: PULLBACK_BUFFER_MS + 'ms',
-                        총당김량: (pullbackSeconds * 1000).toFixed(1) + 'ms',
-                        보정마커: startMarker.toFixed(3) + 's'
+                    console.log('🎤 [Phase 106] Playhead 기반 시작점:', {
+                        녹음영역시작: startTime.toFixed(3) + 's',
+                        blob시작시_오디오시간: blobStartAudioTimeRef.current.toFixed(3) + 's',
+                        계산된시작점: startMarker.toFixed(3) + 's (blob 기준)',
+                        rawStartMarker: rawStartMarker.toFixed(3) + 's (참고용)',
+                        note: 'Pull-back 추측 제거, webAudio 시간 기반 직접 계산'
                     });
 
                     console.log('🎤 [Marker] 마커 정보:', {
@@ -616,17 +621,15 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
                     audioBuffersRef.current.set(segmentId, extractedBuffer);
 
                     // ========================================
-                    // Phase 53: Segment startTime에도 Pull-back 적용
-                    // Pull-back으로 blob 앞부분을 더 추출하면, 그만큼 startTime도 앞당겨야
-                    // 재생 시 offset 계산이 정확해짐
+                    // Phase 106: 정확한 시작점 추출하므로 조정 불필요
+                    // startTime = 녹음 영역 시작 시간 (음악 타임라인)
+                    // startMarker가 정확하므로 추출된 오디오도 정확히 startTime에 대응
                     // ========================================
-                    const adjustedStartTime = startTime - pullbackSeconds;
+                    const adjustedStartTime = startTime;
 
-                    console.log('🎤 [Phase 53] Segment 시간 조정:', {
-                        원본startTime: startTime.toFixed(3) + 's',
-                        조정startTime: adjustedStartTime.toFixed(3) + 's',
-                        pullback: (pullbackSeconds * 1000).toFixed(1) + 'ms',
-                        note: '재생 시 offset 계산 정확도 향상'
+                    console.log('🎤 [Phase 106] Segment 시간 (조정 불필요):', {
+                        startTime: startTime.toFixed(3) + 's',
+                        note: 'Playhead 기반 정확한 추출로 조정 불필요'
                     });
 
                     // Segment 생성

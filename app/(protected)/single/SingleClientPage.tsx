@@ -239,7 +239,7 @@ export default function SingleClientPage() {
             return;
         }
 
-        if (!webAudio.isPlaying || recorder.state !== 'recorded' || recorder.segments.length === 0) {
+        if (!isPlaying || recorder.state !== 'recorded' || recorder.segments.length === 0) {
             prevSegmentIdRef.current = null;
             return;
         }
@@ -566,7 +566,8 @@ export default function SingleClientPage() {
         metronome.setMuted(!metronomeOn);
 
         // 4. MediaRecorder 시작 (seek 후 - 정확한 타이밍)
-        const started = await recorder.startRecording(recordStartTime, recordStartMeasure);
+        // Phase 106: Playhead 기반 시작점 - seek 위치(startPos) 직접 전달
+                const started = await recorder.startRecording(recordStartTime, recordStartMeasure, startPos);
         console.log('🎤 [handleStartJam] startRecording (seek 후):', started);
         if (!started) {
             // 실패 시 정리

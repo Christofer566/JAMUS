@@ -21,12 +21,16 @@ export interface ComparisonResult {
 export interface GapAnalysis {
   totalAutoNotes: number;
   totalManualNotes: number;
+  matchedNotes: number;         // 매칭된 음표 수
 
   // 정확도 지표
   pitchAccuracy: number;        // 음정 일치율 (%)
   timingAccuracy: number;       // 타이밍 일치율 (%)
   durationAccuracy: number;     // 길이 일치율 (%)
-  overallAccuracy: number;      // 전체 일치율 (%)
+  overallAccuracy: number;      // 전체 일치율 (%) - (P+T+D)/3
+
+  // 회수율 (Recall) - 목표: 90% 이상
+  recall: number;               // 회수율 (%) = matched / totalManual
 
   // 오류 패턴
   missedNotes: number;          // 자동이 놓친 음표
@@ -129,40 +133,47 @@ export function compareNotes(
   const normalizedManual = manualNotes.filter(n => !n.isRest);
 
   // ============================================
-  // Phase 43: 동적 타이밍 오프셋 (Dynamic Auto-Alignment)
+  // Phase 85: Best Offset Search (배치테스트와 동일)
   // ============================================
-  // 정답지(수동)의 첫 음표와 자동 감지의 첫 음표 시점을 비교하여
-  // 하드웨어 지연으로 인한 전체 밀림을 자동 보정
+  // 여러 오프셋을 시도하여 가장 많은 타이밍 매치를 찾음
   if (normalizedAuto.length > 0 && normalizedManual.length > 0) {
-    // 첫 음표 찾기 (시간순 정렬)
-    const autoSorted = [...normalizedAuto].sort(
-      (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)
-    );
-    const manualSorted = [...normalizedManual].sort(
-      (a, b) => getGlobalSlotIndex(a) - getGlobalSlotIndex(b)
-    );
+    let bestOffset = 0;
+    let bestTimingMatches = 0;
 
-    const autoFirstSlot = getGlobalSlotIndex(autoSorted[0]);
-    const manualFirstSlot = getGlobalSlotIndex(manualSorted[0]);
-    const timingDelta = autoFirstSlot - manualFirstSlot;
+    // -8 to +8 슬롯 오프셋 시도 (반마디 범위)
+    for (let testOffset = -8; testOffset <= 8; testOffset++) {
+      let timingMatches = 0;
 
-    // 오프셋이 ±4슬롯 이내일 때만 보정 (너무 큰 차이는 의도적일 수 있음)
-    if (Math.abs(timingDelta) > 0 && Math.abs(timingDelta) <= 4) {
-      console.log(`[Phase 43] 🎯 동적 타이밍 오프셋 적용: ${timingDelta > 0 ? '+' : ''}${timingDelta}슬롯`);
-      console.log(`  자동 첫 음표: 마디 ${autoSorted[0].measureIndex}, 슬롯 ${autoSorted[0].slotIndex}`);
-      console.log(`  수동 첫 음표: 마디 ${manualSorted[0].measureIndex}, 슬롯 ${manualSorted[0].slotIndex}`);
+      for (const manualNote of normalizedManual) {
+        const manualSlot = getGlobalSlotIndex(manualNote);
 
-      // 전체 자동 음표에 delta 적용 (슬롯 시프트)
+        for (const autoNote of normalizedAuto) {
+          const autoSlot = getGlobalSlotIndex(autoNote) - testOffset;
+          if (autoSlot === manualSlot) {
+            timingMatches++;
+            break;
+          }
+        }
+      }
+
+      if (timingMatches > bestTimingMatches) {
+        bestTimingMatches = timingMatches;
+        bestOffset = testOffset;
+      }
+    }
+
+    // 최적 오프셋 적용
+    if (bestOffset !== 0) {
+      console.log(`[Phase 85] Best Offset Search: ${bestOffset > 0 ? '+' : ''}${bestOffset}슬롯 (${bestTimingMatches}개 타이밍 매치)`);
+
       normalizedAuto.forEach(n => {
         const currentGlobalSlot = getGlobalSlotIndex(n);
-        const newGlobalSlot = currentGlobalSlot - timingDelta;
+        const newGlobalSlot = currentGlobalSlot - bestOffset;
         n.measureIndex = Math.floor(newGlobalSlot / 16);
         n.slotIndex = ((newGlobalSlot % 16) + 16) % 16; // 음수 처리
       });
 
       console.log(`  → 전체 ${normalizedAuto.length}개 음표 시프트 완료`);
-    } else if (timingDelta !== 0) {
-      console.log(`[Phase 43] ⚠️ 타이밍 차이 ${timingDelta}슬롯 - 보정 범위 초과 (±4슬롯)`);
     }
   }
 
@@ -210,7 +221,8 @@ export function compareNotes(
   // 4. 매칭 결과 저장
   const results: ComparisonResult[] = [];
   const matchedManualIndices = new Set<number>();
-  const TIMING_TOLERANCE = 2; // ±2 슬롯 이내
+  // Phase 98: 통합 평가 기준 (배치 테스트와 동일)
+  const TIMING_TOLERANCE = 4; // 매칭 탐색 범위: ±4슬롯
 
   // 5. 자동 음표를 기준으로 매칭
   sortedAuto.forEach((autoNote, autoIndex) => {
@@ -289,10 +301,12 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
     return {
       totalAutoNotes: 0,
       totalManualNotes: 0,
+      matchedNotes: 0,
       pitchAccuracy: 0,
       timingAccuracy: 0,
       durationAccuracy: 0,
       overallAccuracy: 0,
+      recall: 0,
       missedNotes: 0,
       extraNotes: 0,
       octaveErrors: 0,
@@ -313,14 +327,19 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
   const matched = comparisons.filter(c => c.auto !== null && c.manual !== null);
   const matchedCount = matched.length;
 
+  // 회수율 계산 (Recall = matched / totalManual) - 목표 90%
+  const recall = totalManualNotes > 0 ? (matchedCount / totalManualNotes) * 100 : 0;
+
   if (matchedCount === 0) {
     return {
       totalAutoNotes,
       totalManualNotes,
+      matchedNotes: 0,
       pitchAccuracy: 0,
       timingAccuracy: 0,
       durationAccuracy: 0,
       overallAccuracy: 0,
+      recall,
       missedNotes,
       extraNotes,
       octaveErrors: 0,
@@ -331,25 +350,25 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
     };
   }
 
-  // [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
-  // 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
+  // Phase 98: 통합 평가 기준 (배치 테스트와 동일)
+  const PITCH_TOLERANCE_SCORE = 1;    // 음정: ±1반음 차이는 100% 일치
   const TIMING_TOLERANCE_SCORE = 1;   // 타이밍: ±1슬롯 차이는 100% 일치
   const DURATION_TOLERANCE_SCORE = 1; // 길이: ±1슬롯 차이는 100% 일치
 
-  // 정확도 계산 (1슬롯 관용 적용)
-  const pitchCorrect = matched.filter(c => c.pitchDiff === 0).length;
+  // 저음(2옥타브) 음표는 옥타브 오류(±12반음)도 허용 (배치테스트와 동일)
+  const pitchCorrect = matched.filter(c => {
+    const isLowOctave = c.manual?.pitch?.endsWith('2') || false;
+    const isOctaveError = Math.abs(c.pitchDiff) === 12;
+    return Math.abs(c.pitchDiff) <= PITCH_TOLERANCE_SCORE || (isLowOctave && isOctaveError);
+  }).length;
   const timingCorrect = matched.filter(c => Math.abs(c.timingDiff) <= TIMING_TOLERANCE_SCORE).length;
   const durationCorrect = matched.filter(c => Math.abs(c.durationDiff) <= DURATION_TOLERANCE_SCORE).length;
-  const exactMatch = matched.filter(c =>
-    c.pitchDiff === 0 &&
-    Math.abs(c.timingDiff) <= TIMING_TOLERANCE_SCORE &&
-    Math.abs(c.durationDiff) <= DURATION_TOLERANCE_SCORE
-  ).length;
 
   const pitchAccuracy = (pitchCorrect / matchedCount) * 100;
   const timingAccuracy = (timingCorrect / matchedCount) * 100;
   const durationAccuracy = (durationCorrect / matchedCount) * 100;
-  const overallAccuracy = (exactMatch / matchedCount) * 100;
+  // Overall = (P + T + D) / 3 (배치테스트와 동일)
+  const overallAccuracy = (pitchAccuracy + timingAccuracy + durationAccuracy) / 3;
 
   // 오류 패턴 분석
   const octaveErrors = matched.filter(c =>
@@ -364,10 +383,12 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
   return {
     totalAutoNotes,
     totalManualNotes,
+    matchedNotes: matchedCount,
     pitchAccuracy,
     timingAccuracy,
     durationAccuracy,
     overallAccuracy,
+    recall,
     missedNotes,
     extraNotes,
     octaveErrors,
@@ -384,19 +405,24 @@ export function analyzeGap(comparisons: ComparisonResult[]): GapAnalysis {
 
 export function logGapAnalysis(analysis: GapAnalysis): void {
   console.log('\n' + '='.repeat(60));
-  console.log('📊 자동 피치 감지 vs 수동 입력 Gap 분석');
+  console.log('  Gap Analysis (배치테스트와 동일 기준)');
   console.log('='.repeat(60));
 
-  console.log('\n📈 전체 통계:');
-  console.log(`  - 자동 감지 음표: ${analysis.totalAutoNotes}개`);
-  console.log(`  - 수동 입력 음표: ${analysis.totalManualNotes}개`);
-  console.log(`  - 매칭된 음표: ${analysis.totalAutoNotes - analysis.extraNotes}개`);
+  console.log('\n[통계]');
+  console.log(`  GT(정답): ${analysis.totalManualNotes}개`);
+  console.log(`  감지: ${analysis.totalAutoNotes}개`);
+  console.log(`  매칭: ${analysis.matchedNotes}개`);
 
-  console.log('\n✅ 정확도:');
-  console.log(`  - 전체 일치율: ${analysis.overallAccuracy.toFixed(1)}%`);
-  console.log(`  - 음정 정확도: ${analysis.pitchAccuracy.toFixed(1)}%`);
-  console.log(`  - 타이밍 정확도: ${analysis.timingAccuracy.toFixed(1)}%`);
-  console.log(`  - 길이 정확도: ${analysis.durationAccuracy.toFixed(1)}%`);
+  // 회수율 (목표 90%)
+  const recallStatus = analysis.recall >= 90 ? 'OK' : 'NEED';
+  console.log(`\n[회수율] ${analysis.recall.toFixed(1)}% (목표: 90%) ${recallStatus}`);
+
+  // 정확도 (목표 80%)
+  const overallStatus = analysis.overallAccuracy >= 80 ? 'OK' : 'NEED';
+  console.log(`\n[정확도] Overall: ${analysis.overallAccuracy.toFixed(1)}% (목표: 80%) ${overallStatus}`);
+  console.log(`  - Pitch:    ${analysis.pitchAccuracy.toFixed(1)}%`);
+  console.log(`  - Timing:   ${analysis.timingAccuracy.toFixed(1)}%`);
+  console.log(`  - Duration: ${analysis.durationAccuracy.toFixed(1)}%`);
 
   console.log('\n❌ 오류 패턴:');
   console.log(`  - 놓친 음표 (Missed): ${analysis.missedNotes}개`);

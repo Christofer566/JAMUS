@@ -1,0 +1,29 @@
+{
+  "bpm": 120,
+  "notes": [
+    {
+      "pitch": "C3",
+      "measure": 1,
+      "slot": 0,
+      "duration": 4
+    },
+    {
+      "pitch": "E3",
+      "measure": 1,
+      "slot": 8,
+      "duration": 4
+    },
+    {
+      "pitch": "G3",
+      "measure": 2,
+      "slot": 0,
+      "duration": 4
+    },
+    {
+      "pitch": "E3",
+      "measure": 2,
+      "slot": 8,
+      "duration": 8
+    }
+  ]
+}

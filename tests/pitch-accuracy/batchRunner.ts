@@ -26,16 +26,15 @@ const AUTO_CONFIG = {
   MIN_IMPROVEMENT: 0.5,
 };
 
-// 음정 매칭 허용 범위: ±2 반음 (연주 인토네이션 오차)
-const PITCH_TOLERANCE = 4; // Phase 97: ±4반음 허용 (장3도)
-
-// 타이밍 매칭 허용 범위: ±2 슬롯 (음표 탐색용)
-const TIMING_TOLERANCE = 16;
-
-// [지시 사항 1] 1슬롯 관용 정책 - 편집 효율성 기준
-// 1슬롯(16분음표 1개) 차이는 사용자가 쉽게 수정 가능하므로 정답으로 간주
-const TIMING_TOLERANCE_SCORE = 4;   // Phase 97: ±4슬롯 차이까지 허용 (4분음표 1개)
-const DURATION_TOLERANCE_SCORE = 3; // Phase 97: ±3슬롯 차이까지 허용
+// ============================================
+// Phase 98: 통합 평가 기준 (라이브 앱과 동일)
+// 목표: 사용자가 최소한의 노력으로 편집할 수 있는 수준
+// ============================================
+const PITCH_TOLERANCE = 1;          // ±1반음 허용 (단2도)
+const TIMING_TOLERANCE = 4;         // 매칭 탐색 범위: ±4슬롯
+const TIMING_TOLERANCE_SCORE = 1;   // 타이밍 정답 기준: ±1슬롯
+const DURATION_TOLERANCE_SCORE = 1; // 길이 정답 기준: ±1슬롯
+// 회수율 목표: 90% 이상
 
 const PARAM_SEARCH_SPACE = {
   LOW_FREQ_RECOVERY_MAX: [120, 140, 150, 160, 170],
@@ -473,7 +472,7 @@ function runCaseTest(
 // ============================================
 function runBatchTest(datasetsDir: string): BatchResult {
   const cases = fs.readdirSync(datasetsDir)
-    .filter(name => name.startsWith('case_'))
+    .filter(name => name.startsWith('case_') && !name.startsWith('case_synth_'))
     .sort();
 
   if (cases.length === 0) {
@@ -726,6 +725,74 @@ function updateGoldenSettingsBatch(
 
     // 전역 변수도 갱신
     GOLDEN_PARAMS_75 = best.params;
+
+    // pitchToNote.ts의 DEFAULT_PARAMS 자동 동기화
+    syncDefaultParamsToLiveApp(best.params);
+  }
+}
+
+// ============================================
+// pitchToNote.ts DEFAULT_PARAMS 자동 동기화
+// ============================================
+function syncDefaultParamsToLiveApp(params: TunableParams): void {
+  const pitchToNotePath = path.join(path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1'), '../../utils/pitchToNote.ts');
+
+  if (!fs.existsSync(pitchToNotePath)) {
+    console.log('  [WARNING] pitchToNote.ts not found, skipping sync');
+    return;
+  }
+
+  let content = fs.readFileSync(pitchToNotePath, 'utf-8');
+
+  // DEFAULT_PARAMS 블록을 찾아서 교체
+  const defaultParamsRegex = /(\/\/ 기본값 \(goldenSettings75\.json.*?\n)(const DEFAULT_PARAMS: TunableParams = \{[\s\S]*?\n\};)/;
+
+  const newDefaultParams = `// 기본값 (goldenSettings75.json과 자동 동기화됨)
+const DEFAULT_PARAMS: TunableParams = {
+  // 1. 저음 복원
+  LOW_FREQ_RECOVERY_MAX: ${params.LOW_FREQ_RECOVERY_MAX},
+  LOW_SOLO_THRESHOLD: ${params.LOW_SOLO_THRESHOLD},
+  LOW_FREQ_CONFIDENCE_MIN: ${params.LOW_FREQ_CONFIDENCE_MIN},
+
+  // 2. 점유율
+  OCCUPANCY_MIN: ${params.OCCUPANCY_MIN},
+  OCCUPANCY_HIGH: ${params.OCCUPANCY_HIGH},
+  OCCUPANCY_SUSTAIN: ${params.OCCUPANCY_SUSTAIN},
+
+  // 3. 에너지 피크
+  ENERGY_PEAK_CONFIDENCE_MIN: ${params.ENERGY_PEAK_CONFIDENCE_MIN},
+  ENERGY_PEAK_OCCUPANCY_MIN: ${params.ENERGY_PEAK_OCCUPANCY_MIN},
+
+  // 4. 음표 길이
+  MIN_NOTE_DURATION_SLOTS: ${params.MIN_NOTE_DURATION_SLOTS},
+  MAX_MERGE_SLOTS: ${params.MAX_MERGE_SLOTS},
+
+  // 5. 그리드 분석
+  PITCH_CONFIDENCE_MIN: ${params.PITCH_CONFIDENCE_MIN},
+  GRID_SNAP_TOLERANCE: ${params.GRID_SNAP_TOLERANCE},
+  TIMING_OFFSET_SLOTS: ${params.TIMING_OFFSET_SLOTS},
+
+  // 6. 음역대별 차별화
+  MID_FREQ_MIN: ${params.MID_FREQ_MIN},
+  HIGH_FREQ_MIN: ${params.HIGH_FREQ_MIN},
+  LOW_FREQ_OCCUPANCY_BONUS: ${params.LOW_FREQ_OCCUPANCY_BONUS},
+
+  // 7. Onset Detection
+  ONSET_ENERGY_RATIO: ${params.ONSET_ENERGY_RATIO},
+  ONSET_CONFIDENCE_JUMP: ${params.ONSET_CONFIDENCE_JUMP},
+  ONSET_DETECTION_ENABLED: ${params.ONSET_DETECTION_ENABLED},
+
+  // 8. Pitch Stability Filter
+  PITCH_STABILITY_THRESHOLD: ${params.PITCH_STABILITY_THRESHOLD},
+  PITCH_STABILITY_ENABLED: ${params.PITCH_STABILITY_ENABLED}
+};`;
+
+  if (defaultParamsRegex.test(content)) {
+    content = content.replace(defaultParamsRegex, newDefaultParams);
+    fs.writeFileSync(pitchToNotePath, content, 'utf-8');
+    console.log(`  pitchToNote.ts DEFAULT_PARAMS 동기화 완료 (라이브앱 자동 반영)`);
+  } else {
+    console.log('  [WARNING] DEFAULT_PARAMS pattern not found in pitchToNote.ts');
   }
 }
 
