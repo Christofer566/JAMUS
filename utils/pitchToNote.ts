@@ -310,6 +310,17 @@ export function pitchToMidi(pitch: string): number {
   return (parseInt(octave) + 1) * 12 + noteIndex;
 }
 
+/**
+ * MIDI 번호를 pitch 문자열로 변환
+ * Phase 122: 옥타브 오류 보정에서 사용
+ */
+export function midiToPitch(midi: number): string {
+  if (midi < 0) return 'rest';
+  const octave = Math.floor(midi / 12) - 1;
+  const noteIndex = midi % 12;
+  return NOTE_NAMES[noteIndex] + octave;
+}
+
 function isSimilarPitch(pitch1: string, pitch2: string): boolean {
   if (pitch1 === 'rest' || pitch2 === 'rest') return pitch1 === pitch2;
 
@@ -1454,7 +1465,8 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
   // 같은 피치의 연속 짧은 음표들을 하나로 병합
   // Phase 115와 차이: 양쪽 다 짧을 때만 병합 (긴 음표에 흡수 방지)
   // Phase 119: 다중 패스로 연속 fragment 병합 (1+1+1+1 → 2+2 → 4)
-  const FRAGMENT_THRESHOLD_118 = 2; // 2슬롯 이하는 fragment
+  // Phase 122: 피드백 패턴 분석 결과 반영 - 3슬롯도 fragment로 포함 (3슬롯→4슬롯 18회 오류)
+  const FRAGMENT_THRESHOLD_118 = 3; // 3슬롯 이하는 fragment (Phase 122: 2→3)
   let pitchContinuityCount = 0;
   const MAX_PASSES = 3; // Phase 119: 최대 3회 반복
 
@@ -1507,44 +1519,12 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
   }
 
   // ========================================
-  // Phase 116: Enhanced Duration Quantization - DISABLED for testing
+  // Phase 116: Enhanced Duration Quantization - DISABLED
   // ========================================
-  // Phase 86보다 강화된 양자화: ±2 슬롯까지 조정
-  // 표준 음표 길이로 더 적극적으로 스냅
-  // TODO: 성능 테스트 후 결정
-  /*
-  const ENHANCED_QUANT_DURATIONS = [2, 4, 6, 8, 12, 16]; // 8분음표 이상
-  let enhancedQuantCount = 0;
-
-  for (let i = 0; i < splitNotes.length; i++) {
-    const note = splitNotes[i];
-    if (note.isRest) continue;
-    if (note.slotCount >= 4) continue; // 4슬롯 이상은 이미 안정적
-
-    // 3슬롯 → 4슬롯 (점4분음표 → 4분음표)
-    if (note.slotCount === 3) {
-      splitNotes[i] = {
-        ...note,
-        slotCount: 4,
-        duration: slotCountToDuration(4)
-      };
-      enhancedQuantCount++;
-    }
-    // 1슬롯 → 2슬롯 (너무 짧은 음표 보정)
-    else if (note.slotCount === 1) {
-      splitNotes[i] = {
-        ...note,
-        slotCount: 2,
-        duration: slotCountToDuration(2)
-      };
-      enhancedQuantCount++;
-    }
-  }
-
-  if (enhancedQuantCount > 0) {
-    console.log(`[Phase 116] Enhanced Duration Quantization: ${enhancedQuantCount}개 조정`);
-  }
-  */
+  // 피드백 데이터에서 3슬롯→4슬롯 오류 18회 발견했으나
+  // 실제 테스트 결과 역효과 (72.8% → 72.2%)
+  // 실제로 3슬롯이 정답인 케이스도 있어서 강제 변환 불가
+  // Phase 122의 유사 음정 병합으로 대응
 
   // ========================================
   // Phase 76: Two-Pass Gap Recovery - 비활성화
@@ -1955,6 +1935,91 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
 
   if (wideContextCorrected > 0 || wideContextRemoved > 0) {
     console.log(`[Phase 114] Wide Context: corrected=${wideContextCorrected}, removed=${wideContextRemoved}`);
+  }
+
+  // ========================================
+  // Phase 122: Feedback Pattern Correction (피드백 학습 기반 보정)
+  // ========================================
+  // 피드백 데이터에서 발견된 패턴을 기반으로 추가 보정
+  // - 1슬롯→4슬롯 (38회): 연속된 짧은 음표를 더 공격적으로 병합
+  // - 옥타브 오류 (F3→F#2 등): ±11~12반음 차이 보정
+
+  let feedbackMergeCount = 0;
+  let octaveFixCount = 0;
+
+  // Phase 122-A: 유사 음정 병합 (±1반음 허용)
+  // 피드백 패턴: C3→D3(8회), F#3→G3(5회) 등 반음 오류가 빈번
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = finalNotes.length - 1; i > 0; i--) {
+      const currNote = finalNotes[i];
+      const prevNote = finalNotes[i - 1];
+
+      if (currNote.isRest || prevNote.isRest) continue;
+      if (currNote.slotCount > 2 || prevNote.slotCount > 2) continue; // 짧은 음표만
+
+      // ±1반음 이내의 유사 음정 확인
+      const currMidi = pitchToMidi(currNote.pitch);
+      const prevMidi = pitchToMidi(prevNote.pitch);
+      const pitchDiff = Math.abs(currMidi - prevMidi);
+
+      if (pitchDiff > 1) continue; // 1반음 초과면 스킵
+
+      // 슬롯 연속성 확인 (gap <= 1)
+      const prevEndSlot = prevNote.measureIndex * SLOTS_PER_MEASURE + prevNote.slotIndex + prevNote.slotCount;
+      const currStartSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex;
+      const gap = currStartSlot - prevEndSlot;
+
+      if (gap < 0 || gap > 1) continue;
+
+      const newSlotCount = prevNote.slotCount + gap + currNote.slotCount;
+      if (newSlotCount > activeParams.MAX_MERGE_SLOTS) continue;
+
+      // 병합: 이전 음표 피치 유지 (더 긴 음표가 정확할 가능성 높음)
+      finalNotes[i - 1] = {
+        ...prevNote,
+        slotCount: newSlotCount,
+        duration: slotCountToDuration(newSlotCount)
+      };
+      finalNotes.splice(i, 1);
+      feedbackMergeCount++;
+    }
+  }
+
+  // Phase 122-B: 옥타브 오류 보정
+  // 피드백 패턴: F3→F#2(11반음), G3→A2(10반음) 등 옥타브 오류
+  if (finalNotes.length >= 3) {
+    const notesMidi = finalNotes.filter(n => !n.isRest).map(n => pitchToMidi(n.pitch));
+    const avgMidi = notesMidi.length > 0
+      ? notesMidi.reduce((a, b) => a + b, 0) / notesMidi.length
+      : 60;
+
+    for (let i = 0; i < finalNotes.length; i++) {
+      const note = finalNotes[i];
+      if (note.isRest) continue;
+
+      const noteMidi = pitchToMidi(note.pitch);
+      const diff = Math.abs(noteMidi - avgMidi);
+
+      // 평균에서 10반음 이상 벗어난 음표는 옥타브 오류 의심
+      if (diff >= 10 && diff <= 14) {
+        const correctedMidi = noteMidi < avgMidi ? noteMidi + 12 : noteMidi - 12;
+        const correctedPitch = midiToPitch(correctedMidi);
+
+        // 보정된 음정이 평균에 더 가까운 경우에만 적용
+        if (Math.abs(correctedMidi - avgMidi) < diff) {
+          finalNotes[i] = {
+            ...note,
+            pitch: correctedPitch,
+            confidence: 'medium' // 보정된 음표는 confidence 하향
+          };
+          octaveFixCount++;
+        }
+      }
+    }
+  }
+
+  if (feedbackMergeCount > 0 || octaveFixCount > 0) {
+    console.log(`[Phase 122] Feedback Correction: merge=${feedbackMergeCount}, octaveFix=${octaveFixCount}`);
   }
 
   return finalNotes;
