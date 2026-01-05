@@ -1,13 +1,14 @@
 // components/single/feedback/RecordedRowStaff.tsx
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Renderer, Stave, StaveNote, Voice, Formatter, Barline, Accidental } from 'vexflow';
 import { NoteData } from '@/types/note';
 import { DragType } from '@/types/edit';
 import EditModeOverlay from './EditModeOverlay';
 import NoteBox from './NoteBox';
 import RestBox from './RestBox';
+import SuggestedRangeOverlay from './SuggestedRangeOverlay';
 import { useFeedbackStore } from '@/stores/feedbackStore';
 
 interface RecordedRowStaffProps {
@@ -43,7 +44,15 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
     setIsDragging,
     updateNoteDuration,
     moveNote,
-    dragPreview
+    dragPreview,
+    // Smart Guide
+    suggestedRanges,
+    smartGuide,
+    setSmartGuideHover,
+    lockSmartGuidePitch,
+    updateSmartGuidePreview,
+    cancelSmartGuide,
+    confirmSmartGuideNote,
   } = useFeedbackStore();
 
   // 드래그 상태
@@ -73,6 +82,59 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
     resizeObserver.observe(containerRef.current);
     return () => resizeObserver.disconnect();
   }, []);
+
+  // Y→Pitch 변환 상수
+  const STAVE_CENTER_Y = 35;
+  const PIXELS_PER_SEMITONE = 2.5;
+  const B4_MIDI = 71;
+  const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+  // Y 좌표를 MIDI와 pitch로 변환
+  const yToPitchInfo = useCallback((y: number): { midi: number; pitch: string } => {
+    const semitoneOffset = (STAVE_CENTER_Y - y) / PIXELS_PER_SEMITONE;
+    const midi = Math.round(B4_MIDI + semitoneOffset);
+    const octave = Math.floor(midi / 12) - 1;
+    const pitchClass = midi % 12;
+    return { midi, pitch: NOTE_NAMES[pitchClass] + octave };
+  }, []);
+
+  // 이 row에 해당하는 SuggestedRanges 필터링
+  const rangesForRow = useMemo(() => {
+    return suggestedRanges.filter(
+      r => r.measureIndex >= rowStartMeasure && r.measureIndex < rowStartMeasure + 4
+    );
+  }, [suggestedRanges, rowStartMeasure]);
+
+  // Smart Guide 클릭 핸들러
+  const handleSmartGuideClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (smartGuide.step === 'hovering' && smartGuide.hoverY !== null) {
+      // 1차 클릭: 음정 확정
+      const { midi, pitch } = yToPitchInfo(smartGuide.hoverY);
+      lockSmartGuidePitch(pitch, midi);
+    } else if (smartGuide.step === 'pitch_locked') {
+      // 2차 클릭: 길이 확정 및 음표 생성
+      confirmSmartGuideNote();
+    }
+  }, [smartGuide, yToPitchInfo, lockSmartGuidePitch, confirmSmartGuideNote]);
+
+  // ESC 키 핸들러 (Smart Guide 취소)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && smartGuide.step !== 'idle') {
+        cancelSmartGuide();
+      } else if (e.key === 'Enter' && smartGuide.step === 'pitch_locked') {
+        // Enter로도 확정 가능
+        confirmSmartGuideNote();
+      }
+    };
+
+    if (isEditMode) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isEditMode, smartGuide.step, cancelSmartGuide, confirmSmartGuideNote]);
 
   const measureWidth = containerWidth / 4;
 
@@ -419,6 +481,35 @@ const RecordedRowStaff: React.FC<RecordedRowStaffProps> = ({
               />
             </div>
           ))}
+
+          {/* Smart Guide: SuggestedRange 오버레이 */}
+          {rangesForRow.length > 0 && (
+            <svg
+              className="absolute top-0 left-0"
+              width={containerWidth}
+              height={height}
+              style={{ overflow: 'visible', pointerEvents: 'none' }}
+            >
+              {rangesForRow.map(range => {
+                const measureOffset = range.measureIndex - rowStartMeasure;
+                const measureStartX = measureOffset * measureWidth;
+
+                return (
+                  <SuggestedRangeOverlay
+                    key={`range-${range.measureIndex}-${range.startSlot}`}
+                    range={range}
+                    measureWidth={measureWidth}
+                    measureStartX={measureStartX}
+                    smartGuide={smartGuide}
+                    staveHeight={height}
+                    onMouseMove={(y, x) => setSmartGuideHover(range, y, x)}
+                    onMouseLeave={() => setSmartGuideHover(null, null)}
+                    onClick={handleSmartGuideClick}
+                  />
+                );
+              })}
+            </svg>
+          )}
 
           {/* 음표 박스들 */}
           {getNotesForRow().map(({ note, globalIndex, measureOffset, displayNumber }) => (

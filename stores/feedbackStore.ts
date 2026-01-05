@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { NoteData } from '@/types/note';
 import { EditAction, DragPreview } from '@/types/edit';
 import { ConversionState, INITIAL_CONVERSION_STATE } from '@/types/instrument';
+import { saveFeedbackSession, SaveFeedbackParams } from '@/lib/feedbackCollection';
+import { SuggestedRange, SmartGuideState, initialSmartGuideState } from '@/types/suggestedRange';
 
 // 음정 순서 (반음 단위)
 const NOTE_ORDER = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -23,6 +25,15 @@ interface FeedbackState {
   originalNotes: NoteData[];
   editedNotes: NoteData[];
 
+  // 피드백 수집용 메타데이터
+  editStartTime: number;
+  sessionMeta: {
+    songId: string;
+    bpm: number;
+    key: string;
+    recordingDuration: number;
+  } | null;
+
   // Undo/Redo
   undoStack: EditAction[];
   redoStack: EditAction[];
@@ -34,6 +45,10 @@ interface FeedbackState {
   // 악기 변환
   conversionState: ConversionState;
   instrumentOnlyMode: boolean;  // true: 변환된 악기만, false: 배경음악 + 악기
+
+  // Smart Guide (저신뢰도 구간 가이드)
+  suggestedRanges: SuggestedRange[];
+  smartGuide: SmartGuideState;
 
   // Actions
   setEditMode: (mode: boolean) => void;
@@ -63,10 +78,23 @@ interface FeedbackState {
   initializeNotes: (notes: NoteData[]) => void;
   getCleanedNotes: () => NoteData[];  // 편집 확정용: 정리된 음표+쉼표 반환
 
+  // 피드백 수집 Actions
+  setSessionMeta: (meta: { songId: string; bpm: number; key: string; recordingDuration: number }) => void;
+  saveFeedback: () => Promise<{ success: boolean; error?: string }>;
+
   // 악기 변환 Actions
   setConversionState: (state: Partial<ConversionState>) => void;
   toggleInstrumentOnlyMode: () => void;
   resetConversionState: () => void;
+
+  // Smart Guide Actions
+  setSuggestedRanges: (ranges: SuggestedRange[]) => void;
+  setSmartGuideHover: (range: SuggestedRange | null, y: number | null, x?: number | null) => void;
+  lockSmartGuidePitch: (pitch: string, midi: number) => void;
+  updateSmartGuidePreview: (slotCount: number) => void;
+  cancelSmartGuide: () => void;
+  confirmSmartGuideNote: () => void;
+  removeSuggestedRange: (measureIndex: number, startSlot: number) => void;
 }
 
 // 헬퍼 함수들
@@ -437,6 +465,10 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   dragPreview: null,
   conversionState: INITIAL_CONVERSION_STATE,
   instrumentOnlyMode: false,
+  editStartTime: 0,
+  sessionMeta: null,
+  suggestedRanges: [],
+  smartGuide: initialSmartGuideState,
 
   // 모드 전환
   setEditMode: (mode) => set({
@@ -1081,13 +1113,41 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       redoStack: [],
       selectedNoteIndices: [],
       isEditMode: false,
-      showEditPanel: false
+      showEditPanel: false,
+      editStartTime: Date.now()
     });
   },
 
   // 편집 확정용: 정리된 음표+쉼표 반환 (겹침 제거, 연속 쉼표 병합)
   getCleanedNotes: () => {
     return cleanupNotesAndRests(get().editedNotes);
+  },
+
+  // 피드백 수집: 세션 메타데이터 설정
+  setSessionMeta: (meta) => set({ sessionMeta: meta }),
+
+  // 피드백 수집: 편집 데이터 저장 (원본 vs 최종 비교 방식)
+  saveFeedback: async () => {
+    const state = get();
+    const { sessionMeta, originalNotes, editedNotes, editStartTime } = state;
+
+    if (!sessionMeta) {
+      console.warn('⚠️ [feedbackStore] sessionMeta가 설정되지 않음');
+      return { success: false, error: 'sessionMeta not set' };
+    }
+
+    const params: SaveFeedbackParams = {
+      songId: sessionMeta.songId,
+      autoDetectedNotes: originalNotes,
+      finalEditedNotes: editedNotes,
+      bpm: sessionMeta.bpm,
+      key: sessionMeta.key,
+      recordingDuration: sessionMeta.recordingDuration,
+      editStartTime,
+    };
+
+    const result = await saveFeedbackSession(params);
+    return result;
   },
 
   // 악기 변환 상태 설정
@@ -1104,7 +1164,159 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   resetConversionState: () => set({
     conversionState: INITIAL_CONVERSION_STATE,
     instrumentOnlyMode: false
-  })
+  }),
+
+  // ============================================
+  // Smart Guide Actions
+  // ============================================
+
+  // SuggestedRanges 설정
+  setSuggestedRanges: (ranges) => set({ suggestedRanges: ranges }),
+
+  // 호버 상태 설정
+  setSmartGuideHover: (range, y, x = null) => set((state) => {
+    if (!range) {
+      // 호버 종료
+      if (state.smartGuide.step === 'hovering') {
+        return { smartGuide: initialSmartGuideState };
+      }
+      return state; // pitch_locked 상태면 유지
+    }
+
+    return {
+      smartGuide: {
+        ...state.smartGuide,
+        step: state.smartGuide.step === 'pitch_locked' ? 'pitch_locked' : 'hovering',
+        activeRange: range,
+        hoverY: y,
+        hoverX: x,
+      }
+    };
+  }),
+
+  // 음정 확정 (1차 클릭)
+  lockSmartGuidePitch: (pitch, midi) => set((state) => ({
+    smartGuide: {
+      ...state.smartGuide,
+      step: 'pitch_locked',
+      lockedPitch: pitch,
+      lockedMidi: midi,
+      previewSlotCount: 1,
+    }
+  })),
+
+  // 길이 미리보기 업데이트
+  updateSmartGuidePreview: (slotCount) => set((state) => ({
+    smartGuide: {
+      ...state.smartGuide,
+      previewSlotCount: slotCount,
+    }
+  })),
+
+  // Smart Guide 취소 (ESC)
+  cancelSmartGuide: () => set({ smartGuide: initialSmartGuideState }),
+
+  // 음표 확정 (2차 클릭) - 겹치는 음표 정리 후 새 음표 생성
+  confirmSmartGuideNote: () => set((state) => {
+    const { smartGuide, editedNotes, suggestedRanges, undoStack } = state;
+
+    if (smartGuide.step !== 'pitch_locked' || !smartGuide.activeRange || !smartGuide.lockedPitch) {
+      console.warn('[SmartGuide] Invalid state for confirmation');
+      return state;
+    }
+
+    const { activeRange, lockedPitch, previewSlotCount, lockedMidi } = smartGuide;
+    const newNotes = [...editedNotes];
+
+    // 1. 겹치는 음표 찾기 (해당 범위 내)
+    const overlappingIndices: number[] = [];
+    const overlappingBefore: Partial<NoteData>[] = [];
+    const overlappingAfter: Partial<NoteData>[] = [];
+
+    newNotes.forEach((note, idx) => {
+      if (note.measureIndex !== activeRange.measureIndex) return;
+      if (note.isRest) return;
+
+      const noteStart = note.slotIndex;
+      const noteEnd = note.slotIndex + note.slotCount;
+      const rangeStart = activeRange.startSlot;
+      const rangeEnd = activeRange.startSlot + previewSlotCount;
+
+      // 겹치는지 확인
+      if (noteStart < rangeEnd && noteEnd > rangeStart) {
+        overlappingIndices.push(idx);
+        overlappingBefore.push({ ...note });
+        // 쉼표로 변환
+        newNotes[idx] = {
+          ...note,
+          pitch: 'rest',
+          isRest: true,
+          confidence: 'high'
+        };
+        overlappingAfter.push({ pitch: 'rest', isRest: true, confidence: 'high' });
+      }
+    });
+
+    // 2. 새 음표 생성
+    const newNote: NoteData = {
+      pitch: lockedPitch,
+      duration: slotCountToDuration(previewSlotCount),
+      beat: activeRange.measureIndex * 4 + activeRange.startSlot / 4,
+      measureIndex: activeRange.measureIndex,
+      slotIndex: activeRange.startSlot,
+      slotCount: previewSlotCount,
+      isRest: false,
+      confidence: 'high',
+    };
+
+    // 적절한 위치에 삽입
+    let insertIndex = newNotes.findIndex(n =>
+      n.measureIndex > newNote.measureIndex ||
+      (n.measureIndex === newNote.measureIndex && n.slotIndex > newNote.slotIndex)
+    );
+
+    if (insertIndex === -1) {
+      newNotes.push(newNote);
+      insertIndex = newNotes.length - 1;
+    } else {
+      newNotes.splice(insertIndex, 0, newNote);
+    }
+
+    // 3. 사용된 SuggestedRange 제거
+    const newRanges = suggestedRanges.filter(r =>
+      !(r.measureIndex === activeRange.measureIndex && r.startSlot === activeRange.startSlot)
+    );
+
+    // 4. EditAction 생성 (단일 액션으로 번들링)
+    const action: EditAction = {
+      type: 'smart-guide-add',
+      noteIndices: [insertIndex, ...overlappingIndices.map(i => i >= insertIndex ? i + 1 : i)],
+      before: [{}, ...overlappingBefore], // 새 음표는 이전 상태 없음
+      after: [newNote, ...overlappingAfter],
+    };
+
+    console.log('[SmartGuide] Note confirmed:', {
+      newNote,
+      overlappingRemoved: overlappingIndices.length,
+      rangeUsed: activeRange,
+    });
+
+    return {
+      editedNotes: newNotes,
+      suggestedRanges: newRanges,
+      smartGuide: initialSmartGuideState,
+      selectedNoteIndices: [insertIndex],
+      undoStack: [...undoStack.slice(-MAX_UNDO_STEPS + 1), action],
+      redoStack: [],
+    };
+  }),
+
+  // SuggestedRange 개별 제거
+  removeSuggestedRange: (measureIndex, startSlot) => set((state) => ({
+    suggestedRanges: state.suggestedRanges.filter(r =>
+      !(r.measureIndex === measureIndex && r.startSlot === startSlot)
+    )
+  })),
 }));
 
 export default useFeedbackStore;

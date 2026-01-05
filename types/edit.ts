@@ -5,7 +5,7 @@
 import { NoteData } from './note';
 
 export interface EditAction {
-  type: 'pitch' | 'position' | 'duration' | 'delete' | 'multi-delete';
+  type: 'pitch' | 'position' | 'duration' | 'delete' | 'multi-delete' | 'add' | 'smart-guide-add';
   noteIndices: number[];
   before: Partial<NoteData>[];
   after: Partial<NoteData>[];

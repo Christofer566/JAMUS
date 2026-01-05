@@ -9,7 +9,7 @@ import { useWebAudio } from '@/hooks/useWebAudio';
 import { useToast } from '@/contexts/ToastContext';
 import { useFeedbackLoader } from '@/hooks/useFeedbackLoader';
 import { usePitchAnalyzer } from '@/hooks/usePitchAnalyzer';
-import { convertToNotes } from '@/utils/pitchToNote';
+import { convertToNotes, generateSuggestedRanges } from '@/utils/pitchToNote';
 import { distributeNotesToMeasures } from '@/utils/distributeNotesToMeasures';
 import { useRecordingStore } from '@/stores/recordingStore';
 import { useFeedbackStore } from '@/stores/feedbackStore';
@@ -143,7 +143,10 @@ export default function FeedbackClientPage() {
         instrumentOnlyMode,
         setConversionState,
         toggleInstrumentOnlyMode,
-        resetConversionState
+        resetConversionState,
+        setSessionMeta,
+        saveFeedback,
+        setSuggestedRanges
     } = useFeedbackStore();
 
     // 악기 변환 훅
@@ -905,10 +908,30 @@ export default function FeedbackClientPage() {
             });
 
             initializeNotes(allNotes);
+
+            // 피드백 수집용 세션 메타데이터 설정
+            setSessionMeta({
+                songId: SONG_META.id,
+                bpm: SONG_META.bpm,
+                key: SONG_META.key || 'unknown',
+                recordingDuration: storedRecordingRange.endTime - storedRecordingRange.startTime
+            });
+
+            // Smart Guide: SuggestedRanges 생성
+            const ranges = generateSuggestedRanges(pitchFrames, allNotes, SONG_META.bpm);
+            setSuggestedRanges(ranges);
+            console.log('[Smart Guide] SuggestedRanges 생성:', {
+                totalRanges: ranges.length,
+                ranges: ranges.map(r => ({
+                    measure: r.measureIndex,
+                    slots: `${r.startSlot}-${r.endSlot}`,
+                    suggestedPitch: r.suggestedPitch
+                }))
+            });
         };
 
         performAnalysis();
-    }, [storedAudioBlob, storedRecordingRange, analyzeAudio, setRawAutoNotes, initializeNotes]);
+    }, [storedAudioBlob, storedRecordingRange, analyzeAudio, setRawAutoNotes, initializeNotes, setSessionMeta, setSuggestedRanges]);
 
     // ============================================
     // Self-Refining Test: exportGroundTruth 함수 등록
@@ -1485,8 +1508,17 @@ export default function FeedbackClientPage() {
         setEditMode(false);
         setIsEditConfirmed(true);  // 편집 잠금
 
+        // 피드백 수집: 편집 데이터 Supabase에 저장
+        saveFeedback().then(result => {
+            if (result.success) {
+                console.log('📊 [Feedback] 편집 피드백 저장 완료');
+            } else if (result.error) {
+                console.warn('📊 [Feedback] 저장 실패:', result.error);
+            }
+        });
+
         showToast('success', '편집이 확정되었습니다 (재편집 불가)');
-    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast, isEditConfirmed]);
+    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast, isEditConfirmed, saveFeedback]);
 
     // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
     if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {

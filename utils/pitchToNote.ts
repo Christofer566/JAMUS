@@ -9,6 +9,7 @@
 
 import { PitchFrame } from '@/types/pitch';
 import { NoteData } from '@/types/note';
+import { SuggestedRange } from '@/types/suggestedRange';
 
 // ============================================
 // Constants
@@ -455,7 +456,7 @@ function correctOctaveError(frequency: number, contextFreqs: number[]): number {
 // ============================================
 // Slot Analysis Types
 // ============================================
-interface SlotData {
+export interface SlotData {
   measureIndex: number;
   slotIndex: number;       // 0-15
   globalSlotIndex: number; // 전체 슬롯 인덱스
@@ -1957,4 +1958,213 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
   }
 
   return finalNotes;
+}
+
+// ============================================
+// Smart Guide: SuggestedRange 생성
+// ============================================
+/**
+ * 저신뢰도 구간(excluded 슬롯)을 분석하여 SuggestedRange 배열 생성
+ *
+ * @param frames - 피치 프레임 배열
+ * @param existingNotes - 이미 생성된 음표 배열
+ * @param bpm - BPM
+ * @returns SuggestedRange[] - 사용자가 수동으로 음표를 추가할 수 있는 구간 목록
+ */
+export function generateSuggestedRanges(
+  frames: PitchFrame[],
+  existingNotes: NoteData[],
+  bpm: number
+): SuggestedRange[] {
+  if (frames.length === 0) return [];
+
+  const safeBpm = bpm > 0 ? bpm : 120;
+  const beatDuration = 60 / safeBpm;
+  const slotDuration = beatDuration / 4;
+  const measureDuration = beatDuration * 4;
+
+  const totalDuration = frames[frames.length - 1].time;
+  const totalMeasures = Math.ceil(totalDuration / measureDuration);
+  const totalSlots = totalMeasures * SLOTS_PER_MEASURE;
+
+  // 슬롯 분석 (간소화 버전)
+  const slotConfidences: { measureIndex: number; slotIndex: number; hasFrameData: boolean; avgConf: number }[] = [];
+
+  for (let globalSlot = 0; globalSlot < totalSlots; globalSlot++) {
+    const measureIndex = Math.floor(globalSlot / SLOTS_PER_MEASURE);
+    const slotIndex = globalSlot % SLOTS_PER_MEASURE;
+    const startTime = globalSlot * slotDuration;
+    const endTime = (globalSlot + 1) * slotDuration;
+
+    const slotFrames = frames.filter(f => f.time >= startTime && f.time < endTime);
+    const validFrames = slotFrames.filter(
+      f => f.confidence >= activeParams.PITCH_CONFIDENCE_MIN && f.frequency >= 65 && f.frequency <= 1047
+    );
+
+    const soundFrames = slotFrames.filter(f => f.frequency > 0 || f.confidence > 0);
+    const occupancy = slotFrames.length > 0 ? soundFrames.length / slotFrames.length : 0;
+
+    // 점유율이 낮거나 유효 프레임이 없으면 excluded로 판정
+    const isExcluded = occupancy < activeParams.OCCUPANCY_MIN || validFrames.length === 0;
+
+    if (isExcluded) {
+      // 프레임 데이터 존재 여부 및 평균 confidence 계산
+      const hasFrameData = validFrames.length > 0;
+      const avgConf = validFrames.length > 0
+        ? validFrames.reduce((sum, f) => sum + f.confidence, 0) / validFrames.length
+        : 0;
+
+      slotConfidences.push({ measureIndex, slotIndex, hasFrameData, avgConf });
+    }
+  }
+
+  // 기존 음표가 차지하는 슬롯 마킹
+  const occupiedSlots = new Set<string>();
+  existingNotes.filter(n => !n.isRest).forEach(note => {
+    for (let s = 0; s < note.slotCount; s++) {
+      const slot = note.slotIndex + s;
+      const measure = note.measureIndex + Math.floor(slot / SLOTS_PER_MEASURE);
+      const actualSlot = slot % SLOTS_PER_MEASURE;
+      occupiedSlots.add(`${measure}-${actualSlot}`);
+    }
+  });
+
+  // 연속된 excluded 슬롯을 그룹핑
+  const ranges: SuggestedRange[] = [];
+  let currentRange: {
+    startSlot: number;
+    measureIndex: number;
+    slots: typeof slotConfidences;
+  } | null = null;
+
+  for (const slot of slotConfidences) {
+    const slotKey = `${slot.measureIndex}-${slot.slotIndex}`;
+
+    // 기존 음표와 겹치면 스킵
+    if (occupiedSlots.has(slotKey)) {
+      // 현재 범위가 있으면 종료
+      if (currentRange && currentRange.slots.length >= 2) {
+        ranges.push(createRangeFromSlots(currentRange, existingNotes));
+      }
+      currentRange = null;
+      continue;
+    }
+
+    // 현재 범위와 연속인지 확인
+    if (currentRange === null) {
+      // 새 범위 시작
+      currentRange = {
+        startSlot: slot.slotIndex,
+        measureIndex: slot.measureIndex,
+        slots: [slot]
+      };
+    } else {
+      const lastSlot = currentRange.slots[currentRange.slots.length - 1];
+      const isConsecutive =
+        (slot.measureIndex === lastSlot.measureIndex && slot.slotIndex === lastSlot.slotIndex + 1) ||
+        (slot.measureIndex === lastSlot.measureIndex + 1 && lastSlot.slotIndex === 15 && slot.slotIndex === 0);
+
+      if (isConsecutive) {
+        // 연속 슬롯 추가
+        currentRange.slots.push(slot);
+      } else {
+        // 연속 끊김 - 이전 범위 저장
+        if (currentRange.slots.length >= 2) {
+          ranges.push(createRangeFromSlots(currentRange, existingNotes));
+        }
+        // 새 범위 시작
+        currentRange = {
+          startSlot: slot.slotIndex,
+          measureIndex: slot.measureIndex,
+          slots: [slot]
+        };
+      }
+    }
+  }
+
+  // 마지막 범위 저장
+  if (currentRange && currentRange.slots.length >= 2) {
+    ranges.push(createRangeFromSlots(currentRange, existingNotes));
+  }
+
+  console.log(`[SmartGuide] Generated ${ranges.length} suggested ranges from ${slotConfidences.length} excluded slots`);
+
+  return ranges;
+}
+
+/**
+ * 슬롯 그룹에서 SuggestedRange 생성
+ */
+function createRangeFromSlots(
+  group: { startSlot: number; measureIndex: number; slots: { measureIndex: number; slotIndex: number; hasFrameData: boolean; avgConf: number }[] },
+  existingNotes: NoteData[]
+): SuggestedRange {
+  const lastSlot = group.slots[group.slots.length - 1];
+
+  // 마디 경계를 넘지 않는 범위로 제한
+  const endSlotInMeasure = lastSlot.measureIndex === group.measureIndex
+    ? lastSlot.slotIndex + 1
+    : SLOTS_PER_MEASURE;
+
+  // 평균 confidence 계산
+  const avgConf = group.slots.reduce((sum, s) => sum + s.avgConf, 0) / group.slots.length;
+
+  // 프레임 데이터 존재 여부
+  const hasFrameData = group.slots.some(s => s.hasFrameData);
+
+  // 인접 음표에서 추천 음정 추론
+  const suggestedPitch = inferPitchFromContext(group.measureIndex, group.startSlot, existingNotes);
+
+  return {
+    startSlot: group.startSlot,
+    endSlot: endSlotInMeasure,
+    measureIndex: group.measureIndex,
+    suggestedPitch,
+    avgConfidence: avgConf,
+    hasFrameData,
+  };
+}
+
+/**
+ * 인접 음표에서 추천 음정 추론
+ */
+function inferPitchFromContext(
+  measureIndex: number,
+  startSlot: number,
+  notes: NoteData[]
+): string | undefined {
+  const targetPos = measureIndex * SLOTS_PER_MEASURE + startSlot;
+
+  // 가장 가까운 이전 음표 찾기
+  let closestBefore: NoteData | null = null;
+  let closestBeforeDist = Infinity;
+
+  // 가장 가까운 이후 음표 찾기
+  let closestAfter: NoteData | null = null;
+  let closestAfterDist = Infinity;
+
+  for (const note of notes) {
+    if (note.isRest) continue;
+
+    const notePos = note.measureIndex * SLOTS_PER_MEASURE + note.slotIndex;
+    const dist = targetPos - notePos;
+
+    if (dist > 0 && dist < closestBeforeDist) {
+      closestBefore = note;
+      closestBeforeDist = dist;
+    } else if (dist < 0 && -dist < closestAfterDist) {
+      closestAfter = note;
+      closestAfterDist = -dist;
+    }
+  }
+
+  // 가장 가까운 음표의 음정 반환 (이전 우선)
+  if (closestBefore && closestBeforeDist <= 8) {
+    return closestBefore.pitch;
+  }
+  if (closestAfter && closestAfterDist <= 8) {
+    return closestAfter.pitch;
+  }
+
+  return undefined;
 }
