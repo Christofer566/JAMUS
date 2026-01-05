@@ -1448,6 +1448,104 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
   }
 
   // ========================================
+  // Phase 118: Pitch Continuity Merge (Fragment Recovery v2)
+  // ========================================
+  // 같은 피치의 연속 짧은 음표들을 하나로 병합
+  // Phase 115와 차이: 양쪽 다 짧을 때만 병합 (긴 음표에 흡수 방지)
+  // Phase 119: 다중 패스로 연속 fragment 병합 (1+1+1+1 → 2+2 → 4)
+  const FRAGMENT_THRESHOLD_118 = 2; // 2슬롯 이하는 fragment
+  let pitchContinuityCount = 0;
+  const MAX_PASSES = 3; // Phase 119: 최대 3회 반복
+
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let passCount = 0;
+
+    // 역방향으로 순회하며 연속 fragment 병합
+    for (let i = splitNotes.length - 1; i > 0; i--) {
+      const currNote = splitNotes[i];
+      const prevNote = splitNotes[i - 1];
+
+      if (currNote.isRest || prevNote.isRest) continue;
+
+      // Phase 118 핵심: 양쪽 다 짧을 때만 병합 (긴 음표 보호)
+      if (currNote.slotCount > FRAGMENT_THRESHOLD_118) continue;
+      if (prevNote.slotCount > FRAGMENT_THRESHOLD_118) continue;
+
+      // 같은 피치인 경우에만 병합
+      if (currNote.pitch !== prevNote.pitch) continue;
+
+      // 이전 음표 끝과 현재 음표 시작 사이의 갭 확인
+      const prevEndSlot = prevNote.measureIndex * SLOTS_PER_MEASURE + prevNote.slotIndex + prevNote.slotCount;
+      const currStartSlot = currNote.measureIndex * SLOTS_PER_MEASURE + currNote.slotIndex;
+      const gap = currStartSlot - prevEndSlot;
+
+      // gap이 0~1이면 병합 (연속되거나 1슬롯 갭)
+      if (gap >= 0 && gap <= 1) {
+        const newSlotCount = prevNote.slotCount + gap + currNote.slotCount;
+
+        // MAX_MERGE_SLOTS 제한 체크
+        if (newSlotCount > activeParams.MAX_MERGE_SLOTS) continue;
+
+        splitNotes[i - 1] = {
+          ...prevNote,
+          slotCount: newSlotCount,
+          duration: slotCountToDuration(newSlotCount)
+        };
+        splitNotes.splice(i, 1);
+        passCount++;
+        pitchContinuityCount++;
+      }
+    }
+
+    // 더 이상 병합할 것이 없으면 종료
+    if (passCount === 0) break;
+  }
+
+  if (pitchContinuityCount > 0) {
+    console.log(`[Phase 118/119] Pitch Continuity Merge: ${pitchContinuityCount}개 병합`);
+  }
+
+  // ========================================
+  // Phase 116: Enhanced Duration Quantization - DISABLED for testing
+  // ========================================
+  // Phase 86보다 강화된 양자화: ±2 슬롯까지 조정
+  // 표준 음표 길이로 더 적극적으로 스냅
+  // TODO: 성능 테스트 후 결정
+  /*
+  const ENHANCED_QUANT_DURATIONS = [2, 4, 6, 8, 12, 16]; // 8분음표 이상
+  let enhancedQuantCount = 0;
+
+  for (let i = 0; i < splitNotes.length; i++) {
+    const note = splitNotes[i];
+    if (note.isRest) continue;
+    if (note.slotCount >= 4) continue; // 4슬롯 이상은 이미 안정적
+
+    // 3슬롯 → 4슬롯 (점4분음표 → 4분음표)
+    if (note.slotCount === 3) {
+      splitNotes[i] = {
+        ...note,
+        slotCount: 4,
+        duration: slotCountToDuration(4)
+      };
+      enhancedQuantCount++;
+    }
+    // 1슬롯 → 2슬롯 (너무 짧은 음표 보정)
+    else if (note.slotCount === 1) {
+      splitNotes[i] = {
+        ...note,
+        slotCount: 2,
+        duration: slotCountToDuration(2)
+      };
+      enhancedQuantCount++;
+    }
+  }
+
+  if (enhancedQuantCount > 0) {
+    console.log(`[Phase 116] Enhanced Duration Quantization: ${enhancedQuantCount}개 조정`);
+  }
+  */
+
+  // ========================================
   // Phase 76: Two-Pass Gap Recovery - 비활성화
   // ========================================
   // 복구된 음표의 품질이 낮아 정확도를 저하시킴 (61.7% → 56.4%)
