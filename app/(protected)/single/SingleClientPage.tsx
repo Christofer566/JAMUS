@@ -43,34 +43,40 @@ function convertSupabaseSongToSections(song: SongWithMusicData): SongSection[] {
 
     const sections: SongSection[] = [];
 
-    // Intro
+    // Intro - structure_data.introMeasures 기준으로 마디 수 제한
     if (chordData.intro && structureData.introMeasures > 0) {
+        const introChords = chordData.intro.slice(0, structureData.introMeasures);
         sections.push({
             id: 'intro',
             label: 'Intro',
             isJamSection: false,
-            measures: chordData.intro.map(chord => ({ chord }))
+            measures: introChords.map(chord => ({ chord }))
         });
+        console.log(`[Single] Intro: ${introChords.length}마디 (structure: ${structureData.introMeasures}, chords: ${chordData.intro.length})`);
     }
 
-    // Chorus (JAM 구간)
+    // Chorus (JAM 구간) - structure_data.chorusMeasures 기준
     if (chordData.chorus && structureData.chorusMeasures && structureData.chorusMeasures > 0) {
+        const chorusChords = chordData.chorus.slice(0, structureData.chorusMeasures);
         sections.push({
             id: 'chorus',
             label: 'Chorus',
             isJamSection: true,
-            measures: chordData.chorus.map(chord => ({ chord }))
+            measures: chorusChords.map(chord => ({ chord }))
         });
+        console.log(`[Single] Chorus: ${chorusChords.length}마디 (structure: ${structureData.chorusMeasures}, chords: ${chordData.chorus.length})`);
     }
 
-    // Outro
+    // Outro - structure_data.outroMeasures 기준으로 마디 수 제한
     if (chordData.outro && structureData.outroMeasures > 0) {
+        const outroChords = chordData.outro.slice(0, structureData.outroMeasures);
         sections.push({
             id: 'outro',
             label: 'Outro',
             isJamSection: false,
-            measures: chordData.outro.map(chord => ({ chord }))
+            measures: outroChords.map(chord => ({ chord }))
         });
+        console.log(`[Single] Outro: ${outroChords.length}마디 (structure: ${structureData.outroMeasures}, chords: ${chordData.outro.length})`);
     }
 
     return sections;
@@ -607,9 +613,9 @@ export default function SingleClientPage({ initialSongs }: SingleClientPageProps
             setRecording(firstSegment.blob, recorder.recordingRange, 0, inputInstrument, outputInstrument);
         }
 
-        // Feedback 페이지로 이동
-        router.push('/single/feedback');
-    }, [recorder, showToast, router, setRecording, inputInstrument, outputInstrument]);
+        // Feedback 페이지로 이동 (songId 전달)
+        router.push(`/single/feedback?songId=${songId}`);
+    }, [recorder, showToast, router, setRecording, inputInstrument, outputInstrument, songId]);
 
     // ==========================================
     // START JAM (R키) 플로우 - AudioContext 기반 카운트다운
@@ -945,9 +951,9 @@ export default function SingleClientPage({ initialSongs }: SingleClientPageProps
             setRecording(firstSegment.blob, recorder.recordingRange, 0, inputInstrument, outputInstrument);
         }
 
-        // Feedback 페이지로 이동
-        router.push('/single/feedback');
-    }, [router, recorder, setRecording, inputInstrument, outputInstrument]);
+        // Feedback 페이지로 이동 (songId 전달)
+        router.push(`/single/feedback?songId=${songId}`);
+    }, [router, recorder, setRecording, inputInstrument, outputInstrument, songId]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden">

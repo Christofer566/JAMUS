@@ -2040,7 +2040,8 @@ export function convertToNotes(frames: PitchFrame[], bpm: number, key?: string):
 export function generateSuggestedRanges(
   frames: PitchFrame[],
   existingNotes: NoteData[],
-  bpm: number
+  bpm: number,
+  startMeasure: number = 0
 ): SuggestedRange[] {
   if (frames.length === 0) return [];
 
@@ -2084,14 +2085,15 @@ export function generateSuggestedRanges(
     }
   }
 
-  // 기존 음표가 차지하는 슬롯 마킹
+  // 기존 음표가 차지하는 슬롯 마킹 (상대 인덱스로 변환하여 비교)
   const occupiedSlots = new Set<string>();
   existingNotes.filter(n => !n.isRest).forEach(note => {
     for (let s = 0; s < note.slotCount; s++) {
       const slot = note.slotIndex + s;
-      const measure = note.measureIndex + Math.floor(slot / SLOTS_PER_MEASURE);
+      // note.measureIndex는 전역 인덱스이므로 startMeasure를 빼서 상대 인덱스로 변환
+      const relativeMeasure = (note.measureIndex - startMeasure) + Math.floor(slot / SLOTS_PER_MEASURE);
       const actualSlot = slot % SLOTS_PER_MEASURE;
-      occupiedSlots.add(`${measure}-${actualSlot}`);
+      occupiedSlots.add(`${relativeMeasure}-${actualSlot}`);
     }
   });
 
@@ -2110,7 +2112,7 @@ export function generateSuggestedRanges(
     if (occupiedSlots.has(slotKey)) {
       // 현재 범위가 있으면 종료
       if (currentRange && currentRange.slots.length >= 2) {
-        ranges.push(createRangeFromSlots(currentRange, existingNotes));
+        ranges.push(createRangeFromSlots(currentRange, existingNotes, startMeasure));
       }
       currentRange = null;
       continue;
@@ -2136,7 +2138,7 @@ export function generateSuggestedRanges(
       } else {
         // 연속 끊김 - 이전 범위 저장
         if (currentRange.slots.length >= 2) {
-          ranges.push(createRangeFromSlots(currentRange, existingNotes));
+          ranges.push(createRangeFromSlots(currentRange, existingNotes, startMeasure));
         }
         // 새 범위 시작
         currentRange = {
@@ -2150,20 +2152,25 @@ export function generateSuggestedRanges(
 
   // 마지막 범위 저장
   if (currentRange && currentRange.slots.length >= 2) {
-    ranges.push(createRangeFromSlots(currentRange, existingNotes));
+    ranges.push(createRangeFromSlots(currentRange, existingNotes, startMeasure));
   }
 
-  console.log(`[SmartGuide] Generated ${ranges.length} suggested ranges from ${slotConfidences.length} excluded slots`);
+  console.log(`[SmartGuide] Generated ${ranges.length} suggested ranges from ${slotConfidences.length} excluded slots (startMeasure: ${startMeasure})`);
+  if (ranges.length > 0) {
+    console.log('[SmartGuide] Ranges:', ranges.map(r => `m${r.measureIndex}:s${r.startSlot}-${r.endSlot}`).join(', '));
+  }
 
   return ranges;
 }
 
 /**
  * 슬롯 그룹에서 SuggestedRange 생성
+ * @param startMeasure - 녹음 시작 마디 (전역 인덱스로 변환용)
  */
 function createRangeFromSlots(
   group: { startSlot: number; measureIndex: number; slots: { measureIndex: number; slotIndex: number; hasFrameData: boolean; avgConf: number }[] },
-  existingNotes: NoteData[]
+  existingNotes: NoteData[],
+  startMeasure: number = 0
 ): SuggestedRange {
   const lastSlot = group.slots[group.slots.length - 1];
 
@@ -2184,7 +2191,7 @@ function createRangeFromSlots(
   return {
     startSlot: group.startSlot,
     endSlot: endSlotInMeasure,
-    measureIndex: group.measureIndex,
+    measureIndex: group.measureIndex + startMeasure,  // 전역 마디 인덱스로 변환
     suggestedPitch,
     avgConfidence: avgConf,
     hasFrameData,

@@ -110,11 +110,13 @@ export default function SingleScore({
         <div
           key={localIndex}
           data-testid={`recorded-measure-${globalMeasureIndex}`}
-          className={`relative flex flex-1 items-center justify-start transition-colors ${!isEditMode ? 'hover:bg-white/5' : ''}`}
+          className={`relative flex items-center justify-start transition-colors ${!isEditMode ? 'hover:bg-white/5' : ''}`}
           onClick={isEditMode ? undefined : handleMeasureClick(globalMeasureIndex)}
           style={{
             cursor: isEditMode ? 'default' : 'pointer',
             backgroundColor: isRecorded ? 'rgba(255, 123, 123, 0.15)' : 'transparent',
+            width: '25%', // 고정 너비 (한 줄에 4마디 기준)
+            flexShrink: 0,
           }}
         >
           <div className="absolute top-1 left-2 text-xs text-gray-400 font-mono font-medium z-10">{measureNumberStr}</div>
@@ -199,11 +201,12 @@ export default function SingleScore({
                 </div>
                 )}
                 <div
-                  className="relative z-20 flex h-full w-full"
+                  className="relative z-20 flex h-full w-full justify-start"
                   style={{ pointerEvents: isEditMode ? 'none' : 'auto' }}
                 >
                 {rowMeasures.map((measure, measureIndex) => renderMeasure(measure, rowStartIndex + measureIndex, hasNotesInRow))}
-                <div className="absolute right-0 top-0 bottom-0 w-1" style={{ backgroundColor: `${sectionColor}40` }} />
+                {/* 오른쪽 border: 마디 수에 따라 위치 결정 (1마디=25%, 2마디=50%, 3마디=75%, 4마디=100%) */}
+                <div className="absolute top-0 bottom-0 w-1" style={{ left: `${rowMeasures.length * 25}%`, backgroundColor: `${sectionColor}40` }} />
                 </div>
             </div>
             </div>

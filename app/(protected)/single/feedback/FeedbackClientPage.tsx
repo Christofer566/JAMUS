@@ -17,19 +17,66 @@ import { NoteData } from '@/types/note';
 import { GRADE_COLORS, GRADE_EMOJIS } from '@/types/feedback';
 import EditToolPanel from '@/components/single/feedback/EditToolPanel';
 import { ChevronRight } from 'lucide-react';
-import { DEFAULT_SONG } from '@/data/songs';
+import { SongSection, DEFAULT_SONG } from '@/data/songs';
 import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
 import { OutputInstrument } from '@/types/instrument';
 import { compareNotes, analyzeGap, logGapAnalysis } from '@/utils/noteComparison';
 import { uploadJamRecording, shareJam, getLatestUserJam } from '@/lib/jamStorage';
 import { GROUND_TRUTH_NOTES } from '@/utils/groundTruthNotes';
 import '@/utils/selfRefiningTest'; // Self-Refining Test 유틸리티 로드
+import { SongWithMusicData, TimeSignature } from '@/types/music';
 
-// 곡 데이터에서 가져오기
-const CURRENT_SONG = DEFAULT_SONG;
-const TEST_AUDIO_URLS = CURRENT_SONG.audioUrls;
-const songSections = CURRENT_SONG.sections;
-const SONG_META = CURRENT_SONG.meta;
+// Supabase 곡 데이터를 Feedback 형식으로 변환
+function convertSupabaseSongToSections(song: SongWithMusicData): SongSection[] {
+    const structureData = song.structure_data;
+    const chordData = song.chord_data;
+
+    if (!structureData || !chordData) {
+        console.warn('[Feedback] 곡 데이터 누락:', song.title);
+        return [];
+    }
+
+    const sections: SongSection[] = [];
+
+    // Intro
+    if (chordData.intro && structureData.introMeasures > 0) {
+        const introChords = chordData.intro.slice(0, structureData.introMeasures);
+        sections.push({
+            id: 'intro',
+            label: 'Intro',
+            isJamSection: false,
+            measures: introChords.map(chord => ({ chord }))
+        });
+    }
+
+    // Chorus (JAM 구간)
+    if (chordData.chorus && structureData.chorusMeasures && structureData.chorusMeasures > 0) {
+        const chorusChords = chordData.chorus.slice(0, structureData.chorusMeasures);
+        sections.push({
+            id: 'chorus',
+            label: 'Chorus',
+            isJamSection: true,
+            measures: chorusChords.map(chord => ({ chord }))
+        });
+    }
+
+    // Outro
+    if (chordData.outro && structureData.outroMeasures > 0) {
+        const outroChords = chordData.outro.slice(0, structureData.outroMeasures);
+        sections.push({
+            id: 'outro',
+            label: 'Outro',
+            isJamSection: false,
+            measures: outroChords.map(chord => ({ chord }))
+        });
+    }
+
+    return sections;
+}
+
+interface FeedbackClientPageProps {
+    initialSongs: SongWithMusicData[];
+}
 
 const calculateMeasureDuration = (bpm: number, timeSignature: string): number => {
     const [beatsPerMeasure] = timeSignature.split('/').map(Number);
@@ -67,10 +114,55 @@ function shiftPitch(pitch: string, direction: 'up' | 'down'): string | null {
     return `${NOTE_ORDER[noteIndex]}${octave}`;
 }
 
-export default function FeedbackClientPage() {
+export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { showToast } = useToast();
+
+    // URL에서 songId 가져오기
+    const songId = searchParams?.get('songId') || 'autumn-leaves';
+
+    // songId로 곡 찾기
+    const currentSong = useMemo(() => {
+        const song = initialSongs.find(s => {
+            const titleSlug = s.title.toLowerCase().replace(/\s+/g, '-');
+            return titleSlug === songId || s.id === songId;
+        });
+        if (!song && initialSongs.length > 0) {
+            console.warn(`[Feedback] 곡을 찾을 수 없음: ${songId}, 첫번째 곡 사용`);
+            return initialSongs[0];
+        }
+        return song || null;
+    }, [songId, initialSongs]);
+
+    // 곡 메타데이터
+    const SONG_META = useMemo(() => {
+        if (!currentSong) {
+            return DEFAULT_SONG.meta;
+        }
+        return {
+            id: currentSong.id,
+            title: currentSong.title,
+            artist: currentSong.artist,
+            bpm: currentSong.bpm || 120,
+            time_signature: (currentSong.time_signature || '4/4') as TimeSignature,
+            key: (currentSong as any).key || 'Gm', // Supabase 곡의 key 필드 사용
+        };
+    }, [currentSong]);
+
+    // 곡 섹션
+    const songSections = useMemo(() => {
+        if (!currentSong) return DEFAULT_SONG.sections;
+        return convertSupabaseSongToSections(currentSong);
+    }, [currentSong]);
+
+    // 오디오 URL
+    const TEST_AUDIO_URLS = useMemo(() => {
+        if (!currentSong?.audio_urls) {
+            return DEFAULT_SONG.audioUrls;
+        }
+        return currentSong.audio_urls;
+    }, [currentSong]);
     const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
@@ -921,8 +1013,8 @@ export default function FeedbackClientPage() {
                 recordingDuration: storedRecordingRange.endTime - storedRecordingRange.startTime
             });
 
-            // Smart Guide: SuggestedRanges 생성
-            const ranges = generateSuggestedRanges(pitchFrames, allNotes, SONG_META.bpm);
+            // Smart Guide: SuggestedRanges 생성 (startMeasure를 전달하여 전역 마디 인덱스로 변환)
+            const ranges = generateSuggestedRanges(pitchFrames, allNotes, SONG_META.bpm, storedRecordingRange.startMeasure);
             setSuggestedRanges(ranges);
             console.log('[Smart Guide] SuggestedRanges 생성:', {
                 totalRanges: ranges.length,
