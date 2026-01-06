@@ -344,12 +344,7 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
    * 일시정지 (더 안전하게)
    */
   const pause = useCallback(() => {
-    console.log('🎵 [WebAudio.pause] 호출됨, isPlaying:', isPlayingRef.current);
-
-    if (!audioContextRef.current) {
-      console.log('🎵 [WebAudio.pause] audioContext 없음');
-      return;
-    }
+    if (!audioContextRef.current) return;
 
     if (isPlayingRef.current) {
       const elapsed = audioContextRef.current.currentTime - startTimeRef.current;
@@ -361,16 +356,14 @@ export function useWebAudio(options: UseWebAudioOptions = {}): UseWebAudioReturn
         sourceNodeRef.current.onended = null;
         sourceNodeRef.current.stop();
         sourceNodeRef.current.disconnect();
-        console.log('🎵 [WebAudio.pause] sourceNode 정지됨');
       } catch {
-        console.log('🎵 [WebAudio.pause] sourceNode 이미 정지됨');
+        // 이미 정지됨
       }
       sourceNodeRef.current = null;
     }
 
     setIsPlaying(false);
     isPlayingRef.current = false;
-    console.log('🎵 [WebAudio.pause] 완료');
   }, []);
 
   /**

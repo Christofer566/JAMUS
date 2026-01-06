@@ -224,17 +224,18 @@ export function frequencyToNote(hz: number, octaveShift: number = 0): string {
   const noteIndex = ((midiNote % 12) + 12) % 12;
 
   // ========================================
-  // Phase 53/66: 저음역대 옥타브 가드레일 (200Hz 설정 복구)
-  // 200Hz 이하(G3 영역)에서 옥타브 4 이상은 배음으로 간주하여 강제 하향
+  // Phase 53/66: 저음역대 옥타브 가드레일 (완화)
+  // Phase 123: 150Hz 이하로 조건 완화 (기존 200Hz → 150Hz)
+  // 150Hz 이하(D3 영역)에서 옥타브 5 이상은 배음으로 간주하여 강제 하향
   // ========================================
-  const LOW_FREQ_OCTAVE_GUARDRAIL = 200;
-  if (hz <= LOW_FREQ_OCTAVE_GUARDRAIL && octave >= 4) {
+  const LOW_FREQ_OCTAVE_GUARDRAIL = 150;
+  if (hz <= LOW_FREQ_OCTAVE_GUARDRAIL && octave >= 5) {
     octave = octave - 1;
   }
 
-  // Phase 42: 옥타브 5 이상 강제 하향
-  // 성민님 음역대(옥타브 2-4) 기준, 옥타브 5 이상은 배음일 가능성 높음
-  if (octave >= 5) {
+  // Phase 42/123: 옥타브 6 이상 강제 하향 (기존 5 → 6으로 완화)
+  // 일반 음역대(옥타브 3-5) 지원, 옥타브 6 이상만 배음으로 간주
+  if (octave >= 6) {
     octave = octave - 1;
   }
 

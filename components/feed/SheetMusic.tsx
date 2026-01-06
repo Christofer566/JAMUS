@@ -41,29 +41,10 @@ export default function SheetMusic({
   const currentSectionRef = useRef<HTMLDivElement>(null);
   const currentRowRef = useRef<HTMLDivElement>(null);
 
-  // DEBUG: sections 구조 확인 (첫 렌더링 시에만)
-  useEffect(() => {
-    console.log('🎼 [SheetMusic] sections 구조:', {
-      totalSections: sections.length,
-      sections: sections.map((s, idx) => ({
-        index: idx,
-        id: s.id,
-        label: s.label,
-        user: s.user,
-        measuresCount: s.measures.length,
-        // 첫 4마디의 코드 데이터 샘플
-        sampleChords: s.measures.slice(0, 4).map(m => m.chord),
-      }))
-    });
-  }, [sections.length]);
-
   // 현재 줄 인덱스 계산 (4마디 = 1줄)
   const currentRowIndex = useMemo(() => {
     return Math.floor(currentMeasure / 4);
   }, [currentMeasure]);
-
-  // DEBUG: currentMeasure 변경 로그
-  console.log('🎼 [SheetMusic] currentMeasure:', currentMeasure, 'sectionIndex:', currentSectionIndex, 'rowIndex:', currentRowIndex, 'measureProgress:', measureProgress.toFixed(2));
 
   const [likes, setLikes] = useState<Record<string, boolean>>({
     "section-A": false,
@@ -134,14 +115,6 @@ export default function SheetMusic({
 
       // 현재 줄이 화면 중앙에 오도록 스크롤
       const scrollPosition = rowTop - containerHeight / 2 + rowHeight / 2;
-
-      console.log('📜 [SheetMusic] 자동 스크롤:', {
-        currentSectionIndex,
-        currentRowIndex,
-        rowTop,
-        scrollPosition: Math.max(0, scrollPosition)
-      });
-
       container.scrollTo({
         top: Math.max(0, scrollPosition),
         behavior: "smooth",
@@ -239,15 +212,6 @@ export default function SheetMusic({
       // 마디 번호 (01, 02, 03... 형식)
       const measureNumber = getGlobalMeasureNumber(sectionIdx, localIndex);
       const measureNumberStr = measureNumber.toString().padStart(2, '0');
-
-      // DEBUG: 첫 8마디만 로그 (코드 데이터 구조 확인)
-      if (globalMeasureIndex < 8) {
-        console.log(`🎵 [renderMeasure] 마디 ${globalMeasureIndex}:`, {
-          chord: measure.chord,
-          type: typeof measure.chord,
-          measure: measure
-        });
-      }
 
       return (
         <div

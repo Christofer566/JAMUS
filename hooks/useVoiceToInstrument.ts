@@ -140,9 +140,8 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
       const secondsPerBeat = 60 / bpm;
       const now = Tone.now();
 
-      // 수직선과 Tone.js 동기화를 위한 지연 (2.5슬롯 = 0.625박자)
-      // BPM 120 기준: 2.5 / 4 * 0.5 = 0.3125초
-      const SYNC_DELAY_SLOTS = 2.5;
+      // 수직선과 Tone.js 동기화 (-1슬롯: 소리를 1슬롯 앞당김)
+      const SYNC_DELAY_SLOTS = -1;
       const SYNC_DELAY_SEC = (SYNC_DELAY_SLOTS / 4) * secondsPerBeat;
 
       // startTime(초)을 beat으로 변환
@@ -249,13 +248,11 @@ export function useVoiceToInstrument(): UseVoiceToInstrumentReturn {
    * 리소스 정리
    */
   const cleanup = useCallback(() => {
-    console.log('🎹 [Tone.js] 리소스 정리');
-
     if (synthRef.current) {
       try {
         synthRef.current.dispose();
       } catch (e) {
-        console.log('🎹 [Tone.js] 정리 중 에러 (무시):', e);
+        // 무시
       }
       synthRef.current = null;
     }

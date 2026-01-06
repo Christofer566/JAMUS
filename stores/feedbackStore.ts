@@ -1042,9 +1042,20 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     };
 
     console.log('[Store] Delete complete, remaining non-rest notes:', newNotes.filter(n => !n.isRest).length);
+
+    // 삭제된 음표의 이전 음표를 선택 (수직선이 처음으로 돌아가지 않도록)
+    const minDeletedIndex = Math.min(...state.selectedNoteIndices);
+    let prevNoteIndex = -1;
+    for (let i = minDeletedIndex - 1; i >= 0; i--) {
+      if (!newNotes[i].isRest) {
+        prevNoteIndex = i;
+        break;
+      }
+    }
+
     return {
       editedNotes: newNotes,
-      selectedNoteIndices: [],
+      selectedNoteIndices: prevNoteIndex >= 0 ? [prevNoteIndex] : [],
       undoStack: [...state.undoStack.slice(-MAX_UNDO_STEPS + 1), action],
       redoStack: []
     };

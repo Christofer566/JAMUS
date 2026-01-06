@@ -21,6 +21,7 @@ import { DEFAULT_SONG } from '@/data/songs';
 import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
 import { OutputInstrument } from '@/types/instrument';
 import { compareNotes, analyzeGap, logGapAnalysis } from '@/utils/noteComparison';
+import { uploadJamRecording, shareJam, getLatestUserJam } from '@/lib/jamStorage';
 import { GROUND_TRUTH_NOTES } from '@/utils/groundTruthNotes';
 import '@/utils/selfRefiningTest'; // Self-Refining Test 유틸리티 로드
 
@@ -80,6 +81,9 @@ export default function FeedbackClientPage() {
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [isEditConfirmed, setIsEditConfirmed] = useState(false);  // 편집 완료 후 잠금
     const [rawRecordingMode, setRawRecordingMode] = useState(false);  // Phase 78: 녹음 듣기 모드
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);  // Task 7: 업로드 진행률
+    const [uploadedJamId, setUploadedJamId] = useState<string | null>(null);  // Task 8: 업로드된 JAM ID
+    const [isSharing, setIsSharing] = useState(false);  // Task 8: 공유 중 상태
 
     // 정확도 표시 State
     const [accuracyStats, setAccuracyStats] = useState<{
@@ -697,9 +701,9 @@ export default function FeedbackClientPage() {
 
             // measureIndex는 절대 마디 번호 → startMeasure를 빼서 상대 인덱스로 변환
             const relativeMeasureIndex = selectedNote.measureIndex - storedRecordingRange.startMeasure;
-            // +3.5슬롯 오프셋 보정
+            // 슬롯 시작 위치 기준 (오프셋 제거)
             const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
-                                        ((selectedNote.slotIndex + 3.5) * slotDurationSec);
+                                        (selectedNote.slotIndex * slotDurationSec);
             const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
             handleTimeChange(absoluteTime);
         }
@@ -1149,9 +1153,9 @@ export default function FeedbackClientPage() {
                                     const slotDurationSec = measureDurationSec / 16;
                                     // measureIndex는 절대 마디 번호 → 상대 인덱스로 변환
                                     const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
-                                    // +3.5슬롯 오프셋 보정
+                                    // 슬롯 시작 위치 기준 (오프셋 제거)
                                     const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
-                                                                ((note.slotIndex + 3.5) * slotDurationSec);
+                                                                (note.slotIndex * slotDurationSec);
                                     const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
                                     handleTimeChange(absoluteTime);
                                 }
@@ -1178,9 +1182,9 @@ export default function FeedbackClientPage() {
                                     const slotDurationSec = measureDurationSec / 16;
                                     // measureIndex는 절대 마디 번호 → 상대 인덱스로 변환
                                     const relativeMeasureIndex = note.measureIndex - storedRecordingRange.startMeasure;
-                                    // +3.5슬롯 오프셋 보정
+                                    // 슬롯 시작 위치 기준 (오프셋 제거)
                                     const noteTimeInRecording = (relativeMeasureIndex * measureDurationSec) +
-                                                                ((note.slotIndex + 3.5) * slotDurationSec);
+                                                                (note.slotIndex * slotDurationSec);
                                     const absoluteTime = storedRecordingRange.startTime + noteTimeInRecording;
                                     handleTimeChange(absoluteTime);
                                 }
@@ -1348,7 +1352,40 @@ export default function FeedbackClientPage() {
         router.back();
     }, [router]);
 
-    const handleShare = () => console.log('공유하기 클릭');
+    // Task 8: 공유하기 버튼 핸들러
+    const handleShare = useCallback(async () => {
+        // 편집 완료 전에는 공유 불가
+        if (!isEditConfirmed) {
+            showToast('warning', '편집을 완료한 후 공유할 수 있습니다');
+            return;
+        }
+
+        // 업로드된 JAM이 없으면 최근 JAM 조회
+        let jamIdToShare = uploadedJamId;
+        if (!jamIdToShare) {
+            const latestJam = await getLatestUserJam(SONG_META.id);
+            if (latestJam?.id) {
+                jamIdToShare = latestJam.id;
+            }
+        }
+
+        if (!jamIdToShare) {
+            showToast('error', '공유할 녹음이 없습니다');
+            return;
+        }
+
+        setIsSharing(true);
+        const result = await shareJam(jamIdToShare);
+        setIsSharing(false);
+
+        if (result.success) {
+            showToast('success', 'Feed에 공유되었습니다! 🎉');
+            router.push('/feed');
+        } else {
+            showToast('error', result.error || '공유에 실패했습니다');
+        }
+    }, [isEditConfirmed, uploadedJamId, showToast, router]);
+
     const handleReJam = () => router.push('/single');
 
     // 음표 선택 + 미리듣기 + 진행바 이동 (편집 모드에서만)
@@ -1517,8 +1554,67 @@ export default function FeedbackClientPage() {
             }
         });
 
+        // Task 7: 녹음 파일 Supabase Storage에 업로드
+        if (storedAudioBlob && storedRecordingRange) {
+            setUploadProgress(0);
+
+            // Task 8: 편집된 음표 데이터 추출 (쉼표 제외)
+            const cleanedNotes = getCleanedNotes();
+            const noteDataForSave = cleanedNotes
+                .filter((n: NoteData) => !n.isRest)
+                .map((n: NoteData) => ({
+                    pitch: n.pitch,
+                    beat: n.beat,
+                    duration: n.duration,
+                    measureIndex: n.measureIndex,
+                    slotIndex: n.slotIndex,
+                }));
+
+            uploadJamRecording({
+                songId: SONG_META.id,
+                audioBlob: storedAudioBlob,
+                startMeasure: storedRecordingRange.startMeasure,
+                endMeasure: storedRecordingRange.endMeasure,
+                startTime: storedRecordingRange.startTime,
+                endTime: storedRecordingRange.endTime,
+                bpm: SONG_META.bpm,
+                duration: storedRecordingRange.endTime - storedRecordingRange.startTime,
+                inputInstrument: storedInputInstrument,
+                outputInstrument: storedOutputInstrument,
+                noteData: noteDataForSave,  // Task 8: 음표 데이터 추가
+                onProgress: setUploadProgress,
+            }).then(uploadResult => {
+                setUploadProgress(null);
+                if (uploadResult.success && uploadResult.data) {
+                    console.log('🎵 [Task 7] 녹음 업로드 완료:', uploadResult.data);
+                    setUploadedJamId(uploadResult.data.id || null);  // Task 8: JAM ID 저장
+                    showToast('success', '녹음이 저장되었습니다');
+                } else {
+                    console.error('🎵 [Task 7] 녹음 업로드 실패:', uploadResult.error);
+                    showToast('error', uploadResult.error || '녹음 저장 실패');
+                }
+            });
+        }
+
         showToast('success', '편집이 확정되었습니다 (재편집 불가)');
-    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, initializeNotes, setEditMode, showToast, isEditConfirmed, saveFeedback]);
+    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, storedAudioBlob, storedInputInstrument, storedOutputInstrument, initializeNotes, setEditMode, showToast, isEditConfirmed, saveFeedback]);
+
+    // Task 7: 업로드 진행률 오버레이 컴포넌트
+    const UploadProgressOverlay = uploadProgress !== null ? (
+        <div className="fixed bottom-20 right-4 z-50 bg-[#1B1C26] border border-white/10 rounded-xl p-4 shadow-2xl min-w-[200px]">
+            <div className="flex items-center gap-3 mb-2">
+                <div className="w-4 h-4 border-2 border-[#7BA7FF] border-t-transparent rounded-full animate-spin" />
+                <span className="text-white text-sm font-medium">녹음 저장 중...</span>
+            </div>
+            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                <div
+                    className="h-full bg-[#7BA7FF] transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                />
+            </div>
+            <div className="text-right text-xs text-gray-400 mt-1">{uploadProgress}%</div>
+        </div>
+    ) : null;
 
     // AI 로딩 화면 (M-10: 피드백 로딩 또는 악기 변환 중)
     if (isFeedbackLoading || (conversionState.isConverting && storedOutputInstrument !== 'raw')) {
@@ -1838,7 +1934,17 @@ export default function FeedbackClientPage() {
 
                     {/* 영역 3: 버튼 - 별도 영역 */}
                     <div className="flex gap-4">
-                        <button onClick={handleShare} className="flex-1 bg-[#FF7B7B] text-white px-8 py-3 rounded-lg hover:opacity-90 transition-opacity">공유하기 (Feed)</button>
+                        <button
+                            onClick={handleShare}
+                            disabled={isSharing}
+                            className={`flex-1 px-8 py-3 rounded-lg transition-opacity ${
+                                isSharing
+                                    ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                                    : 'bg-[#FF7B7B] text-white hover:opacity-90'
+                            }`}
+                        >
+                            {isSharing ? '공유 중...' : '공유하기 (Feed)'}
+                        </button>
                         <button onClick={handleReJam} className="flex-1 border border-gray-600 text-gray-300 px-8 py-3 rounded-lg hover:bg-gray-700 transition-colors">Re-JAM</button>
                     </div>
 
@@ -1957,6 +2063,9 @@ export default function FeedbackClientPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Task 7: 업로드 진행률 오버레이 */}
+            {UploadProgressOverlay}
         </div>
     );
 }

@@ -771,7 +771,14 @@ export function useRecorder(options: UseRecorderOptions = {}): UseRecorderReturn
 
             // 블롭 내 오프셋 계산 (마커 기반 - preroll 없음)
             // fromTime - seg.startTime: 곡 시간 내 오프셋
-            const offset = Math.max(0, fromTime - seg.startTime);
+            // Phase 122: 동적 동기화 보정
+            // - 1차 녹음: AudioContext 초기화 지연으로 1.5슬롯 보정 필요
+            // - 2차+ 녹음: AudioContext가 이미 running 상태라 1슬롯 보정
+            const segmentIndex = segments.findIndex(s => s.id === seg.id);
+            const SYNC_OFFSET_SEC = segmentIndex === 0 ? 0.1875 : 0.125;  // 1.5슬롯 vs 1슬롯
+            const offset = Math.max(0, fromTime - seg.startTime + SYNC_OFFSET_SEC);
+
+            console.log('🎤 [Sync] 세그먼트별 오프셋:', { segmentIndex, syncOffset: SYNC_OFFSET_SEC });
 
             // 새 source node 생성
             const source = context.createBufferSource();

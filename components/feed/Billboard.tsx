@@ -68,11 +68,6 @@ const createSections = (
   const chorusLines = Math.ceil(chorusMeasures / 4);
   const outroLines = Math.ceil(outroMeasures / 4);
 
-  console.log('🎵 [createSections] Structure:', {
-    introMeasures, chorusMeasures, outroMeasures,
-    introLines, chorusLines, outroLines,
-    totalLines: chordProgression.length
-  });
 
   let lineIndex = 0;
 
@@ -140,13 +135,6 @@ const createSections = (
     color: "#7BA7FF",
     measures: outroMeasuresList,
   });
-
-  console.log('🎵 [createSections] Created sections:', sections.map(s => ({
-    label: s.label,
-    measures: s.measures.length,
-    user: s.user,
-    color: s.color,  // 색상 확인 추가
-  })));
 
   return sections;
 };

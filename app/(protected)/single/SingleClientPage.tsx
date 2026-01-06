@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import SingleScore from '@/components/single/SingleScore';
 import SinglePlayerBar from '@/components/single/SinglePlayerBar';
@@ -11,26 +11,145 @@ import { useWebAudio } from '@/hooks/useWebAudio';
 import { useMetronome } from '@/hooks/useMetronome';
 import { useRecorder } from '@/hooks/useRecorder';
 import { useToast } from '@/contexts/ToastContext';
-import { uploadJamRecording } from '@/lib/jamStorage';
 import { getSharedAudioContext, resumeAudioContext } from '@/hooks/useAudioContext';
 import { useRecordingStore } from '@/stores/recordingStore';
-import { DEFAULT_SONG } from '@/data/songs';
+import { SongSection } from '@/data/songs';
+import { SongWithMusicData, StructureData, ChordData, AudioUrls, TimeSignature } from '@/types/music';
 import { InputInstrument, OutputInstrument, DEFAULT_INPUT_INSTRUMENT, DEFAULT_OUTPUT_INSTRUMENT } from '@/types/instrument';
-
-// 곡 데이터에서 가져오기
-const CURRENT_SONG = DEFAULT_SONG;
-const TEST_AUDIO_URLS = CURRENT_SONG.audioUrls;
-const songSections = CURRENT_SONG.sections;
-const SONG_META = CURRENT_SONG.meta;
 
 const calculateMeasureDuration = (bpm: number, timeSignature: string): number => {
     const [beatsPerMeasure] = timeSignature.split('/').map(Number);
     return (60 / bpm) * beatsPerMeasure;
 };
 
-export default function SingleClientPage() {
+// Supabase 곡 데이터를 Single 형식으로 변환
+interface SingleSongMeta {
+    id: string;
+    title: string;
+    artist: string;
+    bpm: number;
+    time_signature: TimeSignature;
+    key: string;
+}
+
+function convertSupabaseSongToSections(song: SongWithMusicData): SongSection[] {
+    const structureData = song.structure_data;
+    const chordData = song.chord_data;
+
+    if (!structureData || !chordData) {
+        console.warn('[Single] 곡 데이터 누락:', song.title);
+        return [];
+    }
+
+    const sections: SongSection[] = [];
+
+    // Intro
+    if (chordData.intro && structureData.introMeasures > 0) {
+        sections.push({
+            id: 'intro',
+            label: 'Intro',
+            isJamSection: false,
+            measures: chordData.intro.map(chord => ({ chord }))
+        });
+    }
+
+    // Chorus (JAM 구간)
+    if (chordData.chorus && structureData.chorusMeasures && structureData.chorusMeasures > 0) {
+        sections.push({
+            id: 'chorus',
+            label: 'Chorus',
+            isJamSection: true,
+            measures: chordData.chorus.map(chord => ({ chord }))
+        });
+    }
+
+    // Outro
+    if (chordData.outro && structureData.outroMeasures > 0) {
+        sections.push({
+            id: 'outro',
+            label: 'Outro',
+            isJamSection: false,
+            measures: chordData.outro.map(chord => ({ chord }))
+        });
+    }
+
+    return sections;
+}
+
+interface SingleClientPageProps {
+    initialSongs: SongWithMusicData[];
+}
+
+export default function SingleClientPage({ initialSongs }: SingleClientPageProps) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { showToast } = useToast();
+
+    // URL에서 songId와 BPM 가져오기 (BPM은 Feed에서 전달됨)
+    const songId = searchParams?.get('songId') || 'autumn-leaves';
+    const bpmFromQuery = searchParams?.get('bpm');
+
+    // Supabase에서 가져온 곡 데이터 사용
+    const currentSong = useMemo(() => {
+        // songId로 매칭 (title 기반: "autumn-leaves" → "Autumn Leaves")
+        const song = initialSongs.find(s => {
+            const titleSlug = s.title?.toLowerCase().replace(/\s+/g, '-');
+            return titleSlug === songId || s.id === songId;
+        });
+
+        if (!song) {
+            console.warn(`[Single] 곡을 찾을 수 없음: ${songId}, 첫번째 곡 사용`);
+            return initialSongs[0] || null;
+        }
+        console.log(`[Single] 곡 로드 (Supabase): ${song.title}`, {
+            bpm: song.bpm,
+            structure: song.structure_data,
+            chords: song.chord_data ? 'exists' : 'missing'
+        });
+        return song;
+    }, [songId, initialSongs]);
+
+    // 곡 메타데이터 (BPM은 query parameter 우선)
+    const SONG_META: SingleSongMeta = useMemo(() => {
+        if (!currentSong) {
+            return { id: '', title: '', artist: '', bpm: 120, time_signature: '4/4' as TimeSignature, key: 'C' };
+        }
+
+        const baseBpm = currentSong.bpm || 120;
+        let finalBpm = baseBpm;
+
+        if (bpmFromQuery) {
+            const parsedBpm = parseInt(bpmFromQuery, 10);
+            if (!isNaN(parsedBpm) && parsedBpm > 0) {
+                console.log(`[Single] BPM 오버라이드: ${baseBpm} → ${parsedBpm} (from Feed)`);
+                finalBpm = parsedBpm;
+            }
+        }
+
+        return {
+            id: currentSong.id,
+            title: currentSong.title,
+            artist: currentSong.artist,
+            bpm: finalBpm,
+            time_signature: currentSong.time_signature || '4/4',
+            key: 'C' // Supabase에서 key 필드 추가 필요
+        };
+    }, [currentSong, bpmFromQuery]);
+
+    // Supabase 데이터를 sections 형식으로 변환
+    const songSections = useMemo(() => {
+        if (!currentSong) return [];
+        return convertSupabaseSongToSections(currentSong);
+    }, [currentSong]);
+
+    // 오디오 URL
+    const TEST_AUDIO_URLS: AudioUrls = useMemo(() => {
+        if (!currentSong?.audio_urls) {
+            return { intro: '', chorus: '', outro: '' };
+        }
+        return currentSong.audio_urls;
+    }, [currentSong]);
+
     const [selectedMeasures, setSelectedMeasures] = useState<{ start: number; end: number } | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
@@ -62,8 +181,8 @@ export default function SingleClientPage() {
 
     const metronome = useMetronome({ bpm: SONG_META.bpm });
 
-    const measureDuration = useMemo(() => calculateMeasureDuration(SONG_META.bpm, SONG_META.time_signature), []);
-    const totalMeasures = useMemo(() => songSections.reduce((acc, s) => acc + s.measures.length, 0), []);
+    const measureDuration = useMemo(() => calculateMeasureDuration(SONG_META.bpm, SONG_META.time_signature), [SONG_META.bpm, SONG_META.time_signature]);
+    const totalMeasures = useMemo(() => songSections.reduce((acc, s) => acc + s.measures.length, 0), [songSections]);
     const duration = webAudio.isReady ? webAudio.duration : totalMeasures * measureDuration;
 
     const { introEndTime, jamSectionRange } = useMemo(() => {
@@ -94,7 +213,7 @@ export default function SingleClientPage() {
                 endMeasure: jamEndMeasure
             }
         };
-    }, [measureDuration]);
+    }, [measureDuration, songSections]);
 
     const playerBarSections = useMemo(() => {
         let accumulatedMeasures = 0;
@@ -104,7 +223,7 @@ export default function SingleClientPage() {
             const endTime = accumulatedMeasures * measureDuration;
             return { id: section.id, label: section.label, startTime, endTime, isJamSection: section.isJamSection };
         });
-    }, [measureDuration]);
+    }, [measureDuration, songSections]);
 
     const currentSectionIndex = useMemo(() => {
         let accumulatedTime = 0;
@@ -113,7 +232,7 @@ export default function SingleClientPage() {
             accumulatedTime += songSections[i].measures.length * measureDuration;
         }
         return songSections.length - 1;
-    }, [currentTime, measureDuration]);
+    }, [currentTime, measureDuration, songSections]);
 
     const currentMeasureInSection = useMemo(() => {
         let accumulatedTime = 0;
@@ -121,7 +240,7 @@ export default function SingleClientPage() {
             accumulatedTime += songSections[i].measures.length * measureDuration;
         }
         return Math.floor((currentTime - accumulatedTime) / measureDuration);
-    }, [currentTime, currentSectionIndex, measureDuration]);
+    }, [currentTime, currentSectionIndex, measureDuration, songSections]);
 
     const measureProgress = useMemo(() => {
         const timeInSection = currentTime - playerBarSections[currentSectionIndex].startTime;
@@ -135,7 +254,7 @@ export default function SingleClientPage() {
             total += songSections[i].measures.length;
         }
         return total + currentMeasureInSection + 1;
-    }, [currentSectionIndex, currentMeasureInSection]);
+    }, [currentSectionIndex, currentMeasureInSection, songSections]);
 
     // 현재 마디의 시작 시간을 계산 (마디 경계에 맞춤)
     const currentMeasureStartTime = useMemo(() => {
@@ -153,7 +272,11 @@ export default function SingleClientPage() {
         setSelectedMeasures(selection);
     }, [isJamming, showToast]);
 
-    useEffect(() => { webAudioRef.current.loadAudio(TEST_AUDIO_URLS); }, []);
+    // 곡 변경 시 오디오 다시 로드
+    useEffect(() => {
+        console.log(`[Single] 오디오 로드: ${SONG_META.title}`);
+        webAudioRef.current.loadAudio(TEST_AUDIO_URLS);
+    }, [TEST_AUDIO_URLS, SONG_META.title]);
 
     // 컴포넌트 마운트 시 이전 녹음 데이터 초기화 (Feedback 페이지에서 돌아올 때)
     useEffect(() => {

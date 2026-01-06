@@ -46,7 +46,9 @@
       "Bash(git -C C:/JAMUS diff utils/noteComparison.ts)",
       "Bash(dir \"C:\\\\JAMUS\\\\src\" /s /b)",
       "Bash(ls:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(xxd:*)",
+      "Bash(iconv:*)"
     ],
     "deny": [],
     "ask": []

@@ -11,6 +11,7 @@ import { useStageContext } from '@/contexts/StageContext';
 import { SongWithMusicData, ProgressSection, StructureData, ChordData } from '@/types/music';
 import { generateProgressSections, calculateMeasureDuration, getMeasureStartTime, generateFeedChordProgression } from '@/utils/musicCalculations';
 import { useWebAudio } from '@/hooks/useWebAudio';
+import { useVoiceToInstrument } from '@/hooks/useVoiceToInstrument';
 
 // 🧪 임시 테스트용 audio_urls (Autumn Leaves)
 const TEST_AUDIO_URLS = {
@@ -19,8 +20,37 @@ const TEST_AUDIO_URLS = {
   outro: "https://hzgfbmdqmhjiomwrkukw.supabase.co/storage/v1/object/public/jamus-audio/autumn-leaves/outro.mp3"
 };
 
+// Task 8: 음표 데이터 타입 (Tone.js 재생용)
+interface JamNoteData {
+  pitch: string;
+  beat: number;
+  duration: string;
+  measureIndex: number;
+  slotIndex: number;
+}
+
+// Task 8: 공유된 JAM 타입
+interface PublicJam {
+  id: string;
+  song_id: string;
+  user_id: string;
+  audio_url: string;
+  start_measure: number;
+  end_measure: number;
+  duration?: number;
+  is_public: boolean;
+  shared_at: string;
+  output_instrument?: string;
+  note_data?: JamNoteData[];
+  profile: {
+    nickname: string | null;
+    avatar_url: string | null;
+  };
+}
+
 interface FeedClientPageProps {
   initialSongs: any[];
+  publicJams?: PublicJam[];
 }
 
 // 🎵 JAM 세트 데이터 (4명씩 그룹)
@@ -92,18 +122,7 @@ const getPerformersForJamSet = (
   const outroStart = chorusDEnd;
   const outroEnd = outroStart + outroMeasures * measureDuration;
 
-  console.log('🎵 [getPerformersForJamSet] 구조:', {
-    introMeasures, chorusMeasures, outroMeasures,
-    measureDuration: measureDuration.toFixed(2) + 's',
-    sections: {
-      intro: `0 - ${introEnd.toFixed(1)}s`,
-      A: `${chorusAStart.toFixed(1)} - ${chorusAEnd.toFixed(1)}s`,
-      B: `${chorusBStart.toFixed(1)} - ${chorusBEnd.toFixed(1)}s`,
-      C: `${chorusCStart.toFixed(1)} - ${chorusCEnd.toFixed(1)}s`,
-      D: `${chorusDStart.toFixed(1)} - ${chorusDEnd.toFixed(1)}s`,
-      outro: `${outroStart.toFixed(1)} - ${outroEnd.toFixed(1)}s`,
-    }
-  });
+  // 로그 제거 (초기화 시 한번만 필요)
 
   return [
     // Intro: JAMUS
@@ -121,7 +140,7 @@ const getPerformersForJamSet = (
   ];
 };
 
-export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
+export default function FeedClientPage({ initialSongs, publicJams = [] }: FeedClientPageProps) {
   const router = useRouter();
   const [currentJamSetIndex, setCurrentJamSetIndex] = useState(0);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
@@ -135,18 +154,17 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Task 8: JAM 오디오 재생용 ref
+  const jamAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentJamPerformerRef = useRef<string | null>(null);
+
   // 🧪 임시 테스트: useWebAudio 훅
   const webAudio = useWebAudio();
 
-  // 🧪 임시 테스트: 상태 로그
-  useEffect(() => {
-    console.log('🧪 [WebAudio Test] State:', {
-      isLoading: webAudio.isLoading,
-      isReady: webAudio.isReady,
-      duration: webAudio.duration.toFixed(2) + 's',
-      currentTime: webAudio.currentTime.toFixed(2) + 's',
-    });
-  }, [webAudio.isLoading, webAudio.isReady, webAudio.duration, webAudio.currentTime]);
+  // Task 8: Tone.js 훅 (악기 변환 재생용)
+  const voiceToInstrument = useVoiceToInstrument();
+
+  // 🧪 WebAudio 상태 로그 (제거 - 너무 자주 찍힘)
 
   // 🧪 useWebAudio currentTime → UI currentTime 동기화
   useEffect(() => {
@@ -191,6 +209,34 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   const currentJamSet = JAM_SETS[currentJamSetIndex] || JAM_SETS[0];
   const currentSong = songs[currentSongIndex];
 
+  // Task 8: 현재 곡에 해당하는 공유된 JAM 필터링
+  // song_id가 UUID인 경우와 문자열(title)인 경우 모두 처리
+  const currentSongJams = useMemo(() => {
+    if (!currentSong?.id || !publicJams.length) return [];
+
+    // UUID 또는 title로 매칭
+    const songId = currentSong.id;
+    const songTitle = currentSong.title?.toLowerCase().replace(/\s+/g, '-');
+
+    const matchedJams = publicJams.filter(jam => {
+      // UUID 매칭
+      if (jam.song_id === songId) return true;
+      // title 기반 매칭 (하위 호환성)
+      if (songTitle && jam.song_id?.toLowerCase().replace(/\s+/g, '-') === songTitle) return true;
+      return false;
+    });
+
+    console.log('🎵 [Feed] JAM 필터링:', {
+      currentSongId: songId,
+      currentSongTitle: songTitle,
+      publicJamsCount: publicJams.length,
+      publicJamsSongIds: publicJams.map(j => j.song_id),
+      matchedCount: matchedJams.length
+    });
+
+    return matchedJams;
+  }, [currentSong?.id, currentSong?.title, publicJams]);
+
   // 🎵 webAudio ref (useEffect 의존성에서 제외하기 위함)
   const webAudioRef = useRef(webAudio);
   webAudioRef.current = webAudio;
@@ -205,9 +251,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
     // 현재 곡의 audio_urls 가져오기 (없으면 테스트 URL 사용)
     const audioUrls = currentSong.audio_urls || TEST_AUDIO_URLS;
 
-    console.log('🎵 [WebAudio] 곡 변경 감지, 새 오디오 로드:', currentSong.title);
-    console.log('🎵 [WebAudio] Audio URLs:', audioUrls);
-    console.log('🎵 [WebAudio] isFirstMount:', isFirstMount.current);
+    console.log('🎵 [WebAudio] 곡 로드:', currentSong.title, 'BPM:', currentSong.bpm);
 
     // 이전 재생 완전 정지 후 새 오디오 로드
     webAudioRef.current.stop();
@@ -241,12 +285,8 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   // 🎵 오디오 로드 완료 시 자동 재생
   useEffect(() => {
-    console.log('🎵 [AutoPlay Check] isReady:', webAudio.isReady, 'shouldAutoPlay:', shouldAutoPlay);
-
     if (webAudio.isReady && shouldAutoPlay) {
-      // jamOnlyMode면 Chorus A부터, 아니면 처음부터
       const startTime = jamOnlyMode ? feedIntroEndTime : 0;
-      console.log('🎵 [AutoPlay] 오디오 로드 완료, 자동 재생 시작:', startTime.toFixed(2) + 's', jamOnlyMode ? '(JAM Only)' : '(Full)');
 
       if (startTime > 0) {
         webAudioRef.current.seek(startTime);
@@ -314,27 +354,15 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   // 🎵 JAM 세트 전환 (←→ 키)
   const handleJamSetChange = useCallback(async (direction: 'next' | 'prev') => {
-    console.log('🎵 [handleJamSetChange] JAM 세트 변경:', direction);
-    console.log('🎵 [handleJamSetChange] 현재 JAM 세트:', currentJamSetIndex, JAM_SETS[currentJamSetIndex]?.map(p => p.name));
-
     // 다음/이전 JAM 세트로 전환
     if (direction === 'next') {
-      setCurrentJamSetIndex((prev) => {
-        const newIndex = (prev + 1) % JAM_SETS.length;
-        console.log('✅ [handleJamSetChange] 새 JAM 세트:', newIndex, JAM_SETS[newIndex]?.map(p => p.name));
-        return newIndex;
-      });
+      setCurrentJamSetIndex((prev) => (prev + 1) % JAM_SETS.length);
     } else {
-      setCurrentJamSetIndex((prev) => {
-        const newIndex = (prev - 1 + JAM_SETS.length) % JAM_SETS.length;
-        console.log('✅ [handleJamSetChange] 새 JAM 세트:', newIndex, JAM_SETS[newIndex]?.map(p => p.name));
-        return newIndex;
-      });
+      setCurrentJamSetIndex((prev) => (prev - 1 + JAM_SETS.length) % JAM_SETS.length);
     }
 
     // 재생 위치 결정: jamOnlyMode면 Chorus A부터, 아니면 처음부터
     const startTime = jamOnlyMode ? feedIntroEndTime : 0;
-    console.log('🎵 [handleJamSetChange] 재생 시작 위치:', startTime.toFixed(2) + 's', jamOnlyMode ? '(JAM Only)' : '(Full)');
 
     webAudio.stop();
     webAudio.seek(startTime);
@@ -345,15 +373,12 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   }, [currentJamSetIndex, getRandomStageColor, setStageColor, webAudio, jamOnlyMode, feedIntroEndTime]);
 
   const handleSongChange = useCallback((direction: 'next' | 'prev') => {
-    console.log('🎵 [handleSongChange] 곡 변경 시작:', direction);
-    console.log('🎵 [handleSongChange] 이전 곡:', currentSongIndex, songs[currentSongIndex]?.title);
-
     // 1. 현재 재생 완전 정지 및 UI 상태 초기화
     setCurrentTime(0);
     setIsPlaying(false);
     setStageColor(getRandomStageColor());
 
-    // 2. 곡 인덱스 변경 (useEffect에서 새 오디오 자동 로드 + shouldAutoPlay 설정)
+    // 2. 곡 인덱스 변경
     const newSongIndex = direction === 'next'
       ? (currentSongIndex + 1) % songs.length
       : (currentSongIndex - 1 + songs.length) % songs.length;
@@ -363,32 +388,21 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       ? (currentJamSetIndex + 1) % JAM_SETS.length
       : (currentJamSetIndex - 1 + JAM_SETS.length) % JAM_SETS.length;
 
-    console.log('🎵 [handleSongChange] 새 곡:', newSongIndex, songs[newSongIndex]?.title);
-    console.log('🎵 [handleSongChange] 새 JAM 세트:', newJamSetIndex, JAM_SETS[newJamSetIndex]?.map(p => p.name));
-
-    // 4. 곡 인덱스 + JAM 세트 업데이트 → useEffect가 새 오디오 로드 + shouldAutoPlay=true 설정
+    // 4. 곡 인덱스 + JAM 세트 업데이트
     setCurrentSongIndex(newSongIndex);
     setCurrentJamSetIndex(newJamSetIndex);
   }, [currentSongIndex, currentJamSetIndex, getRandomStageColor, setStageColor, songs]);
 
   // 🧪 useWebAudio 연결: togglePlayPause
   const togglePlayPause = useCallback(() => {
-    console.log('🧪 [togglePlayPause] Current state:', {
-      isPlaying,
-      webAudioIsPlaying: webAudio.isPlaying,
-      webAudioIsReady: webAudio.isReady
-    });
-
     if (webAudio.isPlaying) {
-      console.log('🧪 [togglePlayPause] Calling webAudio.pause()');
       webAudio.pause();
       setIsPlaying(false);
     } else {
-      console.log('🧪 [togglePlayPause] Calling webAudio.play()');
       webAudio.play();
       setIsPlaying(true);
     }
-  }, [webAudio, isPlaying]);
+  }, [webAudio]);
 
   const skipForward = useCallback(() => {
     setCurrentTime((prev) => clampTime(prev + 5));
@@ -400,24 +414,10 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
 
   // 🎵 마디 단위 seek (BPM 기반)
   const seekByMeasure = useCallback((offset: number) => {
-    if (!currentSong?.bpm) {
-      console.warn('⚠️ [seekByMeasure] No BPM data');
-      return;
-    }
-
-    // 1마디 시간 계산: 60 / bpm * 4 (4/4 박자 가정)
+    if (!currentSong?.bpm) return;
     const measureDuration = calculateMeasureDuration(currentSong.bpm, currentSong.time_signature);
     const newTime = webAudio.currentTime + (offset * measureDuration);
     const clampedTime = Math.max(0, Math.min(newTime, webAudio.duration));
-
-    console.log('🎵 [seekByMeasure]', {
-      offset,
-      bpm: currentSong.bpm,
-      measureDuration: measureDuration.toFixed(2) + 's',
-      currentTime: webAudio.currentTime.toFixed(2) + 's',
-      newTime: clampedTime.toFixed(2) + 's',
-    });
-
     webAudio.seek(clampedTime);
   }, [currentSong, webAudio]);
 
@@ -519,7 +519,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       }
 
       const handlers = keyHandlersRef.current;
-      console.log('⌨️ [KeyPress]', e.code);
 
       // 시각적 피드백: 키 누름 상태 설정 후 150ms 뒤 해제
       const setKeyFeedback = (key: string) => {
@@ -533,7 +532,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.stopPropagation();
           isProcessing = true;
           setKeyFeedback('down');
-          console.log('⬇️ 다음 곡으로 전환');
           handlers.handleSongChange('next');
           setTimeout(() => { isProcessing = false; }, 100);
           break;
@@ -543,7 +541,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.stopPropagation();
           isProcessing = true;
           setKeyFeedback('up');
-          console.log('⬆️ 이전 곡으로 전환');
           handlers.handleSongChange('prev');
           setTimeout(() => { isProcessing = false; }, 100);
           break;
@@ -553,7 +550,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.stopPropagation();
           isProcessing = true;
           setKeyFeedback('left');
-          console.log('⬅️ 이전 JAM 세트로 전환');
           handlers.handleJamSetChange('prev');
           setTimeout(() => { isProcessing = false; }, 100);
           break;
@@ -563,7 +559,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.stopPropagation();
           isProcessing = true;
           setKeyFeedback('right');
-          console.log('➡️ 다음 JAM 세트로 전환');
           handlers.handleJamSetChange('next');
           setTimeout(() => { isProcessing = false; }, 100);
           break;
@@ -572,7 +567,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.preventDefault();
           e.stopPropagation();
           setKeyFeedback('z');
-          console.log('🎹 Z키: 1마디 뒤로');
           handlers.seekByMeasure(-1);
           break;
 
@@ -580,7 +574,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.preventDefault();
           e.stopPropagation();
           setKeyFeedback('x');
-          console.log('🎹 X키: 1마디 앞으로');
           handlers.seekByMeasure(1);
           break;
 
@@ -591,11 +584,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           {
             const nextJamOnly = !handlers.jamOnlyMode;
             handlers.setJamOnlyMode(nextJamOnly);
-            console.log('🎛️ JAM-only 모드 토글:', nextJamOnly ? 'ON' : 'OFF');
-
-            // JAM-only 활성화 시 Intro에 있으면 Chorus A로 이동
             if (nextJamOnly && handlers.webAudio.currentTime < handlers.feedIntroEndTime) {
-              console.log('🎵 [JAM Only] Intro에서 Chorus A로 이동');
               handlers.webAudio.seek(handlers.feedIntroEndTime);
             }
           }
@@ -606,7 +595,6 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
           e.stopPropagation();
           isProcessing = true;
           setKeyFeedback('space');
-          console.log('⏯️ Space: 재생/일시정지 토글');
           handlers.togglePlayPause();
           setTimeout(() => { isProcessing = false; }, 100);
           break;
@@ -626,19 +614,12 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   // 🎵 JAM만 듣기 모드: 재생 범위 감시 및 자동 seek
   useEffect(() => {
     if (!jamOnlyMode || !webAudio.isPlaying) return;
-
     const currentPos = webAudio.currentTime;
-
-    // Intro 구간에 있으면 Chorus A 시작으로 이동
     if (currentPos < feedIntroEndTime) {
-      console.log('🎵 [JAM Only] Intro 감지 → Chorus A로 이동');
       webAudio.seek(feedIntroEndTime);
       return;
     }
-
-    // Outro 진입 시 Chorus A로 돌아가기 (루프)
     if (currentPos >= feedOutroStartTime) {
-      console.log('🎵 [JAM Only] Outro 감지 → Chorus A로 루프');
       webAudio.seek(feedIntroEndTime);
       return;
     }
@@ -724,14 +705,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
         const measureInSection = globalMeasure - section.startMeasure;
         const sectionProgress = measureInSection / section.measures;
 
-        console.log('🎵 [getFeedSectionAndMeasure]', {
-          globalMeasure,
-          feedSectionIndex: i,
-          feedSectionLabel: section.label,
-          measureInSection,
-          measureProgress: measureProgress.toFixed(2),
-        });
-
+        // 로그 제거 (너무 자주 찍힘)
         return {
           feedSectionIndex: i,
           feedMeasure: measureInSection,
@@ -845,6 +819,7 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   }, [currentSong]);
 
   // 현재 JAM 세트 기반으로 performers 생성 (곡 구조 반영)
+  // Task 8: 실제 공유된 JAM이 있으면 해당 사용자 표시, 없으면 JAM_SETS 사용
   const performers = useMemo(() => {
     const structureData = currentSong?.structure_data ? {
       introMeasures: currentSong.structure_data.introMeasures || 8,
@@ -852,15 +827,56 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
       outroMeasures: currentSong.structure_data.outroMeasures || 8,
     } : undefined;
 
-    const result = getPerformersForJamSet(currentJamSetIndex, structureData, measureDurationForPerformers);
-    console.log('🎨 [JAM 세트 전환] currentJamSetIndex:', currentJamSetIndex);
-    console.log('🎨 [JAM 세트 전환] performers:', result.map(p => ({
-      name: p.name,
-      color: p.color,
-      playRange: `${p.playRange[0].toFixed(1)}s - ${p.playRange[1].toFixed(1)}s`
-    })));
-    return result;
-  }, [currentJamSetIndex, currentSong, measureDurationForPerformers]);
+    // 기본값 가져오기 (JAM_SETS 기반)
+    const basePerformers = getPerformersForJamSet(currentJamSetIndex, structureData, measureDurationForPerformers);
+
+    // 공유된 JAM이 있으면 실제 사용자 정보로 대체
+    if (currentSongJams.length > 0) {
+      const jamUsers = currentSongJams.map((jam, idx) => ({
+        name: jam.profile.nickname || `User ${idx + 1}`,
+        color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
+        audioUrl: jam.audio_url,
+        outputInstrument: jam.output_instrument || 'raw',
+        noteData: jam.note_data || [],  // Task 8: 음표 데이터
+        startMeasure: jam.start_measure,
+        endMeasure: jam.end_measure,
+      }));
+
+      console.log('🎵 [Feed] 실제 JAM 사용자:', jamUsers.map(u => ({
+        name: u.name,
+        outputInstrument: u.outputInstrument,
+        noteDataCount: u.noteData?.length || 0,
+        hasAudioUrl: !!u.audioUrl,
+        audioUrlPreview: u.audioUrl?.substring(0, 60) + '...'
+      })));
+
+      // Intro + Chorus 슬롯 (최대 4명) + Outro 구성
+      const result = basePerformers.map((performer, idx) => {
+        if (idx === 0 || idx === basePerformers.length - 1) {
+          // Intro/Outro는 JAMUS 유지
+          return performer;
+        }
+        // Chorus 슬롯 (1~4)에 실제 JAM 사용자 배치
+        const jamIdx = idx - 1;
+        if (jamIdx < jamUsers.length) {
+          return {
+            ...performer,
+            name: jamUsers[jamIdx].name,
+            color: jamUsers[jamIdx].color,
+            audioUrl: jamUsers[jamIdx].audioUrl,
+            outputInstrument: jamUsers[jamIdx].outputInstrument,
+            noteData: jamUsers[jamIdx].noteData,
+            jamStartMeasure: jamUsers[jamIdx].startMeasure,  // JAM 녹음 시작 마디
+          };
+        }
+        return performer;
+      });
+      return result;
+    }
+
+    // JAM 세트 전환 로그 제거
+    return basePerformers;
+  }, [currentJamSetIndex, currentSong, measureDurationForPerformers, currentSongJams]);
 
   const getCurrentPerformer = useCallback(() => {
     const currentSection = richSections[sectionIndex];
@@ -904,6 +920,134 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
   useEffect(() => {
     setStageColor(getCurrentPerformerColor());
   }, [getCurrentPerformerColor, setStageColor]);
+
+  // Task 8: JAM 오디오 재생 (섹션 전환 시)
+  // output_instrument에 따라 분기: raw → audio_url, piano/guitar → Tone.js
+  useEffect(() => {
+    // 현재 활성 performer 찾기
+    const activePerformer = performers.find(p => {
+      const [startTime, endTime] = p.playRange;
+      return currentTime >= startTime && currentTime < endTime;
+    });
+
+    if (!activePerformer) return;
+
+    const performerKey = `${activePerformer.name}-${activePerformer.playRange[0]}`;
+
+    // 같은 performer면 무시
+    if (currentJamPerformerRef.current === performerKey) return;
+
+    // 이전 재생 정지
+    if (jamAudioRef.current) {
+      jamAudioRef.current.pause();
+      jamAudioRef.current = null;
+    }
+    voiceToInstrument.stopFallbackPlayback();
+
+    const audioUrl = (activePerformer as any).audioUrl;
+    const outputInstrument = (activePerformer as any).outputInstrument;
+    const noteData = (activePerformer as any).noteData as JamNoteData[] | undefined;
+
+    console.log('🎵 [JAM Audio] Performer 전환:', activePerformer.name, {
+      outputInstrument,
+      hasAudioUrl: !!audioUrl,
+      noteDataCount: noteData?.length || 0,
+      bpm: currentSong?.bpm,
+      isPlaying
+    });
+
+    if (!isPlaying) {
+      currentJamPerformerRef.current = performerKey;
+      return;
+    }
+
+    // audioUrl이 없으면 재생할 수 없음
+    if (!audioUrl) {
+      console.log('⚠️ [JAM Audio] audioUrl 없음, 스킵');
+      currentJamPerformerRef.current = performerKey;
+      return;
+    }
+
+    // output_instrument에 따라 분기 재생
+    if (outputInstrument === 'raw' || !noteData || noteData.length === 0) {
+      // raw 또는 noteData 없음: 원본 녹음 재생 (fallback)
+      console.log('🎤 [JAM Audio] 원본 재생:', activePerformer.name);
+
+      const audio = new Audio(audioUrl);
+      audio.volume = 0.8;
+
+      const timeInSection = currentTime - activePerformer.playRange[0];
+      if (timeInSection > 0) {
+        audio.currentTime = timeInSection;
+      }
+
+      audio.play().catch(err => console.warn('JAM Audio play failed:', err));
+      jamAudioRef.current = audio;
+    } else if (currentSong?.bpm) {
+      // piano/guitar + noteData 있음: Tone.js로 음표 재생
+      const jamStartMeasure = (activePerformer as any).jamStartMeasure || 0;
+      console.log('🎹 [JAM Audio] Tone.js 재생:', activePerformer.name, noteData.length, '개 음표, 시작마디:', jamStartMeasure);
+
+      // 악기 모델 로드 후 재생
+      voiceToInstrument.loadModel(outputInstrument as 'piano' | 'guitar').then(() => {
+        // NoteData 형식으로 변환 + beat 재계산
+        // beat = (measureIndex - jamStartMeasure) * 4 + slotIndex / 4
+        const notesForPlayback = noteData.map(n => {
+          const recalculatedBeat = (n.measureIndex - jamStartMeasure) * 4 + (n.slotIndex / 4);
+          return {
+            pitch: n.pitch,
+            beat: recalculatedBeat,  // 재계산된 beat
+            duration: n.duration,
+            measureIndex: n.measureIndex,
+            slotIndex: n.slotIndex,
+            slotCount: 1,
+            confidence: 'high' as const,
+            isRest: false,
+          };
+        });
+
+        console.log('🎹 [JAM Audio] 재계산된 음표:', notesForPlayback.slice(0, 5).map(n => ({
+          pitch: n.pitch,
+          beat: n.beat.toFixed(2),
+          measure: n.measureIndex,
+          slot: n.slotIndex
+        })));
+
+        voiceToInstrument.playNotesAsFallback(notesForPlayback, currentSong.bpm, 0);
+      });
+    }
+
+    currentJamPerformerRef.current = performerKey;
+  }, [currentTime, performers, isPlaying, voiceToInstrument, currentSong?.bpm]);
+
+  // Task 8: voiceToInstrument를 ref로 저장 (의존성 문제 방지)
+  const voiceToInstrumentRef = useRef(voiceToInstrument);
+  voiceToInstrumentRef.current = voiceToInstrument;
+
+  // Task 8: 재생/정지 시 JAM 오디오도 동기화
+  useEffect(() => {
+    if (jamAudioRef.current) {
+      if (isPlaying) {
+        jamAudioRef.current.play().catch(() => {});
+      } else {
+        jamAudioRef.current.pause();
+      }
+    }
+    if (!isPlaying) {
+      voiceToInstrumentRef.current.stopFallbackPlayback();
+    }
+  }, [isPlaying]);
+
+  // Task 8: 컴포넌트 언마운트 시 JAM 오디오 정리
+  useEffect(() => {
+    return () => {
+      if (jamAudioRef.current) {
+        jamAudioRef.current.pause();
+        jamAudioRef.current = null;
+      }
+      voiceToInstrumentRef.current.cleanup();
+    };
+  }, []);
 
   // Feed용 섹션 라벨 계산
   const feedSectionLabels = ['Intro', 'A', 'B', 'C', 'D', 'Outro'];
@@ -959,6 +1103,14 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
             <h1 className="text-xl font-bold text-white leading-none">{currentSong.title}</h1>
             <span className="text-sm text-gray-400">{currentSong.artist}</span>
           </div>
+          {/* Task 8: 공유된 JAM 표시 */}
+          {currentSongJams.length > 0 && (
+            <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FF7B7B]/20 border border-[#FF7B7B]/30">
+              <span className="text-[#FF7B7B] text-sm font-medium">
+                🎤 {currentSongJams.length}명 참여
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 악보 영역 컨테이너 */}
@@ -974,7 +1126,11 @@ export default function FeedClientPage({ initialSongs }: FeedClientPageProps) {
                 onClick={() => {
                   // Feed 오디오 완전 정지 후 Single로 이동
                   webAudio.stop();
-                  router.push('/single');
+                  // 곡 title을 songId로 변환 (예: "Autumn Leaves" → "autumn-leaves")
+                  const songId = currentSong?.title?.toLowerCase().replace(/\s+/g, '-') || 'autumn-leaves';
+                  // BPM도 전달하여 Single에서 동일한 BPM 사용
+                  const bpm = currentSong?.bpm || 120;
+                  router.push(`/single?songId=${songId}&bpm=${bpm}`);
                 }}
                 className="rounded-full bg-white px-4 py-1.5 text-xs font-medium text-[#1B1C26] shadow-lg transition-all hover:bg-[#E0E0E0] hover:shadow-xl"
               >
