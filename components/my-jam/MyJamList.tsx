@@ -1,0 +1,118 @@
+
+'use client';
+
+import React from 'react';
+import { Play, ChevronRight, FileText, PlusCircle } from 'lucide-react';
+import { MyJamListProps, FilterType } from '@/types/my-jam';
+
+/**
+ * Section 3: 내 JAM (Final Version)
+ * Case A의 데이터 구성(날짜 우측, 리포트 버튼 스타일) + Case B의 필터 탭 & 넉넉한 카드 크기.
+ */
+const MyJamList: React.FC<MyJamListProps> = ({
+  jams,
+  activeFilter,
+  onFilterChange,
+  onViewAll,
+  onPlay,
+  onViewReport,
+  onCreateReport,
+}) => {
+  return (
+    <div className="space-y-6">
+      {/* Header with Case B Style Filter Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-6 bg-[#A55EEA] rounded-full shadow-[0_0_12px_rgba(165,94,234,0.4)]"></div>
+            <h3 className="text-xl font-black text-white tracking-tight">내 JAM</h3>
+          </div>
+          <div className="flex gap-2 p-1 bg-[#2A2B39] rounded-xl border border-white/10">
+            {['All', 'Single', 'Multi'].map((f) => (
+              <button
+                key={f}
+                onClick={() => onFilterChange(f as FilterType)}
+                className={`px-4 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  activeFilter === f ? 'bg-[#3DDF85] text-[#1B1C26]' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button onClick={onViewAll} className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
+          전체보기 <ChevronRight size={14} className="text-[#7BA7FF]" />
+        </button>
+      </div>
+
+      {/* Vertical List (Case B Sizing + Case A Content) */}
+      <div className="space-y-4">
+        {jams.map((jam) => (
+          <div 
+            key={jam.id} 
+            className="group flex items-center bg-[#14151C]/80 border border-white/5 rounded-2xl p-5 transition-all hover:bg-[#FFFFFF]/5 hover:border-[#3DDF85]/30"
+          >
+            {/* Left: Cover & Title (Case B Size) */}
+            <div className="flex items-center gap-6 flex-1">
+              <div className="relative h-16 w-16 flex-shrink-0 shadow-xl group-hover:scale-105 transition-transform duration-300">
+                <img src={jam.coverUrl} className="h-full w-full rounded-xl object-cover" alt="Cover" />
+                <button 
+                  onClick={() => onPlay(jam.id)}
+                  className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+                >
+                  <Play size={20} fill="white" className="text-white" />
+                </button>
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-md font-bold text-white group-hover:text-[#3DDF85] transition-colors truncate">{jam.title}</h4>
+                <p className="text-xs text-gray-400 font-medium truncate">{jam.artist}</p>
+              </div>
+            </div>
+
+            {/* Right Side: Case A Information Hierarchy */}
+            <div className="flex items-center gap-8">
+              {/* Recorded Date */}
+              <div className="text-right hidden sm:block">
+                <p className="text-[9px] text-gray-500 uppercase font-black tracking-widest">RECORDED ON</p>
+                <p className="text-xs text-gray-300 font-medium">{jam.recordedAt}</p>
+              </div>
+
+              {/* Type Tag */}
+              <span className={`px-4 py-1 rounded-full text-[10px] font-black tracking-widest border transition-all ${
+                jam.type === 'Multi' 
+                  ? 'bg-[#A55EEA]/10 text-[#A55EEA] border-[#A55EEA]/40' 
+                  : 'bg-white/5 text-gray-400 border-white/10'
+              }`}>
+                {jam.type.toUpperCase()}
+              </span>
+
+              {/* Action Buttons (Case A Style) */}
+              <div className="flex items-center gap-2 min-w-[140px] justify-end">
+                {jam.hasReport ? (
+                  <button 
+                    onClick={() => onViewReport(jam.id)}
+                    className="flex items-center gap-2 bg-white text-[#1B1C26] px-5 py-2 rounded-full text-[11px] font-bold hover:bg-[#E0E0E0] transition-colors shadow-lg"
+                  >
+                    <FileText size={12} />
+                    AI 리포트 보기
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => onCreateReport(jam.id)}
+                    className="flex items-center gap-2 border border-white/20 text-white px-5 py-2 rounded-full text-[11px] font-bold hover:bg-white/5 transition-colors"
+                  >
+                    <PlusCircle size={12} />
+                    새 리포트 생성
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default MyJamList;
