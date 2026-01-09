@@ -19,20 +19,23 @@ export default function Sidebar({ className, children }: SidebarProps) {
   return (
     <aside
       className={mergeClassNames(
-        "flex h-screen w-[240px] flex-col bg-[#14151C] pt-6 px-5",
+        "fixed left-0 top-0 h-screen w-[240px] bg-[#14151C] z-30",
         className,
       )}
     >
-      <SidebarLogo className="mb-6" />
-      <SidebarProfile className="mb-10" />
+      {/* 스크롤 가능한 콘텐츠 영역 (Footer 높이만큼 하단 여백) */}
+      <div className="h-full overflow-y-auto pt-4 px-5 pb-28">
+        <SidebarLogo className="mb-3" />
+        <SidebarProfile className="mb-4" />
+        <SidebarNav className="mt-3" />
+        <SidebarStage className="mt-4" />
+        {children ? <div className="mt-4">{children}</div> : null}
+      </div>
 
-      <SidebarNav className="mt-10" />
-
-      <SidebarStage className="mt-8" />
-
-      <SidebarFooter className="mt-auto" />
-
-      {children ? <div className="mt-6">{children}</div> : null}
+      {/* 하단 고정 Footer (절대 위치) */}
+      <div className="absolute bottom-0 left-0 right-0 bg-[#14151C] px-5 pb-4 pt-2">
+        <SidebarFooter />
+      </div>
     </aside>
   );
 }

@@ -16,6 +16,7 @@ export interface JamRecord {
     id?: string;
     song_id: string;
     user_id: string;
+    name: string; // Task 10: JAM 이름
     audio_url: string;
     start_measure: number;
     end_measure: number;
@@ -36,6 +37,7 @@ export interface JamRecord {
 
 export interface UploadJamParams {
     songId: string;
+    name: string; // Task 10: JAM 이름
     audioBlob: Blob;
     startMeasure: number;
     endMeasure: number;
@@ -63,7 +65,7 @@ export interface UploadJamResult {
 // ============================================
 export async function uploadJamRecording(params: UploadJamParams): Promise<UploadJamResult> {
     const {
-        songId, audioBlob, startMeasure, endMeasure, startTime, endTime,
+        songId, name, audioBlob, startMeasure, endMeasure, startTime, endTime,
         bpm, duration, inputInstrument, outputInstrument, noteData, onProgress
     } = params;
 
@@ -133,6 +135,7 @@ export async function uploadJamRecording(params: UploadJamParams): Promise<Uploa
         const jamRecord: Omit<JamRecord, 'id' | 'created_at'> = {
             song_id: resolvedSongId,  // UUID로 변환된 songId 사용
             user_id: user.id,
+            name: name, // Task 10: JAM 이름
             audio_url: urlData.publicUrl,
             start_measure: Math.floor(startMeasure), // INTEGER로 변환
             end_measure: Math.floor(endMeasure),     // INTEGER로 변환

@@ -56,9 +56,10 @@ export function useMyJamData(): UseMyJamDataReturn {
       console.log('[MyJam] 프로필 조회:', { data: profileData, error: profileError?.message });
 
       // 3. 구매소스 조회 (MVP: songs 테이블의 모든 곡을 '구매한 소스'로 표시)
+      // M-05: audio_urls도 가져오기 (믹싱 재생용)
       const { data: songsData, error: songsError } = await supabase
         .from('songs')
-        .select('id, title, artist, image_url')
+        .select('id, title, artist, image_url, audio_urls')
         .order('id', { ascending: true });
 
       console.log('[MyJam] 곡 목록 조회:', { count: songsData?.length, error: songsError?.message, data: songsData });
@@ -85,16 +86,30 @@ export function useMyJamData(): UseMyJamDataReturn {
       // 6. JAM 목록 매핑 (songsData에서 곡 정보 찾기)
       const songsMap = new Map((songsData || []).map((s: any) => [s.id, s]));
 
+      // M-05: start_measure 기반으로 backing track URL 결정
+      const getBackingTrackUrl = (song: any, startMeasure: number): string | undefined => {
+        if (!song?.audio_urls) return undefined;
+        const audioUrls = song.audio_urls;
+        // 녹음 시작 마디로 섹션 판단 (Autumn Leaves 48마디 기준)
+        if (startMeasure <= 8) return audioUrls.intro;
+        if (startMeasure <= 40) return audioUrls.chorus;
+        return audioUrls.outro;
+      };
+
       const mappedJams: JamItem[] = (jamsData || []).map((jam: any) => {
         const song = songsMap.get(jam.song_id);
         return {
           id: jam.id,
+          name: jam.name || undefined,
           title: song?.title || `JAM ${jam.song_id}`,
           artist: song?.artist || mappedProfile.nickname,
           coverUrl: song?.image_url || 'https://picsum.photos/200/200?random=1',
           recordedAt: new Date(jam.created_at).toISOString().split('T')[0],
           type: 'Single' as JamType, // MVP: Single만 지원
           hasReport: false, // MVP: AI 리포트 미구현
+          audioUrl: jam.audio_url,
+          backingTrackUrl: getBackingTrackUrl(song, jam.start_measure || 9), // M-05
+          startMeasure: jam.start_measure, // M-05
         };
       });
 

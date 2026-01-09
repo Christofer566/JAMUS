@@ -56,8 +56,21 @@ const MyJamList: React.FC<MyJamListProps> = ({
             {/* Left: Cover & Title (Case B Size) */}
             <div className="flex items-center gap-6 flex-1">
               <div className="relative h-16 w-16 flex-shrink-0 shadow-xl group-hover:scale-105 transition-transform duration-300">
-                <img src={jam.coverUrl} className="h-full w-full rounded-xl object-cover" alt="Cover" />
-                <button 
+                {jam.coverUrl ? (
+                  <img
+                    src={jam.coverUrl}
+                    className="h-full w-full rounded-xl object-cover"
+                    alt="Cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <div className={`${jam.coverUrl ? 'hidden' : ''} h-full w-full rounded-xl bg-gradient-to-br from-[#3DDF85]/20 to-[#7BA7FF]/20 flex items-center justify-center`}>
+                  <span className="text-xs text-gray-400 font-bold">JAM</span>
+                </div>
+                <button
                   onClick={() => onPlay(jam.id)}
                   className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
                 >
@@ -65,8 +78,12 @@ const MyJamList: React.FC<MyJamListProps> = ({
                 </button>
               </div>
               <div className="min-w-0">
-                <h4 className="text-md font-bold text-white group-hover:text-[#3DDF85] transition-colors truncate">{jam.title}</h4>
-                <p className="text-xs text-gray-400 font-medium truncate">{jam.artist}</p>
+                <h4 className="text-md font-bold text-white group-hover:text-[#3DDF85] transition-colors truncate">
+                  {jam.name || 'Untitled JAM'}
+                </h4>
+                <p className="text-xs text-gray-400 font-medium truncate">
+                  {jam.title} - {jam.artist}
+                </p>
               </div>
             </div>
 

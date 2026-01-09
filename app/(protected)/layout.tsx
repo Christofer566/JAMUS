@@ -12,9 +12,9 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   return (
     <StageProvider>
       <ToastProvider>
-        <div className="flex min-h-screen bg-[#1B1C26]">
+        <div className="min-h-screen bg-[#1B1C26]">
           <Sidebar />
-          <main className="flex-1">{children}</main>
+          <main className="ml-[240px]">{children}</main>
         </div>
       </ToastProvider>
     </StageProvider>

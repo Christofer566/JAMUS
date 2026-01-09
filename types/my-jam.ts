@@ -40,12 +40,16 @@ export type FilterType = 'All' | 'Single' | 'Multi';
 
 export interface JamItem {
   id: string;
+  name?: string; // JAM name (optional for compatibility)
   title: string;
   artist: string;
   coverUrl: string;
   recordedAt: string;
   type: JamType;
   hasReport: boolean;
+  audioUrl: string;
+  backingTrackUrl?: string; // M-05: 믹싱 재생용 backing track URL
+  startMeasure?: number; // 녹음 시작 마디
 }
 
 export interface MyJamListProps {

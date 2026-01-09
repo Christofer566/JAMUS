@@ -25,6 +25,7 @@ import { uploadJamRecording, shareJam, getLatestUserJam } from '@/lib/jamStorage
 import { GROUND_TRUTH_NOTES } from '@/utils/groundTruthNotes';
 import '@/utils/selfRefiningTest'; // Self-Refining Test 유틸리티 로드
 import { SongWithMusicData, TimeSignature } from '@/types/music';
+import SaveJamModal from '@/components/my-jam/SaveJamModal';
 
 // Supabase 곡 데이터를 Feedback 형식으로 변환
 function convertSupabaseSongToSections(song: SongWithMusicData): SongSection[] {
@@ -176,6 +177,8 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);  // Task 7: 업로드 진행률
     const [uploadedJamId, setUploadedJamId] = useState<string | null>(null);  // Task 8: 업로드된 JAM ID
     const [isSharing, setIsSharing] = useState(false);  // Task 8: 공유 중 상태
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false); // Task 10: JAM 저장 모달 상태
+    const [pendingAction, setPendingAction] = useState<'share' | null>(null); // Task 10: 저장 후 실행할 액션
 
     // 정확도 표시 State
     const [accuracyStats, setAccuracyStats] = useState<{
@@ -1446,9 +1449,10 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
 
     // Task 8: 공유하기 버튼 핸들러
     const handleShare = useCallback(async () => {
-        // 편집 완료 전에는 공유 불가
+        // 편집 완료 전에는 먼저 저장 모달 표시
         if (!isEditConfirmed) {
-            showToast('warning', '편집을 완료한 후 공유할 수 있습니다');
+            setPendingAction('share');
+            setIsSaveModalOpen(true);
             return;
         }
 
@@ -1516,14 +1520,8 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
         }
     }, [addNote, showToast]);
 
-    // 편집 확정: 정리된 음표+쉼표를 recordedNotesByMeasure에 반영 + 자동 Export
-    const handleConfirmEdit = useCallback(() => {
-        // 이미 확정됨
-        if (isEditConfirmed) {
-            showToast('error', '이미 편집이 확정되었습니다');
-            return;
-        }
-
+    // Task 10: JAM 저장 실행 (실제 업로드 및 확정)
+    const executeSaveJam = useCallback((name: string) => {
         // 겹침 제거 + 연속 쉼표 병합된 깨끗한 데이터 가져오기
         const cleanedNotes = getCleanedNotes();
         const notesOnly = cleanedNotes.filter((n: NoteData) => !n.isRest);
@@ -1636,6 +1634,7 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
         setIsEditPanelOpen(false);
         setEditMode(false);
         setIsEditConfirmed(true);  // 편집 잠금
+        setIsSaveModalOpen(false); // 모달 닫기
 
         // 피드백 수집: 편집 데이터 Supabase에 저장
         saveFeedback().then(result => {
@@ -1651,7 +1650,6 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
             setUploadProgress(0);
 
             // Task 8: 편집된 음표 데이터 추출 (쉼표 제외)
-            const cleanedNotes = getCleanedNotes();
             const noteDataForSave = cleanedNotes
                 .filter((n: NoteData) => !n.isRest)
                 .map((n: NoteData) => ({
@@ -1664,6 +1662,7 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
 
             uploadJamRecording({
                 songId: SONG_META.id,
+                name: name, // Task 10: 입력받은 JAM 이름 사용
                 audioBlob: storedAudioBlob,
                 startMeasure: storedRecordingRange.startMeasure,
                 endMeasure: storedRecordingRange.endMeasure,
@@ -1675,21 +1674,48 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
                 outputInstrument: storedOutputInstrument,
                 noteData: noteDataForSave,  // Task 8: 음표 데이터 추가
                 onProgress: setUploadProgress,
-            }).then(uploadResult => {
+            }).then(async (uploadResult) => {
                 setUploadProgress(null);
                 if (uploadResult.success && uploadResult.data) {
                     console.log('🎵 [Task 7] 녹음 업로드 완료:', uploadResult.data);
-                    setUploadedJamId(uploadResult.data.id || null);  // Task 8: JAM ID 저장
+                    const newJamId = uploadResult.data.id || null;
+                    setUploadedJamId(newJamId);  // Task 8: JAM ID 저장
                     showToast('success', '녹음이 저장되었습니다');
+
+                    // Task 10: pendingAction이 'share'면 자동으로 공유 실행
+                    if (pendingAction === 'share' && newJamId) {
+                        setPendingAction(null);
+                        setIsSharing(true);
+                        const result = await shareJam(newJamId);
+                        setIsSharing(false);
+
+                        if (result.success) {
+                            showToast('success', 'Feed에 공유되었습니다! 🎉');
+                            router.push('/feed');
+                        } else {
+                            showToast('error', result.error || '공유에 실패했습니다');
+                        }
+                    }
                 } else {
                     console.error('🎵 [Task 7] 녹음 업로드 실패:', uploadResult.error);
                     showToast('error', uploadResult.error || '녹음 저장 실패');
+                    setPendingAction(null);
                 }
             });
         }
 
         showToast('success', '편집이 확정되었습니다 (재편집 불가)');
-    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, storedAudioBlob, storedInputInstrument, storedOutputInstrument, initializeNotes, setEditMode, showToast, isEditConfirmed, saveFeedback]);
+    }, [getCleanedNotes, rawAutoNotes, storedRecordingRange, storedAudioBlob, storedInputInstrument, storedOutputInstrument, initializeNotes, setEditMode, showToast, saveFeedback, SONG_META.id, SONG_META.bpm, pendingAction, router]);
+
+    // 편집 확정 버튼 핸들러: 모달 열기
+    const handleConfirmEdit = useCallback(() => {
+        // 이미 확정됨
+        if (isEditConfirmed) {
+            showToast('error', '이미 편집이 확정되었습니다');
+            return;
+        }
+        setIsSaveModalOpen(true);
+    }, [isEditConfirmed, showToast]);
 
     // Task 7: 업로드 진행률 오버레이 컴포넌트
     const UploadProgressOverlay = uploadProgress !== null ? (
@@ -2158,6 +2184,12 @@ export default function FeedbackClientPage({ initialSongs }: FeedbackClientPageP
 
             {/* Task 7: 업로드 진행률 오버레이 */}
             {UploadProgressOverlay}
+            <SaveJamModal
+                isOpen={isSaveModalOpen}
+                onClose={() => setIsSaveModalOpen(false)}
+                onSave={executeSaveJam}
+                defaultName="Untitled JAM"
+            />
         </div>
     );
 }

@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import MyJamProfile from './MyJamProfile';
 import PurchasedSources from './PurchasedSources';
 import MyJamList from './MyJamList';
+import MiniPlayerBar from './MiniPlayerBar';
 import { useMyJamData } from '@/hooks/useMyJamData';
+import { usePlayerStore } from '@/stores/playerStore';
 import { useToast } from '@/contexts/ToastContext';
 import { SortType, FilterType } from '@/types/my-jam';
 import { Loader2 } from 'lucide-react';
@@ -18,16 +20,39 @@ const MyJamPage: React.FC = () => {
   const [activeSort, setActiveSort] = useState<SortType>('latest');
   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
 
+  // Player Store
+  const { playJam, currentJam, togglePlay } = usePlayerStore();
+
   // 구매소스 클릭 → Single 모드 이동
   const handleSourceClick = useCallback((sourceId: string) => {
     router.push(`/single?songId=${sourceId}`);
   }, [router]);
 
-  // JAM 재생 (MVP: console.log)
+  // JAM 재생
   const handleJamPlay = useCallback((jamId: string) => {
-    console.log('[MyJam] Play JAM:', jamId);
-    showToast('info', 'JAM 재생 기능은 준비 중입니다');
-  }, [showToast]);
+    const jam = myJams.find(j => j.id === jamId);
+    if (!jam) return;
+
+    if (!jam.audioUrl) {
+      showToast('error', '오디오 파일을 찾을 수 없습니다');
+      return;
+    }
+
+    // 같은 JAM이면 토글, 다른 JAM이면 새로 재생
+    if (currentJam?.id === jam.id) {
+      togglePlay();
+    } else {
+      playJam({
+        id: jam.id,
+        name: jam.name || null,
+        audioUrl: jam.audioUrl,
+        songTitle: jam.title,
+        songArtist: jam.artist,
+        coverUrl: jam.coverUrl || null,
+        backingTrackUrl: jam.backingTrackUrl, // M-05: 믹싱 재생용
+      });
+    }
+  }, [myJams, currentJam, playJam, togglePlay, showToast]);
 
   // 리포트 보기 (MVP: 토스트)
   const handleViewReport = useCallback((jamId: string) => {
@@ -130,6 +155,9 @@ const MyJamPage: React.FC = () => {
           onCreateReport={handleCreateReport}
         />
       </section>
+
+      {/* Mini Player - My JAM 페이지 전용 */}
+      <MiniPlayerBar />
     </div>
   );
 };
