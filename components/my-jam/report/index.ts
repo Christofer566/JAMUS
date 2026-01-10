@@ -4,6 +4,7 @@ export { default as ReportHeader } from './ReportHeader';
 export { default as TotalScoreSection } from './TotalScoreSection';
 export { default as AnalysisSection } from './AnalysisSection';
 export { default as ScoreSection } from './ScoreSection';
+export { default as ReportMiniScore } from './ReportMiniScore';
 export { default as InsightSection } from './InsightSection';
 export { default as ActionSection } from './ActionSection';
 

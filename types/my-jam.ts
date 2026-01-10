@@ -40,6 +40,7 @@ export type FilterType = 'All' | 'Single' | 'Multi';
 
 export interface JamItem {
   id: string;
+  songId: string; // song_id from jams table
   name?: string; // JAM name (optional for compatibility)
   title: string;
   artist: string;
@@ -60,6 +61,7 @@ export interface MyJamListProps {
   onPlay: (id: string) => void;
   onViewReport: (id: string) => void;
   onCreateReport: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 // ===== AI Report Types =====

@@ -9,24 +9,24 @@ import MiniPlayerBar from './MiniPlayerBar';
 import { AIReportPanel } from './report';
 import { useMyJamData } from '@/hooks/useMyJamData';
 import { usePlayerStore } from '@/stores/playerStore';
+import { useReportPanelStore } from '@/stores/reportPanelStore';
 import { useToast } from '@/contexts/ToastContext';
-import { SortType, FilterType, JamItem } from '@/types/my-jam';
+import { SortType, FilterType } from '@/types/my-jam';
 import { Loader2 } from 'lucide-react';
 
 const MyJamPage: React.FC = () => {
   const router = useRouter();
   const { showToast } = useToast();
-  const { profile, purchasedSources, myJams, isLoading, error } = useMyJamData();
+  const { profile, purchasedSources, myJams, isLoading, error, deleteJam } = useMyJamData();
 
   const [activeSort, setActiveSort] = useState<SortType>('latest');
   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
-  
-  // AI Report Panel State
-  const [isReportOpen, setIsReportOpen] = useState(false);
-  const [selectedJamForReport, setSelectedJamForReport] = useState<JamItem | null>(null);
 
   // Player Store
   const { playJam, currentJam, togglePlay } = usePlayerStore();
+
+  // Report Panel Store
+  const { isOpen: isReportOpen, openPanel, closePanel } = useReportPanelStore();
 
   // 구매소스 클릭 → Single 모드 이동
   const handleSourceClick = useCallback((sourceId: string) => {
@@ -59,38 +59,26 @@ const MyJamPage: React.FC = () => {
     }
   }, [myJams, currentJam, playJam, togglePlay, showToast]);
 
-  // 리포트 보기 - 패널 열기
+  // 리포트 보기/생성 - 패널 열기 + 데이터 로드
   const handleViewReport = useCallback((jamId: string) => {
     const jam = myJams.find(j => j.id === jamId);
     if (!jam) return;
-    
-    setSelectedJamForReport(jam);
-    setIsReportOpen(true);
-  }, [myJams]);
 
-  // 리포트 생성 - 패널 열기 (MVP: 동일 동작)
+    // songId 추출 (jams 테이블에서 song_id 참조)
+    const songId = jam.songId || 'autumn-leaves'; // fallback
+    openPanel(jamId, songId);
+  }, [myJams, openPanel]);
+
+  // 리포트 생성 (MVP: 동일 동작)
   const handleCreateReport = useCallback((jamId: string) => {
-    const jam = myJams.find(j => j.id === jamId);
-    if (!jam) return;
-    
-    setSelectedJamForReport(jam);
-    setIsReportOpen(true);
-  }, [myJams]);
-
-  // 리포트 패널 닫기
-  const handleCloseReport = useCallback(() => {
-    setIsReportOpen(false);
-    setSelectedJamForReport(null);
-  }, []);
+    handleViewReport(jamId);
+  }, [handleViewReport]);
 
   // 다시 연습하기 - Single 모드로 이동
-  const handlePracticeAgain = useCallback(() => {
-    if (selectedJamForReport) {
-      // TODO: 곡 ID를 기반으로 Single 모드 이동
-      // router.push(`/single?songId=${selectedJamForReport.songId}`);
-      showToast('info', '다시 연습하기 기능은 준비 중입니다');
-    }
-  }, [selectedJamForReport, showToast]);
+  const handlePracticeAgain = useCallback((songId: string) => {
+    closePanel();
+    router.push(`/single?songId=${songId}`);
+  }, [closePanel, router]);
 
   // View All 핸들러
   const handleViewAllSources = useCallback(() => {
@@ -102,6 +90,16 @@ const MyJamPage: React.FC = () => {
     console.log('[MyJam] View All JAMs');
     showToast('info', '전체 보기 기능은 준비 중입니다');
   }, [showToast]);
+
+  // JAM 삭제
+  const handleDeleteJam = useCallback(async (jamId: string) => {
+    const success = await deleteJam(jamId);
+    if (success) {
+      showToast('success', 'JAM이 삭제되었습니다');
+    } else {
+      showToast('error', 'JAM 삭제에 실패했습니다');
+    }
+  }, [deleteJam, showToast]);
 
   // 로딩 상태
   if (isLoading) {
@@ -151,25 +149,12 @@ const MyJamPage: React.FC = () => {
     return jam.type === activeFilter;
   });
 
-  // Report Panel에 전달할 JAM 데이터
-  const reportJamData = selectedJamForReport ? {
-    jamName: selectedJamForReport.name || 'Untitled JAM',
-    songTitle: selectedJamForReport.title,
-    artist: selectedJamForReport.artist,
-    recordedDate: selectedJamForReport.recordedAt
-  } : {
-    jamName: '',
-    songTitle: '',
-    artist: '',
-    recordedDate: ''
-  };
-
   return (
     <div className="flex-1 flex overflow-hidden relative">
       {/* Main Content - 50:50 레이아웃 */}
       <main className={`flex-1 overflow-y-auto px-8 py-8 transition-all duration-700 ease-in-out scroll-smooth ${
-        isReportOpen 
-          ? 'w-1/2 scale-[0.97] opacity-70' 
+        isReportOpen
+          ? 'w-1/2 scale-[0.97] opacity-70'
           : 'w-full'
       }`}>
         <div className="max-w-6xl mx-auto space-y-16 pb-20">
@@ -199,6 +184,7 @@ const MyJamPage: React.FC = () => {
               onPlay={handleJamPlay}
               onViewReport={handleViewReport}
               onCreateReport={handleCreateReport}
+              onDelete={handleDeleteJam}
             />
           </section>
 
@@ -208,12 +194,7 @@ const MyJamPage: React.FC = () => {
       </main>
 
       {/* AI Report Side Panel */}
-      <AIReportPanel
-        isOpen={isReportOpen}
-        onClose={handleCloseReport}
-        jamData={reportJamData}
-        onPracticeAgain={handlePracticeAgain}
-      />
+      <AIReportPanel onPracticeAgain={handlePracticeAgain} />
     </div>
   );
 };

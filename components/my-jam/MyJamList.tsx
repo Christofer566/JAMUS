@@ -1,8 +1,8 @@
 
 'use client';
 
-import React from 'react';
-import { Play, ChevronRight, FileText, PlusCircle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Play, ChevronRight, FileText, PlusCircle, MoreVertical, Trash2 } from 'lucide-react';
 import { MyJamListProps, FilterType } from '@/types/my-jam';
 
 /**
@@ -17,7 +17,34 @@ const MyJamList: React.FC<MyJamListProps> = ({
   onPlay,
   onViewReport,
   onCreateReport,
+  onDelete,
 }) => {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 외부 클릭 시 메뉴 닫기
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleDeleteClick = (jamId: string) => {
+    setOpenMenuId(null);
+    setDeleteConfirmId(jamId);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmId) {
+      onDelete(deleteConfirmId);
+      setDeleteConfirmId(null);
+    }
+  };
   return (
     <div className="space-y-6">
       {/* Header with Case B Style Filter Buttons */}
@@ -107,7 +134,7 @@ const MyJamList: React.FC<MyJamListProps> = ({
               {/* Action Buttons (Case A Style) */}
               <div className="flex items-center gap-2 min-w-[140px] justify-end">
                 {jam.hasReport ? (
-                  <button 
+                  <button
                     onClick={() => onViewReport(jam.id)}
                     className="flex items-center gap-2 bg-white text-[#1B1C26] px-5 py-2 rounded-full text-[11px] font-bold hover:bg-[#E0E0E0] transition-colors shadow-lg"
                   >
@@ -115,7 +142,7 @@ const MyJamList: React.FC<MyJamListProps> = ({
                     AI 리포트 보기
                   </button>
                 ) : (
-                  <button 
+                  <button
                     onClick={() => onCreateReport(jam.id)}
                     className="flex items-center gap-2 border border-white/20 text-white px-5 py-2 rounded-full text-[11px] font-bold hover:bg-white/5 transition-colors"
                   >
@@ -124,10 +151,65 @@ const MyJamList: React.FC<MyJamListProps> = ({
                   </button>
                 )}
               </div>
+
+              {/* More Menu (⋮) */}
+              <div className="relative" ref={openMenuId === jam.id ? menuRef : null}>
+                <button
+                  onClick={() => setOpenMenuId(openMenuId === jam.id ? null : jam.id)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <MoreVertical size={18} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {openMenuId === jam.id && (
+                  <div className="absolute right-0 top-full mt-1 w-36 bg-[#2A2B39] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <button
+                      onClick={() => handleDeleteClick(jam.id)}
+                      className="w-full flex items-center gap-2 px-4 py-3 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 transition-colors text-sm font-medium"
+                    >
+                      <Trash2 size={14} />
+                      삭제하기
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-[#1B1C26] border border-white/10 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-[#FF6B6B]/10 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-[#FF6B6B]" />
+              </div>
+              <h3 className="text-lg font-bold text-white mb-2">JAM 삭제</h3>
+              <p className="text-sm text-gray-400">
+                이 JAM을 삭제하시겠습니까?<br />
+                삭제된 JAM은 복구할 수 없습니다.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="flex-1 py-3 rounded-xl bg-white/5 text-white font-medium hover:bg-white/10 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 py-3 rounded-xl bg-[#FF6B6B] text-white font-medium hover:bg-[#FF5555] transition-colors"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
