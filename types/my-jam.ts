@@ -61,3 +61,65 @@ export interface MyJamListProps {
   onViewReport: (id: string) => void;
   onCreateReport: (id: string) => void;
 }
+
+// ===== AI Report Types =====
+
+export type MeasureStatus = 'accurate' | 'user_error' | 'system_limit' | 'unconfirmed';
+
+export interface MeasureAnalysis {
+  measureStart: number;
+  measureEnd: number;
+  accuracy: number;
+  status: MeasureStatus;
+}
+
+export interface RangeAnalysis {
+  label: string;
+  range: string;
+  value: number;
+  color: string;
+}
+
+export interface EditStats {
+  totalNotes: number;
+  editedNotes: number;
+  pitchEdits: number;
+  timingEdits: number;
+  lengthEdits: number;
+}
+
+export type SuggestionType = 'user' | 'system' | 'positive';
+
+export interface AISuggestion {
+  type: SuggestionType;
+  title: string;
+  description: string;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+export interface AIReportData {
+  jamId: string;
+  
+  // 기본 점수
+  overallScore: number;
+  pitchAccuracy: number;
+  timingAccuracy: number;
+  durationAccuracy: number;
+  recoveryRate: number;
+  
+  // 구간별 분석
+  measureAnalysis: MeasureAnalysis[];
+  
+  // 음역대별 분석
+  rangeAnalysis: RangeAnalysis[];
+  
+  // 수정 통계
+  editStats: EditStats;
+  
+  // AI 제안
+  suggestions: AISuggestion[];
+  
+  // 메타데이터
+  createdAt: string;
+  updatedAt: string;
+}
