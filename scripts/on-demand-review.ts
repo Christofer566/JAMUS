@@ -83,10 +83,39 @@ function markdownToNotionBlocks(markdown: string): any[] {
                 codeContent = '';
             } else {
                 inCodeBlock = false;
-                blocks.push({ object: 'block', type: 'code', code: {
-                    rich_text: [{ type: 'text', text: { content: codeContent } }],
-                    language: codeLanguage || 'plain text'
-                }});
+                // Notion 코드 블록 2000자 제한 처리: 긴 코드는 여러 블록으로 분할
+                const MAX_CODE_LENGTH = 1900; // 여유 있게 1900자
+                if (codeContent.length <= MAX_CODE_LENGTH) {
+                    blocks.push({ object: 'block', type: 'code', code: {
+                        rich_text: [{ type: 'text', text: { content: codeContent } }],
+                        language: codeLanguage || 'plain text'
+                    }});
+                } else {
+                    // 줄 단위로 분할하여 2000자 초과 방지
+                    const codeLines = codeContent.split('\n');
+                    let chunk = '';
+                    let partIndex = 1;
+                    for (const codeLine of codeLines) {
+                        if ((chunk + codeLine + '\n').length > MAX_CODE_LENGTH) {
+                            if (chunk) {
+                                blocks.push({ object: 'block', type: 'code', code: {
+                                    rich_text: [{ type: 'text', text: { content: `// Part ${partIndex}\n${chunk}` } }],
+                                    language: codeLanguage || 'plain text'
+                                }});
+                                partIndex++;
+                            }
+                            chunk = codeLine + '\n';
+                        } else {
+                            chunk += codeLine + '\n';
+                        }
+                    }
+                    if (chunk.trim()) {
+                        blocks.push({ object: 'block', type: 'code', code: {
+                            rich_text: [{ type: 'text', text: { content: `// Part ${partIndex}\n${chunk}` } }],
+                            language: codeLanguage || 'plain text'
+                        }});
+                    }
+                }
             }
         } else if (inCodeBlock) {
             codeContent += line + '\n';
